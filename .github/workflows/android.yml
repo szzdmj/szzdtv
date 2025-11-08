@@ -2,7 +2,7 @@ name: Android CI - szzdtv (local PWA index from nanohttpd + webjs/sw from szmj0,
 
 on:
   push:
-    branches: [ "master", "main" ]
+    branches: [ "master", "main-branch" ]
   pull_request:
   workflow_dispatch:
     inputs:
