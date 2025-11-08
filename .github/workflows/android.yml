@@ -79,6 +79,23 @@ jobs:
           grep -E 'appCompatXLibraryVersion|okhttpVersion|espressoCoreVersion|robolectricVersion|xwalkSharedLibraryVersion' -n build.gradle || true
           echo "==== common/build.gradle head ===="
           sed -n '1,80p' common/build.gradle || true
+      - name: List projects
+        uses: gradle/gradle-build-action@v3
+        with:
+          gradle-version: 5.4.1
+          arguments: projects --no-daemon --info
+
+      - name: List tasks in :smartyoutubetv
+        uses: gradle/gradle-build-action@v3
+        with:
+          gradle-version: 5.4.1
+          arguments: :smartyoutubetv:tasks --all --no-daemon --info
+
+      - name: List tasks in :browser
+        uses: gradle/gradle-build-action@v3
+        with:
+          gradle-version: 5.4.1
+          arguments: :browser:tasks --all --no-daemon --info
 # Add an isolation build step just for :browser before full app build
 # (Keep previous content; only showing added diagnostic steps)
 
