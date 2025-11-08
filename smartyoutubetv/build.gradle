@@ -79,20 +79,6 @@ android {
         abortOnError true
         lintConfig rootProject.file('lint.xml')
     }
-
-    // Source sets routing for shared code
-    sourceSets {
-        def commonDirs        = ['src/commonSrc/appWatcher/java', 'src/commonSrc/crashHandler/java']
-        def bolshoetvCommon   = ['src/commonSrc/Vbolshoetv/java']
-        orig         { java.srcDirs('src/commonSrc/crashHandler/java') }
-        beta         { java.srcDirs('src/commonSrc/crashHandler/java') }
-        kids         { java.srcDirs = commonDirs }
-        Vlive        { java.srcDirs = commonDirs }
-        Vrtarmenia2  { java.srcDirs = commonDirs }
-        Vredboxtv    { java.srcDirs = commonDirs }
-        Vbolshoetv   { java.srcDirs = bolshoetvCommon }
-        Vbolshoetv2  { java.srcDirs = bolshoetvCommon }
-    }
 }
 
 dependencies {
