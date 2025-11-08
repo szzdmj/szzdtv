@@ -1,178 +1,97 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
 buildscript {
     repositories {
         jcenter()
+
+        maven {
+            url 'https://maven.google.com/'
+            name 'Google'
+        }
         google()
     }
 
     dependencies {
-        // Google Services / Crashlytics plugins (commented by default below)
-        classpath 'com.google.gms:google-services:4.3.3'
-        classpath 'com.google.firebase:firebase-crashlytics-gradle:2.1.1'
+        classpath 'com.android.tools.build:gradle:3.5.0'
+        // NOTE: Do not place your application dependencies here; they belong
+        // in the individual module build.gradle files
+    }
+
+    // Common android config
+    ext {
+        compileSdkVersion = 28
+        buildToolsVersion = "28.0.3"
+        minSdkVersion = 14
+        targetSdkVersion = 26
     }
 }
 
-apply plugin: 'com.android.application'
+// Centralized dependency versions (all modules read from rootProject.ext)
+ext {
+    // AndroidX / Support
+    appCompatXLibraryVersion = '1.1.0'
+    materialLibraryVersion   = '1.1.0'
+    multiDexVersion          = '1.0.3'          // some legacy modules still use com.android.support:multidex
 
-// // Apply Google Services & Crashlytics if needed
-// apply plugin: 'com.google.gms.google-services'
-// apply plugin: 'com.google.firebase.crashlytics'
+    // Test
+    junitVersion        = '4.12'
+    espressoCoreVersion = '3.0.2'
+    robolectricVersion  = '4.3.1'
+    assertJVersion      = '3.12.2'
+    commonsIOVersion    = '2.6'
 
-android {
-    // FIX: Default interface methods are only supported starting with Android N (--min-api 24)
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+    // Network / Util
+    okhttpVersion       = '3.12.13'             // wide compatibility for old APIs
+    ottoVersion         = '1.3.8'
+    dnsjavaVersion      = '3.5.2'
+    gsonVersion         = '2.8.9'
+    diskLruCacheVersion = '2.0.2'
+    apacheCommonsLangVersion = '3.9'
+    jsonPathVersion     = '2.4.0'
+
+    // Crosswalk
+    xwalkSharedLibraryVersion = '23.53.589.4'
+    xwalkCoreLibraryVersion   = '23.53.589.4'
+
+    // Other libs used in app module
+    nanoHttpdVersion         = '2.3.1'
+    voiceOverlayVersion      = '1.0.0'
+    constraintLayoutXVersion = '1.1.3'
+    firebaseCrashlyticsVersion = '17.0.0'       // used only for betaImplementation, can be adjusted
+}
+
+allprojects {
+    repositories {
+        // browse: https://bintray.com/bintray/jcenter
+        jcenter()
+        google()
+
+        // com.android.support libs, constraint lib
+        maven {
+            url 'https://maven.google.com/'
+            name 'Google'
+        }
+
+        // crosswalk
+        maven {
+            url 'https://download.01.org/crosswalk/releases/crosswalk/android/maven2'
+        }
+
+        // add lib from github (e.g. exoplayer-amazon-port)
+        // should be the last in the list
+        maven { url 'https://jitpack.io' }
+
+        // *.aar custom libs
+        //flatDir { dirs 'libs' }
     }
 
-    compileSdkVersion project.properties.compileSdkVersion
-    buildToolsVersion project.properties.buildToolsVersion
-    testOptions.unitTests.includeAndroidResources = true
-
-    defaultConfig {
-        minSdkVersion project.properties.minSdkVersion
-        targetSdkVersion project.properties.targetSdkVersion
-        applicationId "com.liskovsoft.videomanager"
-        versionCode 1319
-        versionName "6.17.739"
-        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
-        buildConfigField "long", "TIMESTAMP", System.currentTimeMillis() + "L"
-
-        // More info: http://myhexaville.com/2017/03/10/android-multidex/
-        multiDexEnabled = true
-    }
-
-    buildTypes {
-        // NOTE: to enable Crashlytics add fabric.properties file with your api keys
-        Boolean crashEnabled = file('fabric.properties').exists()
-
-        debug {
-            buildConfigField "boolean", "CRASHLYTICS_ENABLED", crashEnabled.toString()
-            ext.enableCrashlytics = crashEnabled
+    gradle.projectsEvaluated {
+        tasks.withType(JavaCompile) {
+            options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
         }
-
-        release {
-            buildConfigField "boolean", "CRASHLYTICS_ENABLED", crashEnabled.toString()
-            ext.enableCrashlytics = crashEnabled
-
-            debuggable false
-            minifyEnabled false
-            shrinkResources false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            //signingConfig signingConfigs.release
-        }
-    }
-
-    // gradle 4.6 migration: disable dimensions mechanism
-    flavorDimensions "default"
-
-    productFlavors {
-        orig { matchingFallbacks = ['lite'] }
-        beta {
-            matchingFallbacks = ['lite']
-            applicationIdSuffix ".beta"
-        }
-        kids {
-            matchingFallbacks = ['kids', 'lite']
-            applicationIdSuffix ".kids"
-        }
-        Vlive {
-            matchingFallbacks = ['lite']
-            applicationIdSuffix ".live"
-        }
-        Vbolshoetv {
-            matchingFallbacks = ['lite']
-            versionCode 9400 + defaultConfig.versionCode
-        }
-        Vbolshoetv2 {
-            matchingFallbacks = ['full']
-            versionCode 9400 + defaultConfig.versionCode
-            ndk { abiFilters "armeabi-v7a", "" }
-        }
-        Vrtarmenia2 {
-            matchingFallbacks = ['lite']
-            versionCode 9400 + defaultConfig.versionCode
-            applicationId "com.google.android.youtube.tv"
-        }
-        Vredboxtv {
-            matchingFallbacks = ['lite']
-            versionCode 9400 + defaultConfig.versionCode
-            applicationId "com.redboxtv.smartyoutubetv"
-        }
-    }
-
-    // naming example: SYTV_Flavor_v6.8.12_r.apk
-    applicationVariants.all { variant ->
-        variant.outputs.each { output ->
-            def projectName = "SYTV"
-            def flavor = variant.productFlavors[-1].name.capitalize()
-            def buildType = variant.variantData.variantConfiguration.buildType.name.take(1)
-            def version = variant.versionName
-
-            def newApkName = sprintf("%s_%s_v%s_%s.apk", [projectName, flavor, version, buildType])
-            output.outputFileName = new File(newApkName)
-        }
-    }
-
-    lintOptions {
-        abortOnError true
-        lintConfig rootProject.file('lint.xml')
-    }
-
-    // FIX: Product Flavor duplicate classes — route common sources
-    sourceSets {
-        def commonDirs = ['src/commonSrc/appWatcher/java', 'src/commonSrc/crashHandler/java']
-        def bolshoetvCommonDirs = ['src/commonSrc/Vbolshoetv/java']
-        orig { java.srcDirs('src/commonSrc/crashHandler/java') }
-        beta { java.srcDirs('src/commonSrc/crashHandler/java') }
-        kids { java.srcDirs = commonDirs }
-        Vlive { java.srcDirs = commonDirs }
-        Vrtarmenia2 { java.srcDirs = commonDirs }
-        Vredboxtv { java.srcDirs = commonDirs }
-        Vbolshoetv { java.srcDirs = bolshoetvCommonDirs }
-        Vbolshoetv2 { java.srcDirs = bolshoetvCommonDirs }
     }
 }
 
-dependencies {
-    androidTestImplementation('com.android.support.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion) {
-        exclude group: 'com.android.support', module: 'support-annotations'
-    }
-    testImplementation 'junit:junit:' + rootProject.ext.junitVersion
-    testImplementation 'org.assertj:assertj-core:' + rootProject.ext.assertJVersion
-    testImplementation 'org.robolectric:robolectric:' + rootProject.ext.robolectricVersion
-    testImplementation 'commons-io:commons-io:' + rootProject.ext.commonsIOVersion
-
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
-
-    // Common routines
-    testImplementation project(path: ':sharedtests')
-    implementation project(path: ':sharedutils')
-
-    implementation project(path: ':common')
-    implementation project(path: ':browser')
-    implementation project(path: ':exoplayeractivity')
-    implementation project(path: ':appupdatechecker')
-
-    // Firebase Crashlytics SDK (only for beta flavor if enabled)
-    betaImplementation('com.google.firebase:firebase-crashlytics:' + rootProject.ext.firebaseCrashlyticsVersion) {
-        transitive = true
-    }
-
-    implementation 'androidx.appcompat:appcompat:' + rootProject.ext.appCompatXLibraryVersion
-    implementation 'androidx.media:media:' + rootProject.ext.appCompatXLibraryVersion       // exoplayer fix
-    implementation 'androidx.recyclerview:recyclerview:' + rootProject.ext.appCompatXLibraryVersion // exoplayer fix
-    implementation 'androidx.constraintlayout:constraintlayout:' + rootProject.ext.constraintLayoutXVersion
-
-    implementation 'com.google.code.gson:gson:' + rootProject.ext.gsonVersion
-    implementation 'com.jayway.jsonpath:json-path:' + rootProject.ext.jsonPathVersion
-
-    implementation 'org.nanohttpd:nanohttpd:' + rootProject.ext.nanoHttpdVersion
-    implementation 'com.algolia.instantsearch:voice:' + rootProject.ext.voiceOverlayVersion
-
-    implementation 'com.squareup.okhttp3:okhttp:' + rootProject.ext.okhttpVersion
-    implementation 'com.squareup:otto:' + rootProject.ext.ottoVersion
-
-    implementation 'com.jakewharton:disklrucache:' + rootProject.ext.diskLruCacheVersion
-
-    implementation 'org.apache.commons:commons-lang3:' + rootProject.ext.apacheCommonsLangVersion
+task clean(type: Delete) {
+    delete rootProject.buildDir
 }
