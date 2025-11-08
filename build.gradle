@@ -3,7 +3,7 @@
 buildscript {
     repositories {
         jcenter()
-
+        mavenCentral()
         maven {
             url 'https://maven.google.com/'
             name 'Google'
@@ -13,8 +13,6 @@ buildscript {
 
     dependencies {
         classpath 'com.android.tools.build:gradle:3.5.0'
-        // NOTE: Do not place your application dependencies here; they belong
-        // in the individual module build.gradle files
     }
 
     // Common android config
@@ -31,7 +29,7 @@ ext {
     // AndroidX / Support
     appCompatXLibraryVersion = '1.1.0'
     materialLibraryVersion   = '1.1.0'
-    multiDexVersion          = '1.0.3'          // some legacy modules still use com.android.support:multidex
+    multiDexVersion          = '1.0.3'
 
     // Test
     junitVersion        = '4.12'
@@ -41,7 +39,7 @@ ext {
     commonsIOVersion    = '2.6'
 
     // Network / Util
-    okhttpVersion       = '3.12.13'             // wide compatibility for old APIs
+    okhttpVersion       = '3.12.13'
     ottoVersion         = '1.3.8'
     dnsjavaVersion      = '3.5.2'
     gsonVersion         = '2.8.9'
@@ -53,35 +51,33 @@ ext {
     xwalkSharedLibraryVersion = '23.53.589.4'
     xwalkCoreLibraryVersion   = '23.53.589.4'
 
-    // Other libs used in app module
+    // Other libs used in app / exoplayeractivity module
     nanoHttpdVersion         = '2.3.1'
     voiceOverlayVersion      = '1.0.0'
     constraintLayoutXVersion = '1.1.3'
-    firebaseCrashlyticsVersion = '17.0.0'       // used only for betaImplementation, can be adjusted
+    firebaseCrashlyticsVersion = '17.0.0'
+
+    // ExoPlayer family (pick Amazon or Google)
+    amazonExoplayerVersion      = '2.12.1'   // 示例版本，可按需调整
+    exoplayerVersion            = '2.12.1'   // 如切换官方 ExoPlayer 时使用
+
+    // PreviewSeekBar / Glide
+    previewSeekBarDevVersion    = 'v3.2.2'
+    previewSeekBarExoDevVersion = 'v3.2.2'
+    glideVersion                = '4.11.0'
 }
 
 allprojects {
     repositories {
-        // browse: https://bintray.com/bintray/jcenter
         jcenter()
+        mavenCentral()
         google()
-
-        // com.android.support libs, constraint lib
         maven {
             url 'https://maven.google.com/'
             name 'Google'
         }
-
-        // crosswalk
-        maven {
-            url 'https://download.01.org/crosswalk/releases/crosswalk/android/maven2'
-        }
-
-        // add lib from github (e.g. exoplayer-amazon-port)
-        // should be the last in the list
+        maven { url 'https://download.01.org/crosswalk/releases/crosswalk/android/maven2' }
         maven { url 'https://jitpack.io' }
-
-        // *.aar custom libs
         //flatDir { dirs 'libs' }
     }
 
