@@ -1,5 +1,5 @@
-// 仅包含实际存在的模块
-include ':smartyoutubetv', ':browser', ':exoplayeractivity', ':appupdatechecker', ':common'
+// 仅包含实际存在的模块（补上 :sharedutils）
+include ':smartyoutubetv', ':browser', ':exoplayeractivity', ':appupdatechecker', ':common', ':sharedutils'
 
 def rootDir = settingsDir
 
