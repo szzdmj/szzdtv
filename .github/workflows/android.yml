@@ -83,26 +83,26 @@ jobs:
           gradle-version: 5.6.4
           arguments: :smartyoutubetv:tasks --all --no-daemon --info
 
-      - name: Build Debug (:smartyoutubetv orig flavor)
+      - name: Build Debug (:smartyoutubetv default flavor)
         uses: gradle/gradle-build-action@v2
         with:
           gradle-version: 5.6.4
-          arguments: :smartyoutubetv:assembleOrigDebug --stacktrace --info --no-daemon
+          arguments: :smartyoutubetv:assembleDebug --stacktrace --info --no-daemon
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: szzdtv-debug-apk
-          path: smartyoutubetv/build/outputs/apk/orig/*.apk
+          path: smartyoutubetv/build/outputs/apk/debug/*.apk
 
-      - name: Build Release (:smartyoutubetv orig flavor)
+      - name: Build Release (:smartyoutubetv default flavor)
         uses: gradle/gradle-build-action@v2
         with:
           gradle-version: 5.6.4
-          arguments: :smartyoutubetv:assembleOrigRelease --stacktrace --info --no-daemon
+          arguments: :smartyoutubetv:assembleRelease --stacktrace --info --no-daemon
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
           name: szzdtv-release-apk
-          path: smartyoutubetv/build/outputs/apk/orig/*.apk
+          path: smartyoutubetv/build/outputs/apk/release/*.apk
