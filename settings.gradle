@@ -1,3 +1,7 @@
+// 追加 pwaapp 模块（保留原有 include）
+apply from: 'settings.gradle' // 如果原文件不是这样组织，请直接在原 settings.gradle 末尾追加下面一行
+include ':pwaapp'
+
 include ':smartyoutubetv', ':browser', ':exoplayeractivity', ':appupdatechecker', ':common'
 
 def rootDir = settingsDir
@@ -15,4 +19,5 @@ apply from: new File(gradle.ext.mediaServiceCoreRoot, 'core_settings.gradle')
 // exoplayer extensions
 // gradle.ext.exoplayerRoot = new File(rootDir, '../ExoPlayer2.11.1')
 // gradle.ext.exoplayerModulePrefix = 'exoplayer-'
+
 // apply from: new File(gradle.ext.exoplayerRoot, 'core_settings.gradle')
