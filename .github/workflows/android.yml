@@ -1,4 +1,4 @@
-name: Android CI - szzdtv (copy PWA assets from nanohttpd, no id-shim)
+name: Android CI - szzdtv (local PWA index from nanohttpd + webjs/sw from szmj0, no id-shim)
 
 on:
   push:
@@ -7,9 +7,13 @@ on:
   workflow_dispatch:
     inputs:
       nano_branch:
-        description: 'Branch of szzdmj/nanohttpd to fetch assets from'
+        description: 'Branch/commit of szzdmj/nanohttpd to fetch index.html from'
         required: false
         default: 'master'
+      sz_ref:
+        description: 'Branch/commit of szmj0/szmj0.github.io to fetch webjs.js & sw.js from'
+        required: false
+        default: 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' # provided commit
 
 jobs:
   build:
@@ -19,7 +23,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 用 JDK 17 运行 sdkmanager（cmdline-tools/newer 需要）
+      # Use JDK 17 to run sdkmanager (newer cmdline-tools require it)
       - name: Set up JDK 17 (for sdkmanager)
         uses: actions/setup-java@v4
         with:
@@ -34,7 +38,7 @@ jobs:
           echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
           echo "ANDROID_HOME=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
 
-          # 优先使用老 tools/bin/sdkmanager 以兼容 JDK 8 构建期；此步仅安装组件
+          # Prefer legacy tools/bin/sdkmanager if present (compatible with older projects)
           if [ -x "${ANDROID_SDK_ROOT}/tools/bin/sdkmanager" ]; then
             SDKM="${ANDROID_SDK_ROOT}/tools/bin/sdkmanager"
           else
@@ -44,42 +48,49 @@ jobs:
           yes | "${SDKM}" --licenses >/dev/null 2>&1 || true
           "${SDKM}" "platform-tools" "build-tools;28.0.3" "platforms;android-28"
 
-      - name: Prepare PWA assets from szzdmj/nanohttpd (index.html + webjs.js + sw.js)
+      - name: Prepare PWA assets (index.html from szzdmj/nanohttpd, webjs.js & sw.js from szmj0/szmj0.github.io)
         env:
           NBR: ${{ github.event.inputs.nano_branch || 'master' }}
+          SZR: ${{ github.event.inputs.sz_ref || 'main' }}
         shell: bash
         run: |
           set -euo pipefail
           A="smartyoutubetv/src/main/assets"
           mkdir -p "$A"
 
-          base="https://raw.githubusercontent.com/szzdmj/nanohttpd/${NBR}/android-asset-webshell/app/src/main/assets"
-          for f in index.html webjs.js sw.js; do
-            echo "Fetching ${base}/${f}"
-            curl -fsSL --retry 3 --connect-timeout 10 -o "${A}/${f}" "${base}/${f}"
-          done
+          echo "Fetching index.html from szzdmj/nanohttpd@${NBR}"
+          base_nano="https://raw.githubusercontent.com/szzdmj/nanohttpd/${NBR}/android-asset-webshell/app/src/main/assets"
+          curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/index.html" "${base_nano}/index.html"
+
+          echo "Fetching webjs.js & sw.js from szmj0/szmj0.github.io@${SZR}"
+          base_sz="https://raw.githubusercontent.com/szmj0/szmj0.github.io/${SZR}"
+          curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/webjs.js" "${base_sz}/webjs.js"
+          curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/sw.js"     "${base_sz}/sw.js"
 
           echo "Assets present in ${A}:"
-          ls -l "$A"
+          ls -l "${A}"
           echo "index.html head:"
-          sed -n '1,40p' "$A/index.html" || true
+          sed -n '1,40p' "${A}/index.html" || true
 
-      # 切回 JDK 8 以匹配 AGP 3.5.0 + Gradle 5.4.1
-      - name: Set up JDK 8 (for build)
+      # Switch back to JDK 8 to match AGP 3.5.0 + Gradle 5.4.1 used by this repo
+      - name: Set up JDK 8 (for Gradle/AGP 3.5.0)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '8'
 
-      - name: Print Gradle/Android versions
+      - name: Print env and top-level Gradle build file
         shell: bash
         run: |
+          set -euo pipefail
           echo "JAVA_HOME=${JAVA_HOME}"
           java -version
-          echo "Top-level build.gradle (expect AGP 3.5.0, compileSdk 28):"
-          sed -n '1,120p' build.gradle || true
+          echo "==== root build.gradle ===="
+          sed -n '1,160p' build.gradle || true
+          echo "==== settings.gradle ===="
+          sed -n '1,160p' settings.gradle || true
 
-      # 使用 Gradle 5.4.1（与 AGP 3.5.0 兼容）
+      # Build szzdtv app module (smartyoutubetv) with Gradle 5.4.1 (compatible with AGP 3.5.0)
       - name: Build Debug (:smartyoutubetv)
         uses: gradle/gradle-build-action@v3
         with:
