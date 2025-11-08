@@ -1,15 +1,23 @@
-// ref: 8fe413498b90cfb6116536ff797e941564600f0f
-// Top-level build file
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
 
 buildscript {
     repositories {
         jcenter()
-        maven { url 'https://maven.google.com/'; name 'Google' }
+
+        maven {
+            url 'https://maven.google.com/'
+            name 'Google'
+        }
         google()
     }
+
     dependencies {
         classpath 'com.android.tools.build:gradle:3.5.0'
+        // NOTE: Do not place your application dependencies here; they belong
+        // in the individual module build.gradle files
     }
+
+    // Common android config
     ext {
         compileSdkVersion = 28
         buildToolsVersion = "28.0.3"
@@ -18,37 +26,63 @@ buildscript {
     }
 }
 
-// 全部版本常量集中于此，子模块直接引用
+// Centralized dependency versions (all modules read from rootProject.ext)
 ext {
     // AndroidX / Support
     appCompatXLibraryVersion = '1.1.0'
     materialLibraryVersion   = '1.1.0'
-    multiDexVersion          = '1.0.3'
+    multiDexVersion          = '1.0.3'          // some legacy modules still use com.android.support:multidex
 
     // Test
     junitVersion        = '4.12'
     espressoCoreVersion = '3.0.2'
     robolectricVersion  = '4.3.1'
+    assertJVersion      = '3.12.2'
+    commonsIOVersion    = '2.6'
 
     // Network / Util
-    okhttpVersion       = '3.12.13'
+    okhttpVersion       = '3.12.13'             // wide compatibility for old APIs
     ottoVersion         = '1.3.8'
     dnsjavaVersion      = '3.5.2'
     gsonVersion         = '2.8.9'
     diskLruCacheVersion = '2.0.2'
+    apacheCommonsLangVersion = '3.9'
+    jsonPathVersion     = '2.4.0'
 
     // Crosswalk
     xwalkSharedLibraryVersion = '23.53.589.4'
     xwalkCoreLibraryVersion   = '23.53.589.4'
+
+    // Other libs used in app module
+    nanoHttpdVersion         = '2.3.1'
+    voiceOverlayVersion      = '1.0.0'
+    constraintLayoutXVersion = '1.1.3'
+    firebaseCrashlyticsVersion = '17.0.0'       // used only for betaImplementation, can be adjusted
 }
 
 allprojects {
     repositories {
+        // browse: https://bintray.com/bintray/jcenter
         jcenter()
         google()
-        maven { url 'https://maven.google.com/'; name 'Google' }
-        maven { url 'https://download.01.org/crosswalk/releases/crosswalk/android/maven2' }
+
+        // com.android.support libs, constraint lib
+        maven {
+            url 'https://maven.google.com/'
+            name 'Google'
+        }
+
+        // crosswalk
+        maven {
+            url 'https://download.01.org/crosswalk/releases/crosswalk/android/maven2'
+        }
+
+        // add lib from github (e.g. exoplayer-amazon-port)
+        // should be the last in the list
         maven { url 'https://jitpack.io' }
+
+        // *.aar custom libs
+        //flatDir { dirs 'libs' }
     }
 
     gradle.projectsEvaluated {
@@ -58,4 +92,6 @@ allprojects {
     }
 }
 
-task clean(type: Delete) { delete rootProject.buildDir }
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}
