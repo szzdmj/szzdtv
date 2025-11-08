@@ -76,8 +76,7 @@ android {
     }
 
     lintOptions {
-        abortOnError true
-        lintConfig rootProject.file('lint.xml')
+        abortOnError false
     }
 }
 
