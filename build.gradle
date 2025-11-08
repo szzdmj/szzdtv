@@ -1,19 +1,16 @@
-// Top-level build file where you can add configuration options common to all sub-projects/modules.
+// Top-level build file
 
 buildscript {
     repositories {
-        // 重要：Google 仓库优先，保证 AndroidX/Jetifier 等解析正确
+        // 重要：Google 优先，保证 AndroidX/Jetifier 等解析正确
         google()
         mavenCentral()
         jcenter()
         maven { url 'https://maven.google.com/'; name 'Google' }
     }
-
     dependencies {
         classpath 'com.android.tools.build:gradle:3.5.0'
     }
-
-    // Common android config
     ext {
         compileSdkVersion = 28
         buildToolsVersion = "28.0.3"
@@ -22,7 +19,6 @@ buildscript {
     }
 }
 
-// Centralized dependency versions (all modules read from rootProject.ext)
 ext {
     // AndroidX / Support
     appCompatXLibraryVersion = '1.1.0'
@@ -49,13 +45,13 @@ ext {
     xwalkSharedLibraryVersion = '23.53.589.4'
     xwalkCoreLibraryVersion   = '23.53.589.4'
 
-    // App/ExoPlayer related
+    // App / Exo
     nanoHttpdVersion         = '2.3.1'
     voiceOverlayVersion      = '1.0.0'
     constraintLayoutXVersion = '1.1.3'
     firebaseCrashlyticsVersion = '17.0.0'
 
-    // ExoPlayer family (pick Amazon or Google)
+    // ExoPlayer family
     amazonExoplayerVersion      = '2.12.1'
     exoplayerVersion            = '2.12.1'
 
@@ -67,16 +63,13 @@ ext {
 
 allprojects {
     repositories {
-        // 重要：Google 优先
         google()
         mavenCentral()
         jcenter()
         maven { url 'https://maven.google.com/'; name 'Google' }
         maven { url 'https://download.01.org/crosswalk/releases/crosswalk/android/maven2' }
         maven { url 'https://jitpack.io' }
-        //flatDir { dirs 'libs' }
     }
-
     gradle.projectsEvaluated {
         tasks.withType(JavaCompile) {
             options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
@@ -84,6 +77,4 @@ allprojects {
     }
 }
 
-task clean(type: Delete) {
-    delete rootProject.buildDir
-}
+task clean(type: Delete) { delete rootProject.buildDir }
