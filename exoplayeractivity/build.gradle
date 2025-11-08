@@ -1,6 +1,5 @@
-apply from: gradle.ext.sharedModulesConstants
+// Removed obsolete: apply from: gradle.ext.sharedModulesConstants
 apply plugin: 'com.android.library'
-
 
 android {
     // FIX: Default interface methods are only supported starting with Android N (--min-api 24)
@@ -9,8 +8,7 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
-    // allow other modules import debug/release configurations
-    //publishNonDefault true
+    // publishNonDefault true  // (旧机制, AGP 3.5 已不推荐, 留注释)
 
     compileSdkVersion project.properties.compileSdkVersion
     buildToolsVersion project.properties.buildToolsVersion
@@ -33,15 +31,11 @@ android {
     }
 
     // gradle 4.6 migration: disable dimensions mechanism
-    // more: https://proandroiddev.com/advanced-android-flavors-part-4-a-new-version-fc2ad80c01bb
     flavorDimensions "default"
-
     productFlavors {
         lite {}
         full {}
-        kids {
-            matchingFallbacks = ['lite']
-        }
+        kids { matchingFallbacks = ['lite'] }
     }
 
     lintOptions {
@@ -51,39 +45,34 @@ android {
 }
 
 dependencies {
-    androidTestImplementation('com.android.support.test.espresso:espresso-core:' + espressoCoreVersion, {
+    androidTestImplementation('com.android.support.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion) {
         exclude group: 'com.android.support', module: 'support-annotations'
-    })
-    testImplementation 'junit:junit:' + junitVersion
+    }
+    testImplementation 'junit:junit:' + rootProject.ext.junitVersion
 
     implementation project(path: ':sharedutils')
-
     implementation project(path: ':common')
-
-    // gradle 4.6 migration
     implementation project(path: ':browser')
 
     implementation fileTree(dir: 'libs', include: ['*.jar'])
-    implementation 'androidx.appcompat:appcompat:' + appCompatXLibraryVersion
-    implementation 'androidx.constraintlayout:constraintlayout:' + constraintLayoutXVersion
-    implementation 'androidx.collection:collection:' + appCompatXLibraryVersion
+    implementation 'androidx.appcompat:appcompat:' + rootProject.ext.appCompatXLibraryVersion
+    implementation 'androidx.constraintlayout:constraintlayout:' + rootProject.ext.constraintLayoutXVersion
+    implementation 'androidx.collection:collection:' + rootProject.ext.appCompatXLibraryVersion
 
-    api 'com.amazon.android:exoplayer:' + amazonExoplayerVersion
-    // api 'com.google.android.exoplayer:exoplayer:' + exoplayerVersion
+    // Amazon ExoPlayer (确保在顶层 ext 中定义 amazonExoplayerVersion)
+    api 'com.amazon.android:exoplayer:' + rootProject.ext.amazonExoplayerVersion
+    // 如需官方 ExoPlayer: api 'com.google.android.exoplayer:exoplayer:' + rootProject.ext.exoplayerVersion
 
-    implementation 'com.amazon.android:extension-okhttp:' + amazonExoplayerVersion
-    // implementation 'com.google.android.exoplayer:extension-okhttp:' + exoplayerVersion
+    implementation 'com.amazon.android:extension-okhttp:' + rootProject.ext.amazonExoplayerVersion
+    // 官方扩展替换示例: implementation 'com.google.android.exoplayer:extension-okhttp:' + rootProject.ext.exoplayerVersion
 
-    // include vp9 extension
-    // NOTE: NoSuchMethodError when using 'transitive' prop
-    // implementation project(path: ':exoplayer-extension-vp9')
+    // PreviewSeekBar (确保 previewSeekBarDevVersion / previewSeekBarExoDevVersion 已在 ext 中)
+    implementation 'com.github.yuliskov.PreviewSeekBar:previewseekbar:' + rootProject.ext.previewSeekBarDevVersion
+    implementation 'com.github.yuliskov.PreviewSeekBar:previewseekbar-exoplayer:' + rootProject.ext.previewSeekBarExoDevVersion
 
-    implementation 'com.github.yuliskov.PreviewSeekBar:previewseekbar:' + previewSeekBarDevVersion
-    implementation 'com.github.yuliskov.PreviewSeekBar:previewseekbar-exoplayer:' + previewSeekBarExoDevVersion
+    implementation 'com.github.bumptech.glide:glide:' + rootProject.ext.glideVersion
+    annotationProcessor 'com.github.bumptech.glide:compiler:' + rootProject.ext.glideVersion
+    annotationProcessor 'androidx.annotation:annotation:' + rootProject.ext.appCompatXLibraryVersion
 
-    implementation 'com.github.bumptech.glide:glide:' + glideVersion
-    annotationProcessor 'com.github.bumptech.glide:compiler:' + glideVersion
-    annotationProcessor 'androidx.annotation:annotation:' + appCompatXLibraryVersion
-
-    implementation 'com.android.support:multidex:' + multiDexVersion
+    implementation 'com.android.support:multidex:' + rootProject.ext.multiDexVersion
 }
