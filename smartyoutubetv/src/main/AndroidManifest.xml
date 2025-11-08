@@ -2,7 +2,7 @@
 2| <manifest xmlns:android="http://schemas.android.com/apk/res/android"
 3|           xmlns:tools="http://schemas.android.com/tools"
 4|           android:installLocation="auto"
-5|           package="com.liskovsoft.videomanager">
+5|           package="com.liskovsoft.smartyoutubetv">
 6| 
 7|     <uses-permission android:name="android.permission.INTERNET"/>
 8|     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
