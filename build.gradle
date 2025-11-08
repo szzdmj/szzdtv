@@ -2,13 +2,11 @@
 
 buildscript {
     repositories {
-        jcenter()
-        mavenCentral()
-        maven {
-            url 'https://maven.google.com/'
-            name 'Google'
-        }
+        // 重要：Google 仓库优先，保证 AndroidX/Jetifier 等解析正确
         google()
+        mavenCentral()
+        jcenter()
+        maven { url 'https://maven.google.com/'; name 'Google' }
     }
 
     dependencies {
@@ -51,15 +49,15 @@ ext {
     xwalkSharedLibraryVersion = '23.53.589.4'
     xwalkCoreLibraryVersion   = '23.53.589.4'
 
-    // Other libs used in app / exoplayeractivity module
+    // App/ExoPlayer related
     nanoHttpdVersion         = '2.3.1'
     voiceOverlayVersion      = '1.0.0'
     constraintLayoutXVersion = '1.1.3'
     firebaseCrashlyticsVersion = '17.0.0'
 
     // ExoPlayer family (pick Amazon or Google)
-    amazonExoplayerVersion      = '2.12.1'   // 示例版本，可按需调整
-    exoplayerVersion            = '2.12.1'   // 如切换官方 ExoPlayer 时使用
+    amazonExoplayerVersion      = '2.12.1'
+    exoplayerVersion            = '2.12.1'
 
     // PreviewSeekBar / Glide
     previewSeekBarDevVersion    = 'v3.2.2'
@@ -69,13 +67,11 @@ ext {
 
 allprojects {
     repositories {
-        jcenter()
-        mavenCentral()
+        // 重要：Google 优先
         google()
-        maven {
-            url 'https://maven.google.com/'
-            name 'Google'
-        }
+        mavenCentral()
+        jcenter()
+        maven { url 'https://maven.google.com/'; name 'Google' }
         maven { url 'https://download.01.org/crosswalk/releases/crosswalk/android/maven2' }
         maven { url 'https://jitpack.io' }
         //flatDir { dirs 'libs' }
