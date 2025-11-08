@@ -121,22 +121,29 @@ jobs:
           build-root-directory: android-asset-webshell
           gradle-version: 7.6.1
           arguments: help --stacktrace --warning-mode all --info --no-daemon
-
+# 将 v4 改为现有版本 v3；分离 release 构建与上传
       - name: Build Debug
         uses: gradle/gradle-build-action@v3
         with:
-          build-root-directory: android-asset-webshell
-          gradle-version: 7.6.1
-          arguments: assembleDebug --stacktrace --warning-mode all --info --no-daemon
+          build-root-directory: <你的实际模块根目录，例如 pwaapp 或 app>
+          gradle-version: 5.4.1
+          arguments: assembleDebug --stacktrace --info --no-daemon
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: debug-apk
-          path: android-asset-webshell/app/build/outputs/apk/debug/*.apk
+          path: <你的实际模块根目录>/build/outputs/apk/debug/*.apk
 
       - name: Build Release
-        uses: gradle/gradle-build-action@v4
+        uses: gradle/gradle-build-action@v3
+        with:
+          build-root-directory: <你的实际模块根目录>
+          gradle-version: 5.4.1
+          arguments: assembleRelease --stacktrace --info --no-daemon
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
         with:
           name: release-apk
-          path: android-asset-webshell/app/build/outputs/apk/release/*.apk
+          path: <你的实际模块根目录>/build/outputs/apk/release/*.apk
