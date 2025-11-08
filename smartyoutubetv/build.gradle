@@ -68,7 +68,7 @@ android {
 
 dependencies {
     // Tests
-    androidTestImplementation('androidx.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion)
+    androidTestImplementation('androidx.test.espresso:espresso-core:3.2.0')
     testImplementation 'junit:junit:'              + rootProject.ext.junitVersion
     testImplementation 'org.assertj:assertj-core:' + rootProject.ext.assertJVersion
     testImplementation 'org.robolectric:robolectric:' + rootProject.ext.robolectricVersion
@@ -105,5 +105,5 @@ dependencies {
     implementation 'org.apache.commons:commons-lang3:'       + rootProject.ext.apacheCommonsLangVersion
 
     // Multidex (legacy support if needed)
-    implementation 'androidx.multidex:multidex:'           + rootProject.ext.multiDexVersion
+    implementation 'androidx.multidex:multidex:2.0.1'
 }
