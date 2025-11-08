@@ -1,19 +1,72 @@
-// 仅包含项目内实际存在的模块（补上 :sharedutils）
-include ':smartyoutubetv', ':browser', ':exoplayeractivity', ':appupdatechecker', ':common', ':sharedutils'
+// DIAGNOSTIC VERSION for ref=a242c643d7d9d7ddd15e5d8afa3926dc78324c92
+println "DIAG(browser): espressoCoreVersion=" + (rootProject.ext.has('espressoCoreVersion') ? rootProject.ext.espressoCoreVersion : 'MISSING')
+println "DIAG(browser): junitVersion=" + (rootProject.ext.has('junitVersion') ? rootProject.ext.junitVersion : 'MISSING')
+println "DIAG(browser): appCompatXLibraryVersion=" + (rootProject.ext.has('appCompatXLibraryVersion') ? rootProject.ext.appCompatXLibraryVersion : 'MISSING')
+println "DIAG(browser): okhttpVersion=" + (rootProject.ext.has('okhttpVersion') ? rootProject.ext.okhttpVersion : 'MISSING')
+println "DIAG(browser): ottoVersion=" + (rootProject.ext.has('ottoVersion') ? rootProject.ext.ottoVersion : 'MISSING')
+println "DIAG(browser): dnsjavaVersion=" + (rootProject.ext.has('dnsjavaVersion') ? rootProject.ext.dnsjavaVersion : 'MISSING')
+println "DIAG(browser): xwalkSharedLibraryVersion=" + (rootProject.ext.has('xwalkSharedLibraryVersion') ? rootProject.ext.xwalkSharedLibraryVersion : 'MISSING')
+println "DIAG(browser): xwalkCoreLibraryVersion=" + (rootProject.ext.has('xwalkCoreLibraryVersion') ? rootProject.ext.xwalkCoreLibraryVersion : 'MISSING')
 
-// 可选引入外部子模块（存在才应用），避免因缺失文件导致失败
-def rootDir = settingsDir
-def tryApply = { baseName ->
-    def root = new File(rootDir, "../${baseName}").exists() ? new File(rootDir, "../${baseName}") : new File(rootDir, "./${baseName}")
-    def core = new File(root, 'core_settings.gradle')
-    if (core.exists()) {
-        apply from: core
-        println "INFO: Applied ${core}"
-    } else {
-        println "WARN: ${baseName} core_settings.gradle not found at ${core}, skipping."
+apply plugin: 'com.android.library'
+
+android {
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    compileSdkVersion project.properties.compileSdkVersion
+    buildToolsVersion project.properties.buildToolsVersion
+
+    defaultConfig {
+        minSdkVersion project.properties.minSdkVersion
+        targetSdkVersion project.properties.targetSdkVersion
+        versionCode 7
+        versionName "6.4.7"
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    flavorDimensions "default"
+    productFlavors {
+        lite {}
+        full {}
+    }
+
+    defaultPublishConfig "liteDebug"
+
+    lintOptions {
+        abortOnError true
+        lintConfig rootProject.file('lint.xml')
     }
 }
-tryApply('SharedModules')
-tryApply('MediaServiceCore')
 
-// 不再设置 gradle.ext.sharedModulesConstants（所有常量已在顶层 build.gradle 的 ext 中）
+dependencies {
+    androidTestImplementation('com.android.support.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion) {
+        exclude group: 'com.android.support', module: 'support-annotations'
+    }
+    testImplementation 'junit:junit:' + rootProject.ext.junitVersion
+
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+
+    implementation 'androidx.appcompat:appcompat:' + rootProject.ext.appCompatXLibraryVersion
+
+    implementation 'com.squareup.okhttp3:okhttp:' + rootProject.ext.okhttpVersion
+    implementation 'com.squareup:otto:' + rootProject.ext.ottoVersion
+    implementation 'dnsjava:dnsjava:' + rootProject.ext.dnsjavaVersion
+
+    implementation project(path: ':sharedutils')
+    implementation project(path: ':common')
+    implementation project(path: ':appupdatechecker')
+
+    // TEMP: replace liteApi/fullApi with implementation for diagnostic
+    implementation 'org.xwalk:xwalk_shared_library:' + rootProject.ext.xwalkSharedLibraryVersion
+    implementation 'org.xwalk:xwalk_core_library:' + rootProject.ext.xwalkCoreLibraryVersion
+}
