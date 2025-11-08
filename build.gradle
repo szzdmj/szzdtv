@@ -13,21 +13,51 @@ buildscript {
 
     dependencies {
         classpath 'com.android.tools.build:gradle:3.5.0'
-        //classpath 'com.github.jengelman.gradle.plugins:shadow:4.0.4'
-
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files
     }
 
-    // WARNING: don't use 'project.ext' because IDE 'Cannot infer argument type'
-    // https://stackoverflow.com/questions/20404476/how-to-define-common-android-properties-for-all-modules-using-gradle
-    // Gradle constants example: https://github.com/google/ExoPlayer
+    // Common android config
     ext {
         compileSdkVersion = 28
         buildToolsVersion = "28.0.3"
         minSdkVersion = 14
         targetSdkVersion = 26
     }
+}
+
+// Centralized dependency versions (all modules read from rootProject.ext)
+ext {
+    // AndroidX / Support
+    appCompatXLibraryVersion = '1.1.0'
+    materialLibraryVersion   = '1.1.0'
+    multiDexVersion          = '1.0.3'          // some legacy modules still use com.android.support:multidex
+
+    // Test
+    junitVersion        = '4.12'
+    espressoCoreVersion = '3.0.2'
+    robolectricVersion  = '4.3.1'
+    assertJVersion      = '3.12.2'
+    commonsIOVersion    = '2.6'
+
+    // Network / Util
+    okhttpVersion       = '3.12.13'             // wide compatibility for old APIs
+    ottoVersion         = '1.3.8'
+    dnsjavaVersion      = '3.5.2'
+    gsonVersion         = '2.8.9'
+    diskLruCacheVersion = '2.0.2'
+    apacheCommonsLangVersion = '3.9'
+    jsonPathVersion     = '2.4.0'
+
+    // Crosswalk
+    xwalkSharedLibraryVersion = '23.53.589.4'
+    xwalkCoreLibraryVersion   = '23.53.589.4'
+
+    // Other libs used in app module
+    nanoHttpdVersion         = '2.3.1'
+    voiceOverlayVersion      = '1.0.0'
+    constraintLayoutXVersion = '1.1.3'
+    firebaseCrashlyticsVersion = '17.0.0'       // used only for betaImplementation, can be adjusted
 }
 
 allprojects {
@@ -52,9 +82,7 @@ allprojects {
         maven { url 'https://jitpack.io' }
 
         // *.aar custom libs
-        //flatDir {
-        //    dirs 'libs'
-        //}
+        //flatDir { dirs 'libs' }
     }
 
     gradle.projectsEvaluated {
@@ -67,13 +95,3 @@ allprojects {
 task clean(type: Delete) {
     delete rootProject.buildDir
 }
-
-//apply plugin: 'com.github.johnrengelman.shadow'
-//apply plugin: 'java'
-//
-//// Configuring Filtering for Relocation
-//shadowJar {
-//    relocate('com.google.android.exoplayer2.util', 'com.liskovsoft.smartyoutubetv.flavors.exoplayer.player.helpers') {
-//        include 'com.google.android.exoplayer2.util.Log'
-//    }
-//}
