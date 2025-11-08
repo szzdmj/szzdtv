@@ -1,7 +1,7 @@
 apply plugin: 'com.android.library'
 
 android {
-    // FIX: Default interface methods are only supported starting with Android N (--min-api 24)
+    // Default interface methods need Java 8
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
@@ -25,12 +25,14 @@ android {
         }
     }
 
+    // 单一维度，提供 lite/full 两种口味
     flavorDimensions "default"
     productFlavors {
         lite {}
         full {}
     }
 
+    // 关键：发布 liteDebug 变体，避免解析到 full 变体
     defaultPublishConfig "liteDebug"
 
     lintOptions {
@@ -40,15 +42,15 @@ android {
 }
 
 dependencies {
+    // tests
     androidTestImplementation('com.android.support.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion) {
         exclude group: 'com.android.support', module: 'support-annotations'
     }
     testImplementation 'junit:junit:' + rootProject.ext.junitVersion
 
+    // core
     implementation fileTree(dir: 'libs', include: ['*.jar'])
-
     implementation 'androidx.appcompat:appcompat:' + rootProject.ext.appCompatXLibraryVersion
-
     implementation 'com.squareup.okhttp3:okhttp:' + rootProject.ext.okhttpVersion
     implementation 'com.squareup:otto:' + rootProject.ext.ottoVersion
     implementation 'dnsjava:dnsjava:' + rootProject.ext.dnsjavaVersion
@@ -57,7 +59,8 @@ dependencies {
     implementation project(path: ':common')
     implementation project(path: ':appupdatechecker')
 
-    // 将非标准的 liteApi/fullApi 改为标准 flavor 依赖配置，避免任务依赖解析失败
-    liteImplementation  'org.xwalk:xwalk_shared_library:' + rootProject.ext.xwalkSharedLibraryVersion
-    fullImplementation  'org.xwalk:xwalk_core_library:'   + rootProject.ext.xwalkCoreLibraryVersion
+    // 仅启用 lite 口味的 Crosswalk，防止触发 full 口味任务
+    liteImplementation 'org.xwalk:xwalk_shared_library:' + rootProject.ext.xwalkSharedLibraryVersion
+    // 如需 full 再打开下面一行，并确保依赖可解析
+    // fullImplementation 'org.xwalk:xwalk_core_library:' + rootProject.ext.xwalkCoreLibraryVersion
 }
