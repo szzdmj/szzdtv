@@ -15,4 +15,10 @@ android {
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
+
+    // Internal modules
+    implementation     project(':sharedutils')
+    implementation     project(':common')
+    implementation     project(':browser')
+    implementation     project(':exoplayeractivity')
 }
