@@ -71,7 +71,6 @@ jobs:
           distribution: temurin
           java-version: '8'
 
-        # 可选：诊断输出，确保顶层常量与模块脚本生效
       - name: Diagnose Gradle project & constants
         shell: bash
         run: |
