@@ -106,3 +106,4 @@ jobs:
         with:
           name: szzdtv-release-apk
           path: smartyoutubetv/build/outputs/apk/orig/*.apk
+
