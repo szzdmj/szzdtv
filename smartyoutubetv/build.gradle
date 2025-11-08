@@ -48,7 +48,6 @@ android {
         Vbolshoetv2 {
             matchingFallbacks = ['full']
             versionCode 9400 + defaultConfig.versionCode
-            ndk { abiFilters "armeabi-v7a" }
         }
         Vrtarmenia2 {
             matchingFallbacks = ['lite']
