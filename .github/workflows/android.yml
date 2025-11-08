@@ -65,26 +65,26 @@ jobs:
           echo "index.html head:"
           sed -n '1,40p' "${A}/index.html" || true
 
-      - name: Set up JDK 17 (for Gradle/AGP 3.5.0)
+      - name: Set up JDK 11 (for Gradle/AGP 3.5.0)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '11'
 
       - name: List projects
-        uses: gradle/gradle-build-action@v3
+        uses: gradle/gradle-build-action@v2
         with:
           gradle-version: 5.6.4
           arguments: projects --no-daemon --info
 
       - name: List tasks in :smartyoutubetv
-        uses: gradle/gradle-build-action@v3
+        uses: gradle/gradle-build-action@v2
         with:
           gradle-version: 5.6.4
           arguments: :smartyoutubetv:tasks --all --no-daemon --info
 
       - name: Build Debug (:smartyoutubetv orig flavor)
-        uses: gradle/gradle-build-action@v3
+        uses: gradle/gradle-build-action@v2
         with:
           gradle-version: 5.6.4
           arguments: :smartyoutubetv:assembleOrigDebug --stacktrace --info --no-daemon
@@ -96,7 +96,7 @@ jobs:
           path: smartyoutubetv/build/outputs/apk/orig/*.apk
 
       - name: Build Release (:smartyoutubetv orig flavor)
-        uses: gradle/gradle-build-action@v3
+        uses: gradle/gradle-build-action@v2
         with:
           gradle-version: 5.6.4
           arguments: :smartyoutubetv:assembleOrigRelease --stacktrace --info --no-daemon
