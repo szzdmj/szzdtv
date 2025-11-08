@@ -1,98 +1,140 @@
-// Top-level build file where you can add configuration options common to all sub-projects/modules.
-println "DIAG(app flavors): orig? beta? kids? Vlive? Vbolshoetv?"
-buildscript {
-    repositories {
-        jcenter()
+apply plugin: 'com.android.application'
 
-        maven {
-            url 'https://maven.google.com/'
-            name 'Google'
+println "DIAG(app flavors restored): orig beta kids Vlive Vbolshoetv Vbolshoetv2 Vrtarmenia2 Vredboxtv"
+
+android {
+    // Java 8 for default interface methods
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    compileSdkVersion rootProject.ext.compileSdkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+    testOptions.unitTests.includeAndroidResources = true
+
+    defaultConfig {
+        minSdkVersion     rootProject.ext.minSdkVersion
+        targetSdkVersion  rootProject.ext.targetSdkVersion
+        applicationId "com.liskovsoft.videomanager"
+        versionCode 1319
+        versionName "6.17.739"
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        buildConfigField "long", "TIMESTAMP", System.currentTimeMillis() + "L"
+        multiDexEnabled true
+    }
+
+    buildTypes {
+        debug {
+            buildConfigField "boolean", "CRASHLYTICS_ENABLED", "false"
         }
-        google()
+        release {
+            buildConfigField "boolean", "CRASHLYTICS_ENABLED", "false"
+            debuggable false
+            minifyEnabled false
+            shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
     }
 
-    dependencies {
-        classpath 'com.android.tools.build:gradle:3.5.0'
-        // NOTE: Do not place your application dependencies here; they belong
-        // in the individual module build.gradle files
+    flavorDimensions "default"
+    productFlavors {
+        orig       { matchingFallbacks = ['lite'] }
+        beta       { matchingFallbacks = ['lite']; applicationIdSuffix ".beta" }
+        kids       { matchingFallbacks = ['kids','lite']; applicationIdSuffix ".kids" }
+        Vlive      { matchingFallbacks = ['lite']; applicationIdSuffix ".live" }
+        Vbolshoetv { matchingFallbacks = ['lite']; versionCode 9400 + defaultConfig.versionCode }
+        Vbolshoetv2 {
+            matchingFallbacks = ['full']
+            versionCode 9400 + defaultConfig.versionCode
+            ndk { abiFilters "armeabi-v7a", "" }
+        }
+        Vrtarmenia2 {
+            matchingFallbacks = ['lite']
+            versionCode 9400 + defaultConfig.versionCode
+            applicationId "com.google.android.youtube.tv"
+        }
+        Vredboxtv {
+            matchingFallbacks = ['lite']
+            versionCode 9400 + defaultConfig.versionCode
+            applicationId "com.redboxtv.smartyoutubetv"
+        }
     }
 
-    // Common android config
-    ext {
-        compileSdkVersion = 28
-        buildToolsVersion = "28.0.3"
-        minSdkVersion = 14
-        targetSdkVersion = 26
+    // Custom APK naming
+    applicationVariants.all { variant ->
+        variant.outputs.each { output ->
+            def projectName = "SYTV"
+            def flavorName  = variant.flavorName.capitalize()
+            def buildType   = variant.buildType.name.take(1)
+            def version     = variant.versionName
+            def newApkName  = "${projectName}_${flavorName}_v${version}_${buildType}.apk"
+            output.outputFileName = new File(newApkName)
+        }
+    }
+
+    lintOptions {
+        abortOnError true
+        lintConfig rootProject.file('lint.xml')
+    }
+
+    // Source sets routing for shared code
+    sourceSets {
+        def commonDirs        = ['src/commonSrc/appWatcher/java', 'src/commonSrc/crashHandler/java']
+        def bolshoetvCommon   = ['src/commonSrc/Vbolshoetv/java']
+        orig         { java.srcDirs('src/commonSrc/crashHandler/java') }
+        beta         { java.srcDirs('src/commonSrc/crashHandler/java') }
+        kids         { java.srcDirs = commonDirs }
+        Vlive        { java.srcDirs = commonDirs }
+        Vrtarmenia2  { java.srcDirs = commonDirs }
+        Vredboxtv    { java.srcDirs = commonDirs }
+        Vbolshoetv   { java.srcDirs = bolshoetvCommon }
+        Vbolshoetv2  { java.srcDirs = bolshoetvCommon }
     }
 }
 
-// Centralized dependency versions (all modules read from rootProject.ext)
-ext {
-    // AndroidX / Support
-    appCompatXLibraryVersion = '1.1.0'
-    materialLibraryVersion   = '1.1.0'
-    multiDexVersion          = '1.0.3'          // some legacy modules still use com.android.support:multidex
-
-    // Test
-    junitVersion        = '4.12'
-    espressoCoreVersion = '3.0.2'
-    robolectricVersion  = '4.3.1'
-    assertJVersion      = '3.12.2'
-    commonsIOVersion    = '2.6'
-
-    // Network / Util
-    okhttpVersion       = '3.12.13'             // wide compatibility for old APIs
-    ottoVersion         = '1.3.8'
-    dnsjavaVersion      = '3.5.2'
-    gsonVersion         = '2.8.9'
-    diskLruCacheVersion = '2.0.2'
-    apacheCommonsLangVersion = '3.9'
-    jsonPathVersion     = '2.4.0'
-
-    // Crosswalk
-    xwalkSharedLibraryVersion = '23.53.589.4'
-    xwalkCoreLibraryVersion   = '23.53.589.4'
-
-    // Other libs used in app module
-    nanoHttpdVersion         = '2.3.1'
-    voiceOverlayVersion      = '1.0.0'
-    constraintLayoutXVersion = '1.1.3'
-    firebaseCrashlyticsVersion = '17.0.0'       // used only for betaImplementation, can be adjusted
-}
-
-allprojects {
-    repositories {
-        // browse: https://bintray.com/bintray/jcenter
-        jcenter()
-        google()
-
-        // com.android.support libs, constraint lib
-        maven {
-            url 'https://maven.google.com/'
-            name 'Google'
-        }
-
-        // crosswalk
-        maven {
-            url 'https://download.01.org/crosswalk/releases/crosswalk/android/maven2'
-        }
-
-        // add lib from github (e.g. exoplayer-amazon-port)
-        // should be the last in the list
-        maven { url 'https://jitpack.io' }
-
-        // *.aar custom libs
-        //flatDir { dirs 'libs' }
+dependencies {
+    // Tests
+    androidTestImplementation('com.android.support.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion) {
+        exclude group: 'com.android.support', module: 'support-annotations'
     }
+    testImplementation 'junit:junit:'              + rootProject.ext.junitVersion
+    testImplementation 'org.assertj:assertj-core:' + rootProject.ext.assertJVersion
+    testImplementation 'org.robolectric:robolectric:' + rootProject.ext.robolectricVersion
+    testImplementation 'commons-io:commons-io:'    + rootProject.ext.commonsIOVersion
 
-    gradle.projectsEvaluated {
-        tasks.withType(JavaCompile) {
-            options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
-        }
-    }
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+
+    // Internal modules
+    testImplementation project(':sharedtests')
+    implementation     project(':sharedutils')
+    implementation     project(':common')
+    implementation     project(':browser')
+    implementation     project(':exoplayeractivity')
+    implementation     project(':appupdatechecker')
+
+    // UI / AndroidX
+    implementation 'androidx.appcompat:appcompat:'           + rootProject.ext.appCompatXLibraryVersion
+    implementation 'androidx.media:media:'                   + rootProject.ext.appCompatXLibraryVersion
+    implementation 'androidx.recyclerview:recyclerview:'     + rootProject.ext.appCompatXLibraryVersion
+    implementation 'androidx.constraintlayout:constraintlayout:' + rootProject.ext.constraintLayoutXVersion
+
+    // JSON / parsing
+    implementation 'com.google.code.gson:gson:'              + rootProject.ext.gsonVersion
+    implementation 'com.jayway.jsonpath:json-path:'          + rootProject.ext.jsonPathVersion
+
+    // Local HTTP / voice overlay
+    implementation 'org.nanohttpd:nanohttpd:'                + rootProject.ext.nanoHttpdVersion
+    implementation 'com.algolia.instantsearch:voice:'        + rootProject.ext.voiceOverlayVersion
+
+    // Network / event bus
+    implementation 'com.squareup.okhttp3:okhttp:'            + rootProject.ext.okhttpVersion
+    implementation 'com.squareup:otto:'                      + rootProject.ext.ottoVersion
+
+    // Disk cache & misc
+    implementation 'com.jakewharton:disklrucache:'           + rootProject.ext.diskLruCacheVersion
+    implementation 'org.apache.commons:commons-lang3:'       + rootProject.ext.apacheCommonsLangVersion
+
+    // Multidex (legacy support if needed)
+    implementation 'com.android.support:multidex:'           + rootProject.ext.multiDexVersion
 }
-
-task clean(type: Delete) {
-    delete rootProject.buildDir
-}
-
