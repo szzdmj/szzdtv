@@ -1,140 +1,141 @@
-apply plugin: 'com.android.application'
-
-println "DIAG(app flavors restored): orig beta kids Vlive Vbolshoetv Vbolshoetv2 Vrtarmenia2 Vredboxtv"
-
-android {
-    // Java 8 for default interface methods
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
-
-    compileSdkVersion rootProject.ext.compileSdkVersion
-    buildToolsVersion rootProject.ext.buildToolsVersion
-    testOptions.unitTests.includeAndroidResources = true
-
-    defaultConfig {
-        minSdkVersion     rootProject.ext.minSdkVersion
-        targetSdkVersion  rootProject.ext.targetSdkVersion
-        applicationId "com.liskovsoft.videomanager"
-        versionCode 1319
-        versionName "6.17.739"
-        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
-        buildConfigField "long", "TIMESTAMP", System.currentTimeMillis() + "L"
-        multiDexEnabled true
-    }
-
-    buildTypes {
-        debug {
-            buildConfigField "boolean", "CRASHLYTICS_ENABLED", "false"
-        }
-        release {
-            buildConfigField "boolean", "CRASHLYTICS_ENABLED", "false"
-            debuggable false
-            minifyEnabled false
-            shrinkResources false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
-    flavorDimensions "default"
-    productFlavors {
-        orig       { matchingFallbacks = ['lite'] }
-        beta       { matchingFallbacks = ['lite']; applicationIdSuffix ".beta" }
-        kids       { matchingFallbacks = ['kids','lite']; applicationIdSuffix ".kids" }
-        Vlive      { matchingFallbacks = ['lite']; applicationIdSuffix ".live" }
-        Vbolshoetv { matchingFallbacks = ['lite']; versionCode 9400 + defaultConfig.versionCode }
-        Vbolshoetv2 {
-            matchingFallbacks = ['full']
-            versionCode 9400 + defaultConfig.versionCode
-            ndk { abiFilters "armeabi-v7a", "" }
-        }
-        Vrtarmenia2 {
-            matchingFallbacks = ['lite']
-            versionCode 9400 + defaultConfig.versionCode
-            applicationId "com.google.android.youtube.tv"
-        }
-        Vredboxtv {
-            matchingFallbacks = ['lite']
-            versionCode 9400 + defaultConfig.versionCode
-            applicationId "com.redboxtv.smartyoutubetv"
-        }
-    }
-
-    // Custom APK naming
-    applicationVariants.all { variant ->
-        variant.outputs.each { output ->
-            def projectName = "SYTV"
-            def flavorName  = variant.flavorName.capitalize()
-            def buildType   = variant.buildType.name.take(1)
-            def version     = variant.versionName
-            def newApkName  = "${projectName}_${flavorName}_v${version}_${buildType}.apk"
-            output.outputFileName = new File(newApkName)
-        }
-    }
-
-    lintOptions {
-        abortOnError true
-        lintConfig rootProject.file('lint.xml')
-    }
-
-    // Source sets routing for shared code
-    sourceSets {
-        def commonDirs        = ['src/commonSrc/appWatcher/java', 'src/commonSrc/crashHandler/java']
-        def bolshoetvCommon   = ['src/commonSrc/Vbolshoetv/java']
-        orig         { java.srcDirs('src/commonSrc/crashHandler/java') }
-        beta         { java.srcDirs('src/commonSrc/crashHandler/java') }
-        kids         { java.srcDirs = commonDirs }
-        Vlive        { java.srcDirs = commonDirs }
-        Vrtarmenia2  { java.srcDirs = commonDirs }
-        Vredboxtv    { java.srcDirs = commonDirs }
-        Vbolshoetv   { java.srcDirs = bolshoetvCommon }
-        Vbolshoetv2  { java.srcDirs = bolshoetvCommon }
-    }
-}
-
-dependencies {
-    // Tests
-    androidTestImplementation('com.android.support.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion) {
-        exclude group: 'com.android.support', module: 'support-annotations'
-    }
-    testImplementation 'junit:junit:'              + rootProject.ext.junitVersion
-    testImplementation 'org.assertj:assertj-core:' + rootProject.ext.assertJVersion
-    testImplementation 'org.robolectric:robolectric:' + rootProject.ext.robolectricVersion
-    testImplementation 'commons-io:commons-io:'    + rootProject.ext.commonsIOVersion
-
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
-
-    // Internal modules
-    testImplementation project(':sharedtests')
-    implementation     project(':sharedutils')
-    implementation     project(':common')
-    implementation     project(':browser')
-    implementation     project(':exoplayeractivity')
-    implementation     project(':appupdatechecker')
-
-    // UI / AndroidX
-    implementation 'androidx.appcompat:appcompat:'           + rootProject.ext.appCompatXLibraryVersion
-    implementation 'androidx.media:media:'                   + rootProject.ext.appCompatXLibraryVersion
-    implementation 'androidx.recyclerview:recyclerview:'     + rootProject.ext.appCompatXLibraryVersion
-    implementation 'androidx.constraintlayout:constraintlayout:' + rootProject.ext.constraintLayoutXVersion
-
-    // JSON / parsing
-    implementation 'com.google.code.gson:gson:'              + rootProject.ext.gsonVersion
-    implementation 'com.jayway.jsonpath:json-path:'          + rootProject.ext.jsonPathVersion
-
-    // Local HTTP / voice overlay
-    implementation 'org.nanohttpd:nanohttpd:'                + rootProject.ext.nanoHttpdVersion
-    implementation 'com.algolia.instantsearch:voice:'        + rootProject.ext.voiceOverlayVersion
-
-    // Network / event bus
-    implementation 'com.squareup.okhttp3:okhttp:'            + rootProject.ext.okhttpVersion
-    implementation 'com.squareup:otto:'                      + rootProject.ext.ottoVersion
-
-    // Disk cache & misc
-    implementation 'com.jakewharton:disklrucache:'           + rootProject.ext.diskLruCacheVersion
-    implementation 'org.apache.commons:commons-lang3:'       + rootProject.ext.apacheCommonsLangVersion
-
-    // Multidex (legacy support if needed)
-    implementation 'com.android.support:multidex:'           + rootProject.ext.multiDexVersion
-}
+1| apply plugin: 'com.android.application'
+2| 
+3| println "DIAG(app flavors restored): orig beta kids Vlive Vbolshoetv Vbolshoetv2 Vrtarmenia2 Vredboxtv"
+4| 
+5| android {
+6|     // Java 8 for default interface methods
+7|     compileOptions {
+8|         sourceCompatibility JavaVersion.VERSION_1_8
+9|         targetCompatibility JavaVersion.VERSION_1_8
+10|     }
+11| 
+12|     compileSdkVersion rootProject.ext.compileSdkVersion
+13|     buildToolsVersion rootProject.ext.buildToolsVersion
+14|     testOptions.unitTests.includeAndroidResources = true
+15| 
+16|     defaultConfig {
+17|         minSdkVersion     rootProject.ext.minSdkVersion
+18|         targetSdkVersion  rootProject.ext.targetSdkVersion
+19|         applicationId "com.liskovsoft.videomanager"
+20|         versionCode 1319
+21|         versionName "6.17.739"
+22|         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+23|         buildConfigField "long", "TIMESTAMP", System.currentTimeMillis() + "L"
+24|         multiDexEnabled true
+25|     }
+26| 
+27|     buildTypes {
+28|         debug {
+29|             buildConfigField "boolean", "CRASHLYTICS_ENABLED", "false"
+30|         }
+31|         release {
+32|             buildConfigField "boolean", "CRASHLYTICS_ENABLED", "false"
+33|             debuggable false
+34|             minifyEnabled false
+35|             shrinkResources false
+36|             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+37|         }
+38|     }
+39| 
+40|     flavorDimensions "default"
+41|     productFlavors {
+42|         orig       { matchingFallbacks = ['lite'] }
+43|         beta       { matchingFallbacks = ['lite']; applicationIdSuffix ".beta" }
+44|         kids       { matchingFallbacks = ['kids','lite']; applicationIdSuffix ".kids" }
+45|         Vlive      { matchingFallbacks = ['lite']; applicationIdSuffix ".live" }
+46|         Vbolshoetv { matchingFallbacks = ['lite']; versionCode 9400 + defaultConfig.versionCode }
+47|         Vbolshoetv2 {
+48|             matchingFallbacks = ['full']
+49|             versionCode 9400 + defaultConfig.versionCode
+50|             ndk { abiFilters "armeabi-v7a" }
+51|         }
+52|         Vrtarmenia2 {
+53|             matchingFallbacks = ['lite']
+54|             versionCode 9400 + defaultConfig.versionCode
+55|             applicationId "com.google.android.youtube.tv"
+56|         }
+57|         Vredboxtv {
+58|             matchingFallbacks = ['lite']
+59|             versionCode 9400 + defaultConfig.versionCode
+60|             applicationId "com.redboxtv.smartyoutubetv"
+61|         }
+62|     }
+63| 
+64|     // Custom APK naming
+65|     applicationVariants.all { variant ->
+66|         variant.outputs.each { output ->
+67|             def projectName = "SYTV"
+68|             def flavorName  = variant.flavorName.capitalize()
+69|             def buildType   = variant.buildType.name.take(1)
+70|             def version     = variant.versionName
+71|             def newApkName  = "${projectName}_${flavorName}_v${version}_${buildType}.apk"
+72|             output.outputFileName = new File(newApkName)
+73|         }
+74|     }
+75| 
+76|     lintOptions {
+77|         abortOnError true
+78|         lintConfig rootProject.file('lint.xml')
+79|     }
+80| 
+81|     // Source sets routing for shared code
+82|     sourceSets {
+83|         def commonDirs        = ['src/commonSrc/appWatcher/java', 'src/commonSrc/crashHandler/java']
+84|         def bolshoetvCommon   = ['src/commonSrc/Vbolshoetv/java']
+85|         orig         { java.srcDirs('src/commonSrc/crashHandler/java') }
+86|         beta         { java.srcDirs('src/commonSrc/crashHandler/java') }
+87|         kids         { java.srcDirs = commonDirs }
+88|         Vlive        { java.srcDirs = commonDirs }
+89|         Vrtarmenia2  { java.srcDirs = commonDirs }
+90|         Vredboxtv    { java.srcDirs = commonDirs }
+91|         Vbolshoetv   { java.srcDirs = bolshoetvCommon }
+92|         Vbolshoetv2  { java.srcDirs = bolshoetvCommon }
+93|     }
+94| }
+95| 
+96| dependencies {
+97|     // Tests
+98|     androidTestImplementation('com.android.support.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion) {
+99|         exclude group: 'com.android.support', module: 'support-annotations'
+100|     }
+101|     testImplementation 'junit:junit:'              + rootProject.ext.junitVersion
+102|     testImplementation 'org.assertj:assertj-core:' + rootProject.ext.assertJVersion
+103|     testImplementation 'org.robolectric:robolectric:' + rootProject.ext.robolectricVersion
+104|     testImplementation 'commons-io:commons-io:'    + rootProject.ext.commonsIOVersion
+105| 
+106|     implementation fileTree(dir: 'libs', include: ['*.jar'])
+107| 
+108|     // Internal modules
+109|     testImplementation project(':sharedtests')
+110|     implementation     project(':sharedutils')
+111|     implementation     project(':common')
+112|     implementation     project(':browser')
+113|     implementation     project(':exoplayeractivity')
+114|     implementation     project(':appupdatechecker')
+115| 
+116|     // UI / AndroidX
+117|     implementation 'androidx.appcompat:appcompat:'           + rootProject.ext.appCompatXLibraryVersion
+118|     implementation 'androidx.media:media:'                   + rootProject.ext.appCompatXLibraryVersion
+119|     implementation 'androidx.recyclerview:recyclerview:'     + rootProject.ext.appCompatXLibraryVersion
+120|     implementation 'androidx.constraintlayout:constraintlayout:' + rootProject.ext.constraintLayoutXVersion
+121| 
+122|     // JSON / parsing
+123|     implementation 'com.google.code.gson:gson:'              + rootProject.ext.gsonVersion
+124|     implementation 'com.jayway.jsonpath:json-path:'          + rootProject.ext.jsonPathVersion
+125| 
+126|     // Local HTTP / voice overlay
+127|     implementation 'org.nanohttpd:nanohttpd:'                + rootProject.ext.nanoHttpdVersion
+128|     implementation 'com.algolia.instantsearch:voice:'        + rootProject.ext.voiceOverlayVersion
+129| 
+130|     // Network / event bus
+131|     implementation 'com.squareup.okhttp3:okhttp:'            + rootProject.ext.okhttpVersion
+132|     implementation 'com.squareup:otto:'                      + rootProject.ext.ottoVersion
+133| 
+134|     // Disk cache & misc
+135|     implementation 'com.jakewharton:disklrucache:'           + rootProject.ext.diskLruCacheVersion
+136|     implementation 'org.apache.commons:commons-lang3:'       + rootProject.ext.apacheCommonsLangVersion
+137| 
+138|     // Multidex (legacy support if needed)
+139|     implementation 'com.android.support:multidex:'           + rootProject.ext.multiDexVersion
+140| }
+141| 
