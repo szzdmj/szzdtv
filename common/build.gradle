@@ -1,4 +1,4 @@
-apply from: rootProject.ext.sharedModulesConstants
+// 移除旧的 apply from 行
 apply plugin: 'com.android.library'
 
 android {
