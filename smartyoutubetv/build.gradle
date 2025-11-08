@@ -17,7 +17,7 @@ dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
 
     // Internal modules
-    implementation     project(':sharedutils')
+    // implementation     project(':sharedutils') // Temporarily removed to test compilation
     implementation     project(':common')
     implementation     project(':browser')
     // implementation     project(':exoplayeractivity') // Temporarily removed to test compilation
