@@ -1,4 +1,3 @@
-apply from: gradle.ext.sharedModulesConstants
 buildscript {
     repositories {
         jcenter()
@@ -6,26 +5,16 @@ buildscript {
     }
 
     dependencies {
-        // These docs use an open ended version so that our plugin
-        // can be updated quickly in response to Android tooling updates
-
-        // Check that you have the Google Services Gradle plugin v4.3.2 or later
-        // (if not, add it).
+        // Google Services / Crashlytics plugins (commented by default below)
         classpath 'com.google.gms:google-services:4.3.3'
-
-        // Add the Crashlytics Gradle plugin.
-        // https://firebase.google.com/docs/crashlytics/get-started?platform=android
-        // https://firebase.google.com/docs/android/setup
         classpath 'com.google.firebase:firebase-crashlytics-gradle:2.1.1'
     }
 }
 
 apply plugin: 'com.android.application'
 
-// // Google Services Gradle plugin (transforms google-services.json file)
+// // Apply Google Services & Crashlytics if needed
 // apply plugin: 'com.google.gms.google-services'
-//
-// // Apply the Crashlytics Gradle plugin
 // apply plugin: 'com.google.firebase.crashlytics'
 
 android {
@@ -52,15 +41,6 @@ android {
         multiDexEnabled = true
     }
 
-    //signingConfigs {
-    //    release {
-    //        storeFile file("../android-upd2.keystore")
-    //        storePassword project.KEYSTORE_PASSWORD
-    //        keyAlias 'private'
-    //        keyPassword project.KEYSTORE_PASSWORD
-    //    }
-    //}
-
     buildTypes {
         // NOTE: to enable Crashlytics add fabric.properties file with your api keys
         Boolean crashEnabled = file('fabric.properties').exists()
@@ -78,19 +58,15 @@ android {
             minifyEnabled false
             shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-
             //signingConfig signingConfigs.release
         }
     }
 
     // gradle 4.6 migration: disable dimensions mechanism
-    // more: https://proandroiddev.com/advanced-android-flavors-part-4-a-new-version-fc2ad80c01bb
     flavorDimensions "default"
 
     productFlavors {
-        orig {
-            matchingFallbacks = ['lite']
-        }
+        orig { matchingFallbacks = ['lite'] }
         beta {
             matchingFallbacks = ['lite']
             applicationIdSuffix ".beta"
@@ -103,39 +79,20 @@ android {
             matchingFallbacks = ['lite']
             applicationIdSuffix ".live"
         }
-        // Vadnotam {
-        //    matchingFallbacks = ['lite']
-        //    applicationId "com.adnotam.smartyoutubetv"
-        // }
         Vbolshoetv {
-           // Eltex NV-501
-           // vermax uhd250x/300x 1GB ram
-           matchingFallbacks = ['lite']
-           versionCode 9400 + defaultConfig.versionCode
+            matchingFallbacks = ['lite']
+            versionCode 9400 + defaultConfig.versionCode
         }
         Vbolshoetv2 {
-            // Eltex NV-501
             matchingFallbacks = ['full']
             versionCode 9400 + defaultConfig.versionCode
-            ndk {
-                abiFilters "armeabi-v7a", ""
-            }
+            ndk { abiFilters "armeabi-v7a", "" }
         }
-        // Vrtarmenia {
-        //     matchingFallbacks = ['lite']
-        //     versionCode 9400 + defaultConfig.versionCode
-        //     applicationId "com.rtarmenia.smartyoutubetv"
-        // }
         Vrtarmenia2 {
             matchingFallbacks = ['lite']
             versionCode 9400 + defaultConfig.versionCode
             applicationId "com.google.android.youtube.tv"
         }
-        // Vunoiptv {
-        //     matchingFallbacks = ['lite']
-        //     versionCode 9400 + defaultConfig.versionCode
-        //     applicationId "com.unoiptv.smartyoutubetv"
-        // }
         Vredboxtv {
             matchingFallbacks = ['lite']
             versionCode 9400 + defaultConfig.versionCode
@@ -143,18 +100,15 @@ android {
         }
     }
 
-    // naming example: SmartYouTubeTV_Xwalk_v6.8.12_r.apk
-    // https://stackoverflow.com/questions/18332474/how-to-set-versionname-in-apk-filename-using-gradle
+    // naming example: SYTV_Flavor_v6.8.12_r.apk
     applicationVariants.all { variant ->
         variant.outputs.each { output ->
-            def project = "SYTV"
+            def projectName = "SYTV"
             def flavor = variant.productFlavors[-1].name.capitalize()
             def buildType = variant.variantData.variantConfiguration.buildType.name.take(1)
             def version = variant.versionName
 
-            def newApkName = sprintf("%s_%s_v%s_%s.apk", [project, flavor, version, buildType])
-
-            // gradle 4.6 migration
+            def newApkName = sprintf("%s_%s_v%s_%s.apk", [projectName, flavor, version, buildType])
             output.outputFileName = new File(newApkName)
         }
     }
@@ -164,53 +118,29 @@ android {
         lintConfig rootProject.file('lint.xml')
     }
 
-    // FIX: Product Flavor: Duplicate class found.
-    // Create common folder for duplicate classes.
-    // More info: https://stackoverflow.com/questions/37439120/product-flavor-duplicate-class-found
+    // FIX: Product Flavor duplicate classes — route common sources
     sourceSets {
         def commonDirs = ['src/commonSrc/appWatcher/java', 'src/commonSrc/crashHandler/java']
         def bolshoetvCommonDirs = ['src/commonSrc/Vbolshoetv/java']
-        orig {
-            java.srcDirs('src/commonSrc/crashHandler/java')
-        }
-        beta {
-            java.srcDirs('src/commonSrc/crashHandler/java')
-        }
-        kids {
-            java.srcDirs = commonDirs
-        }
-        Vlive {
-            java.srcDirs = commonDirs
-        }
-        // Vrtarmenia {
-        //     java.srcDirs = commonDirs
-        // }
-        Vrtarmenia2 {
-            java.srcDirs = commonDirs
-        }
-        // Vunoiptv {
-        //     java.srcDirs = commonDirs
-        // }
-        Vredboxtv {
-            java.srcDirs = commonDirs
-        }
-        Vbolshoetv {
-            java.srcDirs = bolshoetvCommonDirs
-        }
-        Vbolshoetv2 {
-            java.srcDirs = bolshoetvCommonDirs
-        }
+        orig { java.srcDirs('src/commonSrc/crashHandler/java') }
+        beta { java.srcDirs('src/commonSrc/crashHandler/java') }
+        kids { java.srcDirs = commonDirs }
+        Vlive { java.srcDirs = commonDirs }
+        Vrtarmenia2 { java.srcDirs = commonDirs }
+        Vredboxtv { java.srcDirs = commonDirs }
+        Vbolshoetv { java.srcDirs = bolshoetvCommonDirs }
+        Vbolshoetv2 { java.srcDirs = bolshoetvCommonDirs }
     }
 }
 
 dependencies {
-    androidTestImplementation('com.android.support.test.espresso:espresso-core:' + espressoCoreVersion, {
+    androidTestImplementation('com.android.support.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion) {
         exclude group: 'com.android.support', module: 'support-annotations'
-    })
-    testImplementation 'junit:junit:' + junitVersion
-    testImplementation 'org.assertj:assertj-core:' + assertJVersion
-    testImplementation 'org.robolectric:robolectric:' + robolectricVersion
-    testImplementation 'commons-io:commons-io:' + commonsIOVersion
+    }
+    testImplementation 'junit:junit:' + rootProject.ext.junitVersion
+    testImplementation 'org.assertj:assertj-core:' + rootProject.ext.assertJVersion
+    testImplementation 'org.robolectric:robolectric:' + rootProject.ext.robolectricVersion
+    testImplementation 'commons-io:commons-io:' + rootProject.ext.commonsIOVersion
 
     implementation fileTree(dir: 'libs', include: ['*.jar'])
 
@@ -218,40 +148,31 @@ dependencies {
     testImplementation project(path: ':sharedtests')
     implementation project(path: ':sharedutils')
 
-    // ATV INSTALL_FAILED_CONFLICTING_PROVIDER fix
-    // origImplementation project(path: ':leanbackassistant')
-    // betaImplementation project(path: ':leanbackassistant')
-    // experimentsImplementation project(path: ':leanbackassistant')
-
     implementation project(path: ':common')
-
     implementation project(path: ':browser')
-
     implementation project(path: ':exoplayeractivity')
-
     implementation project(path: ':appupdatechecker')
 
-    // Add the Firebase Crashlytics SDK.
-    betaImplementation('com.google.firebase:firebase-crashlytics:' + firebaseCrashlyticsVersion) {
+    // Firebase Crashlytics SDK (only for beta flavor if enabled)
+    betaImplementation('com.google.firebase:firebase-crashlytics:' + rootProject.ext.firebaseCrashlyticsVersion) {
         transitive = true
     }
 
-    implementation 'androidx.appcompat:appcompat:' + appCompatXLibraryVersion
-    implementation 'androidx.media:media:' + appCompatXLibraryVersion // exoplayer fix
-    implementation 'androidx.recyclerview:recyclerview:' + appCompatXLibraryVersion // exoplayer fix
-    implementation 'androidx.constraintlayout:constraintlayout:' + constraintLayoutXVersion
+    implementation 'androidx.appcompat:appcompat:' + rootProject.ext.appCompatXLibraryVersion
+    implementation 'androidx.media:media:' + rootProject.ext.appCompatXLibraryVersion       // exoplayer fix
+    implementation 'androidx.recyclerview:recyclerview:' + rootProject.ext.appCompatXLibraryVersion // exoplayer fix
+    implementation 'androidx.constraintlayout:constraintlayout:' + rootProject.ext.constraintLayoutXVersion
 
-    implementation 'com.google.code.gson:gson:' + gsonVersion
-    implementation 'com.jayway.jsonpath:json-path:' + jsonPathVersion
+    implementation 'com.google.code.gson:gson:' + rootProject.ext.gsonVersion
+    implementation 'com.jayway.jsonpath:json-path:' + rootProject.ext.jsonPathVersion
 
-    implementation 'org.nanohttpd:nanohttpd:' + nanoHttpdVersion
-    implementation 'com.algolia.instantsearch:voice:' + voiceOverlayVersion
+    implementation 'org.nanohttpd:nanohttpd:' + rootProject.ext.nanoHttpdVersion
+    implementation 'com.algolia.instantsearch:voice:' + rootProject.ext.voiceOverlayVersion
 
-    implementation 'com.squareup.okhttp3:okhttp:' + okhttpVersion
-    implementation 'com.squareup:otto:' + ottoVersion
+    implementation 'com.squareup.okhttp3:okhttp:' + rootProject.ext.okhttpVersion
+    implementation 'com.squareup:otto:' + rootProject.ext.ottoVersion
 
-    implementation 'com.jakewharton:disklrucache:' + diskLruCacheVersion
+    implementation 'com.jakewharton:disklrucache:' + rootProject.ext.diskLruCacheVersion
 
-    // https://mvnrepository.com/artifact/org.apache.commons
-    implementation 'org.apache.commons:commons-lang3:' + apacheCommonsLangVersion
+    implementation 'org.apache.commons:commons-lang3:' + rootProject.ext.apacheCommonsLangVersion
 }
