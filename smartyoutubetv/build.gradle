@@ -19,7 +19,7 @@ android {
         applicationId "com.liskovsoft.videomanager"
         versionCode 1319
         versionName "6.17.739"
-        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         multiDexEnabled true
     }
 
@@ -69,9 +69,7 @@ android {
 
 dependencies {
     // Tests
-    androidTestImplementation('com.android.support.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion) {
-        exclude group: 'com.android.support', module: 'support-annotations'
-    }
+    androidTestImplementation('androidx.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion)
     testImplementation 'junit:junit:'              + rootProject.ext.junitVersion
     testImplementation 'org.assertj:assertj-core:' + rootProject.ext.assertJVersion
     testImplementation 'org.robolectric:robolectric:' + rootProject.ext.robolectricVersion
@@ -108,5 +106,5 @@ dependencies {
     implementation 'org.apache.commons:commons-lang3:'       + rootProject.ext.apacheCommonsLangVersion
 
     // Multidex (legacy support if needed)
-    implementation 'com.android.support:multidex:'           + rootProject.ext.multiDexVersion
+    implementation 'androidx.multidex:multidex:'           + rootProject.ext.multiDexVersion
 }
