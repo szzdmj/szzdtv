@@ -1,0 +1,142 @@
+name: Android CI - android-asset-webshell (local index.html + remote webjs/sw, no id-shim)
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Base URL to fetch webjs.js and sw.js'
+        required: false
+        default: 'https://szzdmj.github.io/'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 1) 用 JDK 17 跑 sdkmanager（cmdline-tools/latest 需 classfile 61）
+      - name: Set up JDK 17 (for sdkmanager)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Verify Java runtime for sdkmanager (expect 17)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "JAVA_HOME=${JAVA_HOME}"
+          java -version
+
+      - name: Sanity check project tree
+        shell: bash
+        run: |
+          echo "== repo root =="
+          ls -la
+          echo "== expect android-asset-webshell/ structure =="
+          ls -la android-asset-webshell || { echo "ERROR: android-asset-webshell/ not found"; exit 1; }
+
+      - name: Configure Android SDK and local.properties (with JDK 17)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT_DEFAULT="/usr/local/lib/android/sdk"
+          echo "Using ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT_DEFAULT}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT_DEFAULT}" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=${ANDROID_SDK_ROOT_DEFAULT}" >> "$GITHUB_ENV"
+
+          export JAVA_HOME="${JAVA_HOME_17_X64:-$JAVA_HOME}"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          echo "[sdkmanager] java -version:"
+            java -version
+
+          LP="android-asset-webshell/local.properties"
+          { echo "sdk.dir=${ANDROID_SDK_ROOT_DEFAULT}"; } > "${LP}"
+          echo "==== local.properties ===="
+          cat "${LP}"
+
+          yes | "${ANDROID_SDK_ROOT_DEFAULT}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          "${ANDROID_SDK_ROOT_DEFAULT}/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" "build-tools;34.0.0" "platforms;android-34"
+
+      - name: Prepare assets — use local index.html; download webjs.js & sw.js (no id-shim)
+        env:
+          BASE_URL: ${{ github.event.inputs.base_url || 'https://szzdmj.github.io/' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="android-asset-webshell/app/src/main/assets"
+          mkdir -p "$A"
+
+          echo "Verifying required local files:"
+          test -f "$A/index.html" || { echo "ERROR: $A/index.html missing"; exit 1; }
+
+          echo "Using local index.html (first lines):"
+          sed -n '1,40p' "$A/index.html" || true
+
+          echo "Downloading assets from BASE_URL=${BASE_URL}"
+          for f in webjs.js sw.js; do
+            url="${BASE_URL%/}/${f}"
+            dest="${A}/${f}"
+            echo "Fetching ${url} -> ${dest}"
+            curl -fsSL --retry 3 --connect-timeout 10 -o "${dest}" "${url}"
+          done
+
+          echo "Assets present:"
+          ls -l "$A"
+
+      # 2) 切回 JDK 11（AGP 7.4.2 + Gradle 7.6.1 在 JDK 11 构建）
+      - name: Set up JDK 11 (for Gradle/AGP 7.4.2)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
+      - name: Verify Java runtime for Gradle (expect 11)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "JAVA_HOME=${JAVA_HOME}"
+          java -version
+
+      - name: Print Gradle files
+        shell: bash
+        run: |
+          echo "==== android-asset-webshell/settings.gradle ===="
+          sed -n '1,200p' android-asset-webshell/settings.gradle || true
+          echo "==== android-asset-webshell/build.gradle ===="
+          sed -n '1,200p' android-asset-webshell/build.gradle || true
+          echo "==== android-asset-webshell/app/build.gradle ===="
+          sed -n '1,300p' android-asset-webshell/app/build.gradle || true
+
+      - name: Gradle config-only (help) with full stacktrace
+        uses: gradle/gradle-build-action@v3
+        continue-on-error: true
+        with:
+          build-root-directory: android-asset-webshell
+          gradle-version: 7.6.1
+          arguments: help --stacktrace --warning-mode all --info --no-daemon
+
+      - name: Build Debug
+        uses: gradle/gradle-build-action@v3
+        with:
+          build-root-directory: android-asset-webshell
+          gradle-version: 7.6.1
+          arguments: assembleDebug --stacktrace --warning-mode all --info --no-daemon
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk
+          path: android-asset-webshell/app/build/outputs/apk/debug/*.apk
+
+      - name: Build Release
+        uses: gradle/gradle-build-action@v4
+        with:
+          name: release-apk
+          path: android-asset-webshell/app/build/outputs/apk/release/*.apk
