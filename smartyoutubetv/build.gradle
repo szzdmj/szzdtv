@@ -108,12 +108,10 @@ dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
 
     // Internal modules
-    testImplementation project(':sharedtests')
     implementation     project(':sharedutils')
     implementation     project(':common')
     implementation     project(':browser')
     implementation     project(':exoplayeractivity')
-    implementation     project(':appupdatechecker')
 
     // UI / AndroidX
     implementation 'androidx.appcompat:appcompat:'           + rootProject.ext.appCompatXLibraryVersion
