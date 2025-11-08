@@ -36,31 +36,6 @@ android {
         }
     }
 
-    flavorDimensions "default"
-    productFlavors {
-        lite { }
-        full { }
-        orig       { matchingFallbacks = ['lite'] }
-        beta       { matchingFallbacks = ['lite']; applicationIdSuffix ".beta" }
-        kids       { matchingFallbacks = ['kids','lite']; applicationIdSuffix ".kids" }
-        Vlive      { matchingFallbacks = ['lite']; applicationIdSuffix ".live" }
-        Vbolshoetv { matchingFallbacks = ['lite']; versionCode 9400 + defaultConfig.versionCode }
-        Vbolshoetv2 {
-            matchingFallbacks = ['full']
-            versionCode 9400 + defaultConfig.versionCode
-        }
-        Vrtarmenia2 {
-            matchingFallbacks = ['lite']
-            versionCode 9400 + defaultConfig.versionCode
-            applicationId "com.google.android.youtube.tv"
-        }
-        Vredboxtv {
-            matchingFallbacks = ['lite']
-            versionCode 9400 + defaultConfig.versionCode
-            applicationId "com.redboxtv.smartyoutubetv"
-        }
-    }
-
     lintOptions {
         abortOnError false
     }
