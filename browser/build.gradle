@@ -1,13 +1,10 @@
-// ref: 0104a6115380c2e97a6b272d928a0256c03edd57
+// ref: 8fe413498b90cfb6116536ff797e941564600f0f
 // Top-level build file
 
 buildscript {
     repositories {
         jcenter()
-        maven {
-            url 'https://maven.google.com/'
-            name 'Google'
-        }
+        maven { url 'https://maven.google.com/'; name 'Google' }
         google()
     }
     dependencies {
@@ -21,12 +18,12 @@ buildscript {
     }
 }
 
-// 统一版本常量（原 constants.gradle 内容搬运至此）
+// 全部版本常量集中于此，子模块直接引用
 ext {
     // AndroidX / Support
     appCompatXLibraryVersion = '1.1.0'
     materialLibraryVersion   = '1.1.0'
-    multiDexVersion          = '1.0.3'          // 仍有 legacy 使用 com.android.support:multidex
+    multiDexVersion          = '1.0.3'
 
     // Test
     junitVersion        = '4.12'
@@ -49,10 +46,7 @@ allprojects {
     repositories {
         jcenter()
         google()
-        maven {
-            url 'https://maven.google.com/'
-            name 'Google'
-        }
+        maven { url 'https://maven.google.com/'; name 'Google' }
         maven { url 'https://download.01.org/crosswalk/releases/crosswalk/android/maven2' }
         maven { url 'https://jitpack.io' }
     }
@@ -64,6 +58,4 @@ allprojects {
     }
 }
 
-task clean(type: Delete) {
-    delete rootProject.buildDir
-}
+task clean(type: Delete) { delete rootProject.buildDir }
