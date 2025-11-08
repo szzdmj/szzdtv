@@ -67,13 +67,6 @@ android {
 }
 
 dependencies {
-    // Tests
-    androidTestImplementation('androidx.test.espresso:espresso-core:3.2.0')
-    testImplementation 'junit:junit:'              + rootProject.ext.junitVersion
-    testImplementation 'org.assertj:assertj-core:' + rootProject.ext.assertJVersion
-    testImplementation 'org.robolectric:robolectric:' + rootProject.ext.robolectricVersion
-    testImplementation 'commons-io:commons-io:'    + rootProject.ext.commonsIOVersion
-
     implementation fileTree(dir: 'libs', include: ['*.jar'])
 
     // Internal modules
