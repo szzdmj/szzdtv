@@ -1,19 +1,29 @@
-// 顶层模块声明（仅包含仓库里实际存在的模块）
+// 顶层模块声明（仅包含仓库中实际存在的模块）
 include ':smartyoutubetv', ':browser', ':exoplayeractivity', ':appupdatechecker', ':common'
 
 def rootDir = settingsDir
 
-// SharedModules 子模块位置与引入
+// SharedModules 子模块（存在则引入）
 gradle.ext.sharedModulesRoot = new File(rootDir, '../SharedModules').exists() ?
         new File(rootDir, '../SharedModules') :
         new File(rootDir, './SharedModules')
-apply from: new File(gradle.ext.sharedModulesRoot, 'core_settings.gradle')
+def sharedCore = new File(gradle.ext.sharedModulesRoot, 'core_settings.gradle')
+if (sharedCore.exists()) {
+    apply from: sharedCore
+} else {
+    println "WARN: SharedModules not found at ${sharedCore}. Skipping."
+}
 
-// 共享常量（供 modules 的 build.gradle apply from 使用）
+// 共享常量（供各 module 的 build.gradle 使用）
 gradle.ext.sharedModulesConstants = new File(gradle.ext.sharedModulesRoot, 'constants.gradle')
 
-// MediaServiceCore 子模块位置与引入
+// MediaServiceCore 子模块（存在则引入）
 gradle.ext.mediaServiceCoreRoot = new File(rootDir, '../MediaServiceCore').exists() ?
         new File(rootDir, '../MediaServiceCore') :
         new File(rootDir, './MediaServiceCore')
-apply from: new File(gradle.ext.mediaServiceCoreRoot, 'core_settings.gradle')
+def mediaCore = new File(gradle.ext.mediaServiceCoreRoot, 'core_settings.gradle')
+if (mediaCore.exists()) {
+    apply from: mediaCore
+} else {
+    println "WARN: MediaServiceCore not found at ${mediaCore}. Skipping."
+}
