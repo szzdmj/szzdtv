@@ -1,16 +1,7 @@
-// DIAGNOSTIC VERSION for ref=a242c643d7d9d7ddd15e5d8afa3926dc78324c92
-println "DIAG(browser): espressoCoreVersion=" + (rootProject.ext.has('espressoCoreVersion') ? rootProject.ext.espressoCoreVersion : 'MISSING')
-println "DIAG(browser): junitVersion=" + (rootProject.ext.has('junitVersion') ? rootProject.ext.junitVersion : 'MISSING')
-println "DIAG(browser): appCompatXLibraryVersion=" + (rootProject.ext.has('appCompatXLibraryVersion') ? rootProject.ext.appCompatXLibraryVersion : 'MISSING')
-println "DIAG(browser): okhttpVersion=" + (rootProject.ext.has('okhttpVersion') ? rootProject.ext.okhttpVersion : 'MISSING')
-println "DIAG(browser): ottoVersion=" + (rootProject.ext.has('ottoVersion') ? rootProject.ext.ottoVersion : 'MISSING')
-println "DIAG(browser): dnsjavaVersion=" + (rootProject.ext.has('dnsjavaVersion') ? rootProject.ext.dnsjavaVersion : 'MISSING')
-println "DIAG(browser): xwalkSharedLibraryVersion=" + (rootProject.ext.has('xwalkSharedLibraryVersion') ? rootProject.ext.xwalkSharedLibraryVersion : 'MISSING')
-println "DIAG(browser): xwalkCoreLibraryVersion=" + (rootProject.ext.has('xwalkCoreLibraryVersion') ? rootProject.ext.xwalkCoreLibraryVersion : 'MISSING')
-
 apply plugin: 'com.android.library'
 
 android {
+    // FIX: Default interface methods are only supported starting with Android N (--min-api 24)
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
@@ -66,7 +57,7 @@ dependencies {
     implementation project(path: ':common')
     implementation project(path: ':appupdatechecker')
 
-    // TEMP: replace liteApi/fullApi with implementation for diagnostic
-    implementation 'org.xwalk:xwalk_shared_library:' + rootProject.ext.xwalkSharedLibraryVersion
-    implementation 'org.xwalk:xwalk_core_library:' + rootProject.ext.xwalkCoreLibraryVersion
+    // 将非标准的 liteApi/fullApi 改为标准 flavor 依赖配置，避免任务依赖解析失败
+    liteImplementation  'org.xwalk:xwalk_shared_library:' + rootProject.ext.xwalkSharedLibraryVersion
+    fullImplementation  'org.xwalk:xwalk_core_library:'   + rootProject.ext.xwalkCoreLibraryVersion
 }
