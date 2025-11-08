@@ -71,14 +71,6 @@ jobs:
           distribution: temurin
           java-version: '8'
 
-      - name: Diagnose Gradle project & constants
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "==== build.gradle (constants grep) ===="
-          grep -E 'appCompatXLibraryVersion|okhttpVersion|espressoCoreVersion|robolectricVersion|xwalkSharedLibraryVersion' -n build.gradle || true
-          echo "==== common/build.gradle head ===="
-          sed -n '1,80p' common/build.gradle || true
       - name: List projects
         uses: gradle/gradle-build-action@v3
         with:
@@ -91,47 +83,26 @@ jobs:
           gradle-version: 5.4.1
           arguments: :smartyoutubetv:tasks --all --no-daemon --info
 
-      - name: List tasks in :browser
+      - name: Build Debug (:smartyoutubetv orig flavor)
         uses: gradle/gradle-build-action@v3
         with:
           gradle-version: 5.4.1
-          arguments: :browser:tasks --all --no-daemon --info
-# Add an isolation build step just for :browser before full app build
-# (Keep previous content; only showing added diagnostic steps)
-
-# Insert after "Diagnose Gradle project & constants" and before ":smartyoutubetv:assembleDebug":
-      - name: Build browser (isolation)
-        uses: gradle/gradle-build-action@v3
-        continue-on-error: true
-        with:
-          gradle-version: 5.4.1
-          arguments: :browser:assembleDebug --stacktrace --info --no-daemon
-
-      - name: Upload browser build logs (if failed)
-        if: failure()
-        shell: bash
-        run: |
-          echo "Browser module failed; diagnostic output already printed above."
-      - name: Build Debug (:smartyoutubetv)
-        uses: gradle/gradle-build-action@v3
-        with:
-          gradle-version: 5.4.1
-          arguments: :smartyoutubetv:assembleDebug --stacktrace --info --no-daemon
+          arguments: :smartyoutubetv:assembleOrigDebug --stacktrace --info --no-daemon
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: szzdtv-debug-apk
-          path: smartyoutubetv/build/outputs/apk/debug/*.apk
+          path: smartyoutubetv/build/outputs/apk/orig/*.apk
 
-      - name: Build Release (:smartyoutubetv)
+      - name: Build Release (:smartyoutubetv orig flavor)
         uses: gradle/gradle-build-action@v3
         with:
           gradle-version: 5.4.1
-          arguments: :smartyoutubetv:assembleRelease --stacktrace --info --no-daemon
+          arguments: :smartyoutubetv:assembleOrigRelease --stacktrace --info --no-daemon
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
           name: szzdtv-release-apk
-          path: smartyoutubetv/build/outputs/apk/release/*.apk
+          path: smartyoutubetv/build/outputs/apk/orig/*.apk
