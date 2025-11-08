@@ -1,64 +1,69 @@
-apply from: rootProject.ext.sharedModulesConstants
-apply plugin: 'com.android.library'
+// ref: 0104a6115380c2e97a6b272d928a0256c03edd57
+// Top-level build file
 
-android {
-    // FIX: Default interface methods are only supported starting with Android N (--min-api 24)
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
-
-    compileSdkVersion project.properties.compileSdkVersion
-    buildToolsVersion project.properties.buildToolsVersion
-
-    defaultConfig {
-        minSdkVersion project.properties.minSdkVersion
-        targetSdkVersion project.properties.targetSdkVersion
-        versionCode 7
-        versionName "6.4.7"
-
-        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+buildscript {
+    repositories {
+        jcenter()
+        maven {
+            url 'https://maven.google.com/'
+            name 'Google'
         }
+        google()
     }
-
-    defaultPublishConfig "liteDebug"
-    flavorDimensions "default"
-    productFlavors {
-        lite {}
-        full {}
+    dependencies {
+        classpath 'com.android.tools.build:gradle:3.5.0'
     }
-
-    lintOptions {
-        abortOnError true
-        lintConfig rootProject.file('lint.xml')
+    ext {
+        compileSdkVersion = 28
+        buildToolsVersion = "28.0.3"
+        minSdkVersion = 14
+        targetSdkVersion = 26
     }
 }
 
-dependencies {
-    androidTestImplementation('com.android.support.test.espresso:espresso-core:' + espressoCoreVersion, {
-        exclude group: 'com.android.support', module: 'support-annotations'
-    })
-    testImplementation 'junit:junit:' + junitVersion
+// 统一版本常量（原 constants.gradle 内容搬运至此）
+ext {
+    // AndroidX / Support
+    appCompatXLibraryVersion = '1.1.0'
+    materialLibraryVersion   = '1.1.0'
+    multiDexVersion          = '1.0.3'          // 仍有 legacy 使用 com.android.support:multidex
 
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    // Test
+    junitVersion        = '4.12'
+    espressoCoreVersion = '3.0.2'
+    robolectricVersion  = '4.3.1'
 
-    implementation 'androidx.appcompat:appcompat:' + appCompatXLibraryVersion
-
-    implementation 'com.squareup.okhttp3:okhttp:' + okhttpVersion
-    implementation 'com.squareup:otto:' + ottoVersion
-    implementation 'dnsjava:dnsjava:' + dnsjavaVersion
-
-    implementation project(path: ':sharedutils')
-    implementation project(path: ':common')
-    implementation project(path: ':appupdatechecker')
+    // Network / Util
+    okhttpVersion       = '3.12.13'
+    ottoVersion         = '1.3.8'
+    dnsjavaVersion      = '3.5.2'
+    gsonVersion         = '2.8.9'
+    diskLruCacheVersion = '2.0.2'
 
     // Crosswalk
-    liteApi 'org.xwalk:xwalk_shared_library:' + xwalkSharedLibraryVersion
-    fullApi 'org.xwalk:xwalk_core_library:' + xwalkCoreLibraryVersion
+    xwalkSharedLibraryVersion = '23.53.589.4'
+    xwalkCoreLibraryVersion   = '23.53.589.4'
+}
+
+allprojects {
+    repositories {
+        jcenter()
+        google()
+        maven {
+            url 'https://maven.google.com/'
+            name 'Google'
+        }
+        maven { url 'https://download.01.org/crosswalk/releases/crosswalk/android/maven2' }
+        maven { url 'https://jitpack.io' }
+    }
+
+    gradle.projectsEvaluated {
+        tasks.withType(JavaCompile) {
+            options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
+        }
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
 }
