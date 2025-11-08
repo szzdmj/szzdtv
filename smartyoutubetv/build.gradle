@@ -63,18 +63,6 @@ android {
         }
     }
 
-    // Custom APK naming
-    applicationVariants.all { variant ->
-        variant.outputs.each { output ->
-            def projectName = "SYTV"
-            def flavorName  = variant.flavorName.capitalize()
-            def buildType   = variant.buildType.name.take(1)
-            def version     = variant.versionName
-            def newApkName  = "${projectName}_${flavorName}_v${version}_${buildType}.apk"
-            output.outputFileName = new File(newApkName)
-        }
-    }
-
     lintOptions {
         abortOnError false
     }
