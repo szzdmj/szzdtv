@@ -79,7 +79,22 @@ jobs:
           grep -E 'appCompatXLibraryVersion|okhttpVersion|espressoCoreVersion|robolectricVersion|xwalkSharedLibraryVersion' -n build.gradle || true
           echo "==== common/build.gradle head ===="
           sed -n '1,80p' common/build.gradle || true
+# Add an isolation build step just for :browser before full app build
+# (Keep previous content; only showing added diagnostic steps)
 
+# Insert after "Diagnose Gradle project & constants" and before ":smartyoutubetv:assembleDebug":
+      - name: Build browser (isolation)
+        uses: gradle/gradle-build-action@v3
+        continue-on-error: true
+        with:
+          gradle-version: 5.4.1
+          arguments: :browser:assembleDebug --stacktrace --info --no-daemon
+
+      - name: Upload browser build logs (if failed)
+        if: failure()
+        shell: bash
+        run: |
+          echo "Browser module failed; diagnostic output already printed above."
       - name: Build Debug (:smartyoutubetv)
         uses: gradle/gradle-build-action@v3
         with:
