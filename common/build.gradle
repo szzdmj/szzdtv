@@ -2,7 +2,6 @@ apply from: rootProject.ext.sharedModulesConstants
 apply plugin: 'com.android.library'
 
 android {
-    // FIX: Default interface methods are only supported starting with Android N (--min-api 24)
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
@@ -10,7 +9,6 @@ android {
 
     compileSdkVersion project.properties.compileSdkVersion
     buildToolsVersion project.properties.buildToolsVersion
-
 
     defaultConfig {
         minSdkVersion project.properties.minSdkVersion
@@ -54,8 +52,5 @@ dependencies {
     implementation 'com.google.code.gson:gson:' + gsonVersion
 
     implementation 'com.android.support:multidex:' + multiDexVersion
-
-    //implementation project.properties.stethoVersion
-
     implementation 'com.jakewharton:disklrucache:' + diskLruCacheVersion
 }
