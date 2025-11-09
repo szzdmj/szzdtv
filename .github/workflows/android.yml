@@ -1,4 +1,4 @@
-name: Android CI - szzdtv (legacy stack with auto wrapper & tightened trimmed logs)
+name: "Android CI - szzdtv (legacy stack with auto wrapper and tightened trimmed logs)"
 
 on:
   push:
@@ -8,13 +8,13 @@ on:
   workflow_dispatch:
     inputs:
       nano_branch:
-        description: 'Branch/commit of szzdmj/nanohttpd to fetch index.html from'
+        description: "Branch/commit of szzdmj/nanohttpd to fetch index.html from"
         required: false
-        default: 'master'
+        default: "master"
       sz_ref:
-        description: 'Branch/commit of szmj0/szmj0.github.io to fetch webjs.js & sw.js from'
+        description: "Branch/commit of szmj0/szmj0.github.io to fetch webjs.js & sw.js from"
         required: false
-        default: 'b6977c914a9a1aabafb5bddd6817eea85a2a8738'
+        default: "b6977c914a9a1aabafb5bddd6817eea85a2a8738"
 
 permissions:
   contents: write
@@ -30,19 +30,19 @@ jobs:
       LOG_SIZE_THRESHOLD: "512000"    # 触发裁剪的字节阈值 (≈500KB)
 
     steps:
-      - name: Checkout
+      - name: "Checkout"
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up JDK 17 (for sdkmanager)
+      - name: "Set up JDK 17 (for sdkmanager)"
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
           cache: gradle
 
-      - name: Install isolated Android SDK (API 28 only) and accept licenses
+      - name: "Install isolated Android SDK (API 28 only) and accept licenses"
         shell: bash
         run: |
           set -euo pipefail
@@ -67,7 +67,7 @@ jobs:
           yes | "${SDKM}" --sdk_root="${ANDROID_SDK_ROOT}" --licenses >/dev/null 2>&1 || true
           "${SDKM}" --sdk_root="${ANDROID_SDK_ROOT}" "platform-tools" "build-tools;28.0.3" "platforms;android-28"
 
-      - name: Prepare PWA assets (index.html, webjs.js, sw.js)
+      - name: "Prepare PWA assets (index.html, webjs.js, sw.js)"
         env:
           NBR: ${{ github.event.inputs.nano_branch || 'master' }}
           SZR: ${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}
@@ -88,13 +88,13 @@ jobs:
           echo "index.html head:"
           sed -n '1,40p' "${A}/index.html" || true
 
-      - name: Set up JDK 11 (for legacy Gradle/AGP build)
+      - name: "Set up JDK 11 (for legacy Gradle/AGP build)"
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '11'
+          java-version: "11"
 
-      - name: Generate proper Gradle Wrapper (Gradle 5.4.1)
+      - name: "Generate proper Gradle Wrapper (Gradle 5.4.1)"
         uses: gradle/gradle-build-action@v3
         with:
           gradle-version: 5.4.1
@@ -102,7 +102,7 @@ jobs:
         env:
           GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
 
-      - name: Auto commit updated Gradle wrapper (if changed)
+      - name: "Auto commit updated Gradle wrapper (if changed)"
         if: success()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -123,51 +123,51 @@ jobs:
             echo "No wrapper changes to commit."
           fi
 
-      - name: Make gradlew executable
+      - name: "Make gradlew executable"
         shell: bash
         run: chmod +x gradlew
 
-      - name: Verify Gradle version via wrapper
+      - name: "Verify Gradle version via wrapper"
         shell: bash
         run: ./gradlew -v
 
-      - name: List projects
+      - name: "List projects"
         shell: bash
         run: ./gradlew projects --no-daemon --info
 
-      - name: List tasks in :smartyoutubetv
+      - name: "List tasks in :smartyoutubetv"
         shell: bash
         run: ./gradlew :smartyoutubetv:tasks --all --no-daemon --info
 
-      - name: Build Debug (:smartyoutubetv) and save logs
+      - name: "Build Debug (:smartyoutubetv) and save logs"
         shell: bash
         run: |
           set -euo pipefail
           ./gradlew :smartyoutubetv:assembleDebug --stacktrace --info --no-daemon > build_log_debug.txt 2>&1 || true
           echo "Debug build finished (possibly with errors), log saved."
 
-      - name: Unit tests and save logs
+      - name: "Unit tests and save logs"
         shell: bash
         run: |
           set -euo pipefail
           ./gradlew testDebugUnitTest --stacktrace --info --no-daemon > test_log.txt 2>&1 || true
           echo "Unit tests finished, log saved."
 
-      - name: Lint and save logs
+      - name: "Lint and save logs"
         shell: bash
         run: |
           set -euo pipefail
           ./gradlew lintDebug --stacktrace --info --no-daemon > lint_log.txt 2>&1 || true
           echo "Lint finished, log saved."
 
-      - name: Build Release (:smartyoutubetv) and save logs
+      - name: "Build Release (:smartyoutubetv) and save logs"
         shell: bash
         run: |
           set -euo pipefail
           ./gradlew :smartyoutubetv:assembleRelease --stacktrace --info --no-daemon > build_log_release.txt 2>&1 || true
           echo "Release build finished (possibly with errors), log saved."
 
-      - name: Trim logs (tight mode: last N ERROR/WARN matches) if oversized (>500KB)
+      - name: "Trim logs (tight mode - last N ERROR/WARN matches) if oversized (>500KB)"
         shell: bash
         run: |
           set -euo pipefail
@@ -213,7 +213,7 @@ jobs:
           trim_log lint_log.txt            lint_log_trimmed.txt
           trim_log build_log_release.txt   build_log_release_trimmed.txt
 
-      - name: Upload logs (original)
+      - name: "Upload logs (original)"
         uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -224,7 +224,7 @@ jobs:
             lint_log.txt
             build_log_release.txt
 
-      - name: Upload logs (tight-trimmed)
+      - name: "Upload logs (tight-trimmed)"
         uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -235,21 +235,21 @@ jobs:
             lint_log_trimmed.txt
             build_log_release_trimmed.txt
 
-      - name: Upload debug APK (if successful)
+      - name: "Upload debug APK (if successful)"
         uses: actions/upload-artifact@v4
         if: success()
         with:
           name: szzdtv-debug-apk
           path: smartyoutubetv/build/outputs/apk/debug/*.apk
 
-      - name: Upload release APK (if successful)
+      - name: "Upload release APK (if successful)"
         uses: actions/upload-artifact@v4
         if: success()
         with:
           name: szzdtv-release-apk
           path: smartyoutubetv/build/outputs/apk/release/*.apk
 
-      - name: Upload legacy app module APK (optional)
+      - name: "Upload legacy app module APK (optional)"
         if: success()
         uses: actions/upload-artifact@v4
         with:
