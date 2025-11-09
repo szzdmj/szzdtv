@@ -27,6 +27,13 @@ android {
         }
     }
 
+    flavorDimensions "default"
+    productFlavors {
+        full {}
+        lite {}
+        kids {}
+    }
+
     lintOptions {
         abortOnError true
         lintConfig rootProject.file('lint.xml')
