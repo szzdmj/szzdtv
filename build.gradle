@@ -56,8 +56,8 @@ ext {
     exoplayerVersion            = '2.12.1'
 
     // PreviewSeekBar / Glide
-    previewSeekBarDevVersion    = 'v3.2.2'
-    previewSeekBarExoDevVersion = 'v3.2.2'
+    previewSeekBarDevVersion    = '2.18.1.0'
+    previewSeekBarExoDevVersion = '2.18.1.0'
     glideVersion                = '4.11.0'
 }
 

@@ -67,8 +67,8 @@ dependencies {
     // 官方扩展替换示例: implementation 'com.google.android.exoplayer:extension-okhttp:' + rootProject.ext.exoplayerVersion
 
     // PreviewSeekBar (corrected to use rubensousa and correct version)
-    implementation 'com.github.rubensousa:previewseekbar:2.18.1.0'
-    implementation 'com.github.rubensousa:previewseekbar-exoplayer:2.18.1.0'
+    implementation 'com.github.rubensousa:previewseekbar:' + rootProject.ext.previewSeekBarDevVersion
+    implementation 'com.github.rubensousa:previewseekbar-exoplayer:' + rootProject.ext.previewSeekBarExoDevVersion
 
     implementation 'com.github.bumptech.glide:glide:' + rootProject.ext.glideVersion
     annotationProcessor 'com.github.bumptech.glide:compiler:' + rootProject.ext.glideVersion
