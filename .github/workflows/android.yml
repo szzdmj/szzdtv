@@ -86,14 +86,14 @@ jobs:
           WRAP_DIR="gradle/wrapper"
           mkdir -p "${WRAP_DIR}"
 
-          echo "Writing gradle-wrapper.properties (no indentation)."
-          cat > "${WRAP_DIR}/gradle-wrapper.properties" <<EOF
-distributionBase=GRADLE_USER_HOME
-distributionPath=wrapper/dists
-distributionUrl=https://services.gradle.org/distributions/gradle-5.4.1-bin.zip
-zipStoreBase=GRADLE_USER_HOME
-zipStorePath=wrapper/dists
-EOF
+          echo "Writing gradle-wrapper.properties (strip YAML indentation)."
+          cat <<'EOF' | sed 's/^[[:space:]]\{10\}//' > "${WRAP_DIR}/gradle-wrapper.properties"
+                    distributionBase=GRADLE_USER_HOME
+                    distributionPath=wrapper/dists
+                    distributionUrl=https\://services.gradle.org/distributions/gradle-5.4.1-bin.zip
+                    zipStoreBase=GRADLE_USER_HOME
+                    zipStorePath=wrapper/dists
+          EOF
 
           echo "Downloading clean gradlew scripts from Gradle v5.4.1 tag."
           curl -fsSL --retry 3 -o gradlew     https://raw.githubusercontent.com/gradle/gradle/v5.4.1/gradlew
@@ -107,7 +107,7 @@ EOF
 
           # First look in lib/ (Gradle 5.x layout)
           WRAP_JAR="$(find "${TMP_DIR}" -type f -path '*/lib/gradle-wrapper-*.jar' -print -quit)"
-          # Fallback for newer distributions that may put it under plugins (not needed for 5.4.1 but future-proof)
+          # Fallback for newer distributions that may put it under plugins (future-proof)
           if [ -z "${WRAP_JAR}" ] || [ ! -f "${WRAP_JAR}" ]; then
             WRAP_JAR="$(find "${TMP_DIR}" -type f -path '*/lib/plugins/gradle-wrapper-*.jar' -print -quit)"
           fi
