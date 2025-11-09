@@ -12,12 +12,16 @@ android {
         versionName "6.17.739"
     }
 
+    flavorDimensions "default"
     productFlavors {
         full {
+            dimension "default"
         }
         lite {
+            dimension "default"
         }
         kids {
+            dimension "default"
         }
     }
 }
