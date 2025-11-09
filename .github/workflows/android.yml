@@ -1,4 +1,4 @@
-name: Android CI - szzdtv (merged)
+name: Android CI - szzdtv (merged, auto-refresh Gradle Wrapper 5.4.1)
 
 on:
   push:
@@ -20,9 +20,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      # 为 Gradle 指定 JVM 参数，不修改 wrapper 脚本，避免出现主类解析错误
+      # 通过环境变量向 Gradle 传递 JVM 参数，避免脚本改坏导致 "-Xmx" 被当作主类
       GRADLE_OPTS: -Dorg.gradle.jvmargs='-Xmx2g -Dfile.encoding=UTF-8'
-      # 也可以直接在 gradle.properties 中设置 org.gradle.jvmargs
 
     steps:
       - name: Checkout
@@ -81,15 +80,54 @@ jobs:
           echo "index.html head:"
           sed -n '1,40p' "${A}/index.html" || true
 
+      - name: Refresh Gradle Wrapper to 5.4.1 (download jar + scripts)
+        shell: bash
+        run: |
+          set -euo pipefail
+          WRAP_DIR="gradle/wrapper"
+          mkdir -p "${WRAP_DIR}"
+
+          echo "Writing gradle-wrapper.properties for Gradle 5.4.1"
+          cat > "${WRAP_DIR}/gradle-wrapper.properties" <<'EOF'
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-5.4.1-bin.zip
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          EOF
+
+          echo "Downloading clean gradlew and gradlew.bat from Gradle v5.4.1 tag"
+          curl -fsSL --retry 3 -o gradlew     https://raw.githubusercontent.com/gradle/gradle/v5.4.1/gradlew
+          curl -fsSL --retry 3 -o gradlew.bat https://raw.githubusercontent.com/gradle/gradle/v5.4.1/gradlew.bat
+          chmod +x gradlew
+
+          echo "Downloading Gradle 5.4.1 distribution to extract wrapper jar"
+          TMP_DIR="$(mktemp -d)"
+          curl -fsSL --retry 3 -o "${TMP_DIR}/gradle.zip" "https://services.gradle.org/distributions/gradle-5.4.1-bin.zip"
+          unzip -q "${TMP_DIR}/gradle.zip" -d "${TMP_DIR}"
+          # Typical location: gradle-5.4.1/lib/plugins/gradle-wrapper-5.4.1.jar
+          WRAP_JAR="$(find "${TMP_DIR}" -type f -path '*/lib/plugins/gradle-wrapper-*.jar' -print -quit)"
+          if [ -z "${WRAP_JAR}" ] || [ ! -f "${WRAP_JAR}" ]; then
+            echo "Wrapper jar not found in distribution; listing for debug:"
+            find "${TMP_DIR}" -maxdepth 3 -type f | sed 's/^/  /'
+            exit 1
+          fi
+          cp -f "${WRAP_JAR}" "${WRAP_DIR}/gradle-wrapper.jar"
+          echo "Gradle wrapper refreshed."
+
       - name: Make gradlew executable
         shell: bash
         run: chmod +x gradlew
 
-      - name: Set up JDK 11 (for Gradle/AGP 3.5.x legacy build)
+      - name: Set up JDK 11 (legacy Gradle/AGP build)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '11'
+
+      - name: Verify Gradle version
+        shell: bash
+        run: ./gradlew -v || true
 
       - name: List projects
         uses: gradle/gradle-build-action@v3
@@ -173,7 +211,6 @@ jobs:
           name: szzdtv-release-apk
           path: smartyoutubetv/build/outputs/apk/release/*.apk
 
-      # 可选：如果仓库中还存在 app 模块，也尝试上传其 release APK（不会中断）
       - name: Upload legacy app module APK (optional)
         if: success()
         uses: actions/upload-artifact@v4
