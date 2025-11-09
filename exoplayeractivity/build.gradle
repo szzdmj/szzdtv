@@ -10,12 +10,12 @@ android {
 
     // publishNonDefault true  // (旧机制, AGP 3.5 已不推荐, 留注释)
 
-    compileSdkVersion project.properties.compileSdkVersion
-    buildToolsVersion project.properties.buildToolsVersion
+    compileSdkVersion rootProject.ext.compileSdkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
 
     defaultConfig {
-        minSdkVersion project.properties.minSdkVersion
-        targetSdkVersion project.properties.targetSdkVersion
+        minSdkVersion     rootProject.ext.minSdkVersion
+        targetSdkVersion  rootProject.ext.targetSdkVersion
         versionCode 22
         versionName "0.7.2"
 
@@ -66,9 +66,9 @@ dependencies {
     implementation 'com.amazon.android:extension-okhttp:' + rootProject.ext.amazonExoplayerVersion
     // 官方扩展替换示例: implementation 'com.google.android.exoplayer:extension-okhttp:' + rootProject.ext.exoplayerVersion
 
-    // PreviewSeekBar (确保 previewSeekBarDevVersion / previewSeekBarExoDevVersion 已在 ext 中)
-    implementation 'com.github.yuliskov.PreviewSeekBar:previewseekbar:' + rootProject.ext.previewSeekBarDevVersion
-    implementation 'com.github.yuliskov.PreviewSeekBar:previewseekbar-exoplayer:' + rootProject.ext.previewSeekBarExoDevVersion
+    // PreviewSeekBar (corrected to use rubensousa)
+    implementation 'com.github.rubensousa:previewseekbar:3.1.1'
+    implementation 'com.github.rubensousa:previewseekbar-exoplayer:3.1.1'
 
     implementation 'com.github.bumptech.glide:glide:' + rootProject.ext.glideVersion
     annotationProcessor 'com.github.bumptech.glide:compiler:' + rootProject.ext.glideVersion
