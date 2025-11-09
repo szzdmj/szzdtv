@@ -1,4 +1,4 @@
-name: Android CI - szzdtv (merged, generate proper Gradle Wrapper 5.4.1 with auto push)
+name: Android CI - szzdtv (legacy stack with auto wrapper & trimmed logs)
 
 on:
   push:
@@ -29,7 +29,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # 需要完整历史便于提交推送（默认也可）
           fetch-depth: 0
 
       - name: Set up JDK 17 (for sdkmanager)
@@ -73,7 +72,7 @@ jobs:
           set -euo pipefail
           A="smartyoutubetv/src/main/assets"
           mkdir -p "$A"
-          echo "Fetching index.html from szzdmj/nanohttpd@${NBR}"
+            echo "Fetching index.html from szzdmj/nanohttpd@${NBR}"
           base_nano="https://raw.githubusercontent.com/szzdmj/nanohttpd/${NBR}/android-asset-webshell/app/src/main/assets"
           curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/index.html" "${base_nano}/index.html"
           echo "Fetching webjs.js & sw.js from szmj0/szmj0.github.io@${SZR}"
@@ -94,21 +93,10 @@ jobs:
       - name: Generate proper Gradle Wrapper (Gradle 5.4.1)
         uses: gradle/gradle-build-action@v3
         with:
-            gradle-version: 5.4.1
-            arguments: wrapper --gradle-version 5.4.1 --distribution-type bin
+          gradle-version: 5.4.1
+          arguments: wrapper --gradle-version 5.4.1 --distribution-type bin
         env:
           GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
-
-      - name: Show generated wrapper files
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "Listing gradle/wrapper after wrapper task:"
-          ls -l gradle/wrapper || true
-          echo "gradle-wrapper.properties content:"
-          sed -n '1,40p' gradle/wrapper/gradle-wrapper.properties || true
-          echo "Verifying wrapper jar contains CLI classes (expected minimal set for 5.4.1)..."
-          unzip -l gradle/wrapper/gradle-wrapper.jar | grep -E 'GradleWrapperMain|BootstrapMainStarter' || echo "Wrapper core classes listed."
 
       - name: Auto commit updated Gradle wrapper (if changed)
         if: success()
@@ -124,7 +112,6 @@ jobs:
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git config user.name "github-actions[bot]"
             git add gradle/wrapper gradlew gradlew.bat
-            # 使用 [skip ci] 避免回环；如需重新触发构建可以移除该标签
             git commit -m "chore: refresh Gradle wrapper to 5.4.1 [skip ci]"
             git push origin HEAD:${GITHUB_REF#refs/heads/}
             echo "Wrapper changes pushed."
@@ -155,26 +142,12 @@ jobs:
           ./gradlew :smartyoutubetv:assembleDebug --stacktrace --info --no-daemon > build_log_debug.txt 2>&1 || true
           echo "Debug build finished (possibly with errors), log saved."
 
-      - name: Upload debug build logs
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-log-debug
-          path: build_log_debug.txt
-
       - name: Unit tests and save logs
         shell: bash
         run: |
           set -euo pipefail
           ./gradlew testDebugUnitTest --stacktrace --info --no-daemon > test_log.txt 2>&1 || true
           echo "Unit tests finished, log saved."
-
-      - name: Upload unit test logs
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: test-log-debug
-          path: test_log.txt
 
       - name: Lint and save logs
         shell: bash
@@ -183,20 +156,6 @@ jobs:
           ./gradlew lintDebug --stacktrace --info --no-daemon > lint_log.txt 2>&1 || true
           echo "Lint finished, log saved."
 
-      - name: Upload lint logs
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: lint-log-debug
-          path: lint_log.txt
-
-      - name: Upload debug APK (if successful)
-        uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: szzdtv-debug-apk
-          path: smartyoutubetv/build/outputs/apk/debug/*.apk
-
       - name: Build Release (:smartyoutubetv) and save logs
         shell: bash
         run: |
@@ -204,12 +163,62 @@ jobs:
           ./gradlew :smartyoutubetv:assembleRelease --stacktrace --info --no-daemon > build_log_release.txt 2>&1 || true
           echo "Release build finished (possibly with errors), log saved."
 
-      - name: Upload release build logs
+      - name: Trim logs if oversized (>500KB)
+        shell: bash
+        run: |
+          set -euo pipefail
+          trim_log() {
+            local src="$1"; local dst="$2"
+            if [ ! -f "$src" ]; then echo "Missing log $src"; return; fi
+            local size
+            size=$(wc -c < "$src" || echo 0)
+            if [ "$size" -gt 512000 ]; then
+              echo "Log $src size $size > 500KB, creating trimmed version $dst"
+              {
+                echo "=== TRIMMED VERSION (source >500KB) ==="
+                echo "=== Matched ERROR/WARN/Exception lines (up to first 1000) ==="
+                grep -E 'ERROR|Exception|Failed|WARNING|WARN|NoClassDefFoundError' "$src" | head -1000 || true
+                echo "=== Tail (last 300 lines) ==="
+                tail -300 "$src" || true
+              } > "$dst"
+            else
+              cp "$src" "$dst"
+              echo "Log $src size $size <= 500KB, copied unchanged to $dst"
+            fi
+          }
+          trim_log build_log_debug.txt build_log_debug_trimmed.txt
+          trim_log test_log.txt        test_log_trimmed.txt
+          trim_log lint_log.txt        lint_log_trimmed.txt
+          trim_log build_log_release.txt build_log_release_trimmed.txt
+
+      - name: Upload logs (original + trimmed)
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: build-log-release
-          path: build_log_release.txt
+          name: logs-original
+          path: |
+            build_log_debug.txt
+            test_log.txt
+            lint_log.txt
+            build_log_release.txt
+
+      - name: Upload trimmed logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-trimmed
+          path: |
+            build_log_debug_trimmed.txt
+            test_log_trimmed.txt
+            lint_log_trimmed.txt
+            build_log_release_trimmed.txt
+
+      - name: Upload debug APK (if successful)
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: szzdtv-debug-apk
+          path: smartyoutubetv/build/outputs/apk/debug/*.apk
 
       - name: Upload release APK (if successful)
         uses: actions/upload-artifact@v4
