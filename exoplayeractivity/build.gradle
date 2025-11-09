@@ -1,14 +1,10 @@
-// Removed obsolete: apply from: gradle.ext.sharedModulesConstants
 apply plugin: 'com.android.library'
 
 android {
-    // FIX: Default interface methods are only supported starting with Android N (--min-api 24)
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
-
-    // publishNonDefault true  // (旧机制, AGP 3.5 已不推荐, 留注释)
 
     compileSdkVersion rootProject.ext.compileSdkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -18,7 +14,6 @@ android {
         targetSdkVersion  rootProject.ext.targetSdkVersion
         versionCode 22
         versionName "0.7.2"
-
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
         buildConfigField "long", "TIMESTAMP", System.currentTimeMillis() + "L"
     }
@@ -30,7 +25,6 @@ android {
         }
     }
 
-    // gradle 4.6 migration: disable dimensions mechanism
     flavorDimensions "default"
     productFlavors {
         lite {}
@@ -59,16 +53,17 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:' + rootProject.ext.constraintLayoutXVersion
     implementation 'androidx.collection:collection:' + rootProject.ext.appCompatXLibraryVersion
 
-    // Amazon ExoPlayer (确保在顶层 ext 中定义 amazonExoplayerVersion)
-    api 'com.amazon.android:exoplayer:' + rootProject.ext.amazonExoplayerVersion
-    // 如需官方 ExoPlayer: api 'com.google.android.exoplayer:exoplayer:' + rootProject.ext.exoplayerVersion
+    // 官方 ExoPlayer（使用 BOM 確保版本一致）
+    implementation platform('com.google.android.exoplayer:exoplayer-bom:' + rootProject.ext.exoplayerVersion)
+    implementation 'com.google.android.exoplayer:exoplayer'
+    implementation 'com.google.android.exoplayer:extension-okhttp'
 
-    implementation 'com.amazon.android:extension-okhttp:' + rootProject.ext.amazonExoplayerVersion
-    // 官方扩展替换示例: implementation 'com.google.android.exoplayer:extension-okhttp:' + rootProject.ext.exoplayerVersion
-
-    // PreviewSeekBar (corrected to use rubensousa and correct version)
+    // PreviewSeekBar（與官方 ExoPlayer 版本對齊）
     implementation 'com.github.rubensousa:previewseekbar:' + rootProject.ext.previewSeekBarDevVersion
-    implementation 'com.github.rubensousa:previewseekbar-exoplayer:' + rootProject.ext.previewSeekBarExoDevVersion
+    implementation('com.github.rubensousa:previewseekbar-exoplayer:' + rootProject.ext.previewSeekBarExoDevVersion) {
+        // 以前若有 Amazon transitive，需要防止殘留；現正常不需 exclude，保留註解供檢查
+        // exclude group: 'com.amazon.android'
+    }
 
     implementation 'com.github.bumptech.glide:glide:' + rootProject.ext.glideVersion
     annotationProcessor 'com.github.bumptech.glide:compiler:' + rootProject.ext.glideVersion
