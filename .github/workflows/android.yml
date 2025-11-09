@@ -1,9 +1,10 @@
-name: Android CI - szzdtv (local PWA index from nanohttpd + webjs/sw from szmj0, no id-shim)
+name: Android CI - szzdtv (merged)
 
 on:
   push:
-    branches: [ "master", "main-branch" ]
+    branches: [ "main", "master", "main-branch" ]
   pull_request:
+    branches: [ "main", "master", "main-branch" ]
   workflow_dispatch:
     inputs:
       nano_branch:
@@ -19,8 +20,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      # 给 Gradle 一些内存，稳定一点
-      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2g"
+      # 为 Gradle 指定 JVM 参数，不修改 wrapper 脚本，避免出现主类解析错误
+      GRADLE_OPTS: -Dorg.gradle.jvmargs='-Xmx2g -Dfile.encoding=UTF-8'
+      # 也可以直接在 gradle.properties 中设置 org.gradle.jvmargs
 
     steps:
       - name: Checkout
@@ -31,6 +33,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
       - name: Install isolated Android SDK (API 28 only) and accept licenses
         shell: bash
@@ -42,7 +45,6 @@ jobs:
           echo "ANDROID_HOME=${ANDROID_HOME}" >> "$GITHUB_ENV"
           mkdir -p "${ANDROID_SDK_ROOT}/cmdline-tools"
           pushd "${ANDROID_SDK_ROOT}/cmdline-tools" >/dev/null
-          # 下载 commandlinetools（尝试新版本，失败则回退一个常见旧版本）
           CTL_ZIP="commandlinetools-linux-11076708_latest.zip"
           URL_BASE="https://dl.google.com/android/repository"
           if ! curl -fsSL --retry 3 -o cmdline-tools.zip "${URL_BASE}/${CTL_ZIP}"; then
@@ -50,12 +52,10 @@ jobs:
           fi
           unzip -q cmdline-tools.zip
           rm -f cmdline-tools.zip
-          # 重命名为 latest 目录，让 sdkmanager 路径固定
           if [ -d "cmdline-tools" ]; then
             mv cmdline-tools latest
           fi
           popd >/dev/null
-
           SDKM="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
           yes | "${SDKM}" --sdk_root="${ANDROID_SDK_ROOT}" --licenses >/dev/null 2>&1 || true
           "${SDKM}" --sdk_root="${ANDROID_SDK_ROOT}" "platform-tools" "build-tools;28.0.3" "platforms;android-28"
@@ -85,7 +85,7 @@ jobs:
         shell: bash
         run: chmod +x gradlew
 
-      - name: Set up JDK 11 (for Gradle/AGP 3.5.0)
+      - name: Set up JDK 11 (for Gradle/AGP 3.5.x legacy build)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -103,7 +103,7 @@ jobs:
           gradle-version: 5.4.1
           arguments: :smartyoutubetv:tasks --all --no-daemon --info
 
-      - name: Build Debug (:smartyoutubetv default flavor) and save logs
+      - name: Build Debug (:smartyoutubetv) and save logs
         shell: bash
         run: |
           set -euo pipefail
@@ -117,6 +117,34 @@ jobs:
           name: build-log-debug
           path: build_log_debug.txt
 
+      - name: Unit tests and save logs
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew testDebugUnitTest --stacktrace --info --no-daemon > test_log.txt 2>&1 || true
+          echo "Tests finished, logs saved to test_log.txt"
+
+      - name: Upload unit test logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-log-debug
+          path: test_log.txt
+
+      - name: Lint and save logs
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew lintDebug --stacktrace --info --no-daemon > lint_log.txt 2>&1 || true
+          echo "Lint finished, logs saved to lint_log.txt"
+
+      - name: Upload lint logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lint-log-debug
+          path: lint_log.txt
+
       - name: Upload debug APK (if successful)
         uses: actions/upload-artifact@v4
         if: success()
@@ -124,7 +152,7 @@ jobs:
           name: szzdtv-debug-apk
           path: smartyoutubetv/build/outputs/apk/debug/*.apk
 
-      - name: Build Release (:smartyoutubetv default flavor) and save logs
+      - name: Build Release (:smartyoutubetv) and save logs
         shell: bash
         run: |
           set -euo pipefail
@@ -144,3 +172,11 @@ jobs:
         with:
           name: szzdtv-release-apk
           path: smartyoutubetv/build/outputs/apk/release/*.apk
+
+      # 可选：如果仓库中还存在 app 模块，也尝试上传其 release APK（不会中断）
+      - name: Upload legacy app module APK (optional)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: app/build/outputs/apk/release/*.apk
