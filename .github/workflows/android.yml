@@ -18,6 +18,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # 给 Gradle 一些内存，稳定一点
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2g"
 
     steps:
       - name: Checkout
@@ -29,20 +32,33 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configure Android SDK (API 28) and accept licenses
+      - name: Install isolated Android SDK (API 28 only) and accept licenses
         shell: bash
         run: |
           set -euo pipefail
-          ANDROID_SDK_ROOT="/usr/local/lib/android/sdk"
+          ANDROID_SDK_ROOT="$RUNNER_TEMP/android-sdk"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
           echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
-          echo "ANDROID_HOME=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
-          if [ -x "${ANDROID_SDK_ROOT}/tools/bin/sdkmanager" ]; then
-            SDKM="${ANDROID_SDK_ROOT}/tools/bin/sdkmanager"
-          else
-            SDKM="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+          echo "ANDROID_HOME=${ANDROID_HOME}" >> "$GITHUB_ENV"
+          mkdir -p "${ANDROID_SDK_ROOT}/cmdline-tools"
+          pushd "${ANDROID_SDK_ROOT}/cmdline-tools" >/dev/null
+          # 下载 commandlinetools（尝试新版本，失败则回退一个常见旧版本）
+          CTL_ZIP="commandlinetools-linux-11076708_latest.zip"
+          URL_BASE="https://dl.google.com/android/repository"
+          if ! curl -fsSL --retry 3 -o cmdline-tools.zip "${URL_BASE}/${CTL_ZIP}"; then
+            curl -fsSL --retry 3 -o cmdline-tools.zip "${URL_BASE}/commandlinetools-linux-9477386_latest.zip"
           fi
-          yes | "${SDKM}" --licenses >/dev/null 2>&1 || true
-          "${SDKM}" "platform-tools" "build-tools;28.0.3" "platforms;android-28"
+          unzip -q cmdline-tools.zip
+          rm -f cmdline-tools.zip
+          # 重命名为 latest 目录，让 sdkmanager 路径固定
+          if [ -d "cmdline-tools" ]; then
+            mv cmdline-tools latest
+          fi
+          popd >/dev/null
+
+          SDKM="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "${SDKM}" --sdk_root="${ANDROID_SDK_ROOT}" --licenses >/dev/null 2>&1 || true
+          "${SDKM}" --sdk_root="${ANDROID_SDK_ROOT}" "platform-tools" "build-tools;28.0.3" "platforms;android-28"
 
       - name: Prepare PWA assets (index.html from szzdmj/nanohttpd; webjs.js & sw.js from szmj0/szmj0.github.io)
         env:
