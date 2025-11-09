@@ -1,7 +1,6 @@
 apply plugin: 'com.android.library'
 
 android {
-    // Default interface methods need Java 8
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
@@ -15,7 +14,7 @@ android {
         targetSdkVersion  rootProject.ext.targetSdkVersion
         versionCode 7
         versionName "6.4.7"
-        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -25,7 +24,6 @@ android {
         }
     }
 
-    // 单一维度，提供 lite/full/kids 两种口味
     flavorDimensions "default"
     productFlavors {
         lite {}
@@ -33,23 +31,24 @@ android {
         kids {}
     }
 
-    // 关键：发布 liteDebug 变体，避免解析到 full 变体
-    defaultPublishConfig "liteDebug"
+    // AGP 8：移除 defaultPublishConfig，必要時改為 publishing { singleVariant("liteDebug") }
+    // publishing {
+    //     singleVariant("liteDebug")
+    // }
 
-    lintOptions {
+    // AGP 8：將 lintOptions 改為 lint 區塊
+    lint {
         abortOnError true
         lintConfig rootProject.file('lint.xml')
     }
 }
 
 dependencies {
-    // tests
     androidTestImplementation('com.android.support.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion) {
         exclude group: 'com.android.support', module: 'support-annotations'
     }
     testImplementation 'junit:junit:' + rootProject.ext.junitVersion
 
-    // core
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation 'androidx.appcompat:appcompat:' + rootProject.ext.appCompatXLibraryVersion
     implementation 'com.squareup.okhttp3:okhttp:' + rootProject.ext.okhttpVersion
@@ -58,9 +57,8 @@ dependencies {
 
     implementation project(path: ':sharedutils')
     implementation project(path: ':common')
-    // implementation project(path: ':appupdatechecker') // Removed as the module does not exist
 
-    // Removed deprecated Crosswalk dependency to fix build failure
+    // Crosswalk 已移除（如需請自行還原）
     // liteImplementation 'org.xwalk:xwalk_shared_library:' + rootProject.ext.xwalkSharedLibraryVersion
     // fullImplementation 'org.xwalk:xwalk_core_library:' + rootProject.ext.xwalkCoreLibraryVersion
 }
