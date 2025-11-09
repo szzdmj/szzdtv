@@ -10,37 +10,13 @@
 10|     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
 11|     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
 12| 
-13|     <!-- Leanback required fields -->
-14|     <uses-feature
-15|         android:name="android.software.leanback"
-16|         android:required="false"/>
-17|     <uses-feature
-18|         android:name="android.hardware.touchscreen"
-19|         android:required="false"/>
-20|     <uses-feature
-21|         android:name="android.hardware.faketouch"
-22|         android:required="false"/>
-23|     <uses-feature
-24|         android:name="android.hardware.location.gps"
-25|         android:required="false"/>
-26|     <uses-feature
-27|         android:name="android.hardware.microphone"
-28|         android:required="false"/>
-29|     <uses-feature
-30|         android:name="android.hardware.sensor"
-31|         android:required="false"/>
-32|     <uses-feature
-33|         android:name="android.hardware.camera"
-34|         android:required="false"/>
-35|     <!-- End Leanback required fields -->
-36| 
-37|     <!-- NOTE: ExoApplication: exoplayer specific params -->
-38|     <application
-39|         android:label="@string/app_name"
-40|         tools:node="merge">
-41| 
-42|         <!-- allow to use repacked XWalk's apk -->
-43|         <meta-data android:name="xwalk_verify" android:value="disable" />
-44|     </application>
-45| 
-46| </manifest>
+13|     <!-- NOTE: ExoApplication: exoplayer specific params -->
+14|     <application
+15|         android:label="@string/app_name"
+16|         tools:node="merge">
+17| 
+18|         <!-- allow to use repacked XWalk's apk -->
+19|         <meta-data android:name="xwalk_verify" android:value="disable" />
+20|     </application>
+21| 
+22| </manifest>
