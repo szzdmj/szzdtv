@@ -5,8 +5,7 @@
           package="com.liskovsoft.smartyoutubetv">
 
     <!-- NOTE: ExoApplication: exoplayer specific params -->
-    <application
-        android:label="@string/app_name">
+    <application>
     </application>
 
 </manifest>
