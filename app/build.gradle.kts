@@ -76,13 +76,9 @@ android {
     // experimentalProperties["android.experimental.r8.dex-startup-optimization"] = true
 }
 
-configurations.all {
-    resolutionStrategy {
-        force("com.google.android.exoplayer:exoplayer:2.18.7")
-    }
-}
-
+// 依赖由 BOM 统一版本管理，移除强制锁定以避免冲突
 dependencies {
+    // ExoPlayer（官方）：使用 BOM 统一版本
     implementation(platform("com.google.android.exoplayer:exoplayer-bom:2.18.7"))
     implementation("com.google.android.exoplayer:exoplayer")
     implementation("com.google.android.exoplayer:extension-leanback")
@@ -104,10 +100,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.2")
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.6.2")
 
-    // Media / ExoPlayer
+    // Media / ExoPlayer 生态
     implementation("androidx.media:media:1.6.0")
-    implementation("com.google.android.exoplayer:exoplayer:2.18.7")
-    implementation("com.google.android.exoplayer:extension-leanback:2.18.7")
 
     // 预览进度条：与 ExoPlayer 版本适配
     implementation("com.github.rubensousa:previewseekbar-exoplayer:3.1.0") {
