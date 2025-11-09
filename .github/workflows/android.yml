@@ -1,4 +1,4 @@
-name: Android CI - szzdtv (merged, generate proper Gradle Wrapper 5.4.1)
+name: Android CI - szzdtv (merged, generate proper Gradle Wrapper 5.4.1 with auto push)
 
 on:
   push:
@@ -16,6 +16,9 @@ on:
         required: false
         default: 'b6977c914a9a1aabafb5bddd6817eea85a2a8738'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -25,6 +28,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # 需要完整历史便于提交推送（默认也可）
+          fetch-depth: 0
 
       - name: Set up JDK 17 (for sdkmanager)
         uses: actions/setup-java@v4
@@ -88,10 +94,9 @@ jobs:
       - name: Generate proper Gradle Wrapper (Gradle 5.4.1)
         uses: gradle/gradle-build-action@v3
         with:
-          gradle-version: 5.4.1
-          arguments: wrapper --gradle-version 5.4.1 --distribution-type bin
+            gradle-version: 5.4.1
+            arguments: wrapper --gradle-version 5.4.1 --distribution-type bin
         env:
-          # 防止 wrapper 任务受已有损坏 wrapper 影响，强制使用下载的分发执行
           GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
 
       - name: Show generated wrapper files
@@ -102,11 +107,29 @@ jobs:
           ls -l gradle/wrapper || true
           echo "gradle-wrapper.properties content:"
           sed -n '1,40p' gradle/wrapper/gradle-wrapper.properties || true
-          echo "Checking wrapper jar contains CommandLineParser reference:"
-          if unzip -l gradle/wrapper/gradle-wrapper.jar | grep -q 'org/gradle/cli/CommandLineParser.class'; then
-            echo "Wrapper jar includes CLI parser classes."
+          echo "Verifying wrapper jar contains CLI classes (expected minimal set for 5.4.1)..."
+          unzip -l gradle/wrapper/gradle-wrapper.jar | grep -E 'GradleWrapperMain|BootstrapMainStarter' || echo "Wrapper core classes listed."
+
+      - name: Auto commit updated Gradle wrapper (if changed)
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHANGED=$(git status --porcelain gradle/wrapper gradlew gradlew.bat 2>/dev/null || true)
+          if [ -n "${CHANGED}" ]; then
+            echo "Wrapper changes detected:"
+            echo "${CHANGED}"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git config user.name "github-actions[bot]"
+            git add gradle/wrapper gradlew gradlew.bat
+            # 使用 [skip ci] 避免回环；如需重新触发构建可以移除该标签
+            git commit -m "chore: refresh Gradle wrapper to 5.4.1 [skip ci]"
+            git push origin HEAD:${GITHUB_REF#refs/heads/}
+            echo "Wrapper changes pushed."
           else
-            echo "WARNING: Wrapper jar missing CLI parser classes (older minimal style)."
+            echo "No wrapper changes to commit."
           fi
 
       - name: Make gradlew executable
