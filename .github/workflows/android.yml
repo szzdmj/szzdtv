@@ -20,7 +20,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      # 通过环境变量向 Gradle 传递 JVM 参数，避免脚本改坏导致 "-Xmx" 被当作主类
       GRADLE_OPTS: -Dorg.gradle.jvmargs='-Xmx2g -Dfile.encoding=UTF-8'
 
     steps:
@@ -59,7 +58,7 @@ jobs:
           yes | "${SDKM}" --sdk_root="${ANDROID_SDK_ROOT}" --licenses >/dev/null 2>&1 || true
           "${SDKM}" --sdk_root="${ANDROID_SDK_ROOT}" "platform-tools" "build-tools;28.0.3" "platforms;android-28"
 
-      - name: Prepare PWA assets (index.html from szzdmj/nanohttpd; webjs.js & sw.js from szmj0/szmj0.github.io)
+      - name: Prepare PWA assets (index.html, webjs.js, sw.js)
         env:
           NBR: ${{ github.event.inputs.nano_branch || 'master' }}
           SZR: ${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}
@@ -87,31 +86,39 @@ jobs:
           WRAP_DIR="gradle/wrapper"
           mkdir -p "${WRAP_DIR}"
 
-          echo "Writing gradle-wrapper.properties for Gradle 5.4.1"
-          cat > "${WRAP_DIR}/gradle-wrapper.properties" <<'EOF'
-          distributionBase=GRADLE_USER_HOME
-          distributionPath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-5.4.1-bin.zip
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
-          EOF
+          echo "Writing gradle-wrapper.properties (no indentation)."
+          cat > "${WRAP_DIR}/gradle-wrapper.properties" <<EOF
+distributionBase=GRADLE_USER_HOME
+distributionPath=wrapper/dists
+distributionUrl=https://services.gradle.org/distributions/gradle-5.4.1-bin.zip
+zipStoreBase=GRADLE_USER_HOME
+zipStorePath=wrapper/dists
+EOF
 
-          echo "Downloading clean gradlew and gradlew.bat from Gradle v5.4.1 tag"
+          echo "Downloading clean gradlew scripts from Gradle v5.4.1 tag."
           curl -fsSL --retry 3 -o gradlew     https://raw.githubusercontent.com/gradle/gradle/v5.4.1/gradlew
           curl -fsSL --retry 3 -o gradlew.bat https://raw.githubusercontent.com/gradle/gradle/v5.4.1/gradlew.bat
           chmod +x gradlew
 
-          echo "Downloading Gradle 5.4.1 distribution to extract wrapper jar"
+          echo "Downloading Gradle 5.4.1 distribution..."
           TMP_DIR="$(mktemp -d)"
           curl -fsSL --retry 3 -o "${TMP_DIR}/gradle.zip" "https://services.gradle.org/distributions/gradle-5.4.1-bin.zip"
           unzip -q "${TMP_DIR}/gradle.zip" -d "${TMP_DIR}"
-          # Typical location: gradle-5.4.1/lib/plugins/gradle-wrapper-5.4.1.jar
-          WRAP_JAR="$(find "${TMP_DIR}" -type f -path '*/lib/plugins/gradle-wrapper-*.jar' -print -quit)"
+
+          # First look in lib/ (Gradle 5.x layout)
+          WRAP_JAR="$(find "${TMP_DIR}" -type f -path '*/lib/gradle-wrapper-*.jar' -print -quit)"
+          # Fallback for newer distributions that may put it under plugins (not needed for 5.4.1 but future-proof)
           if [ -z "${WRAP_JAR}" ] || [ ! -f "${WRAP_JAR}" ]; then
-            echo "Wrapper jar not found in distribution; listing for debug:"
+            WRAP_JAR="$(find "${TMP_DIR}" -type f -path '*/lib/plugins/gradle-wrapper-*.jar' -print -quit)"
+          fi
+
+          if [ -z "${WRAP_JAR}" ] || [ ! -f "${WRAP_JAR}" ]; then
+            echo "Wrapper jar not found. Listing candidate files (depth 3) for debugging:"
             find "${TMP_DIR}" -maxdepth 3 -type f | sed 's/^/  /'
             exit 1
           fi
+
+          echo "Found wrapper jar: ${WRAP_JAR}"
           cp -f "${WRAP_JAR}" "${WRAP_DIR}/gradle-wrapper.jar"
           echo "Gradle wrapper refreshed."
 
@@ -119,7 +126,7 @@ jobs:
         shell: bash
         run: chmod +x gradlew
 
-      - name: Set up JDK 11 (legacy Gradle/AGP build)
+      - name: Set up JDK 11 (legacy Gradle/AGP build usage)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -146,7 +153,7 @@ jobs:
         run: |
           set -euo pipefail
           ./gradlew :smartyoutubetv:assembleDebug --stacktrace --info --no-daemon > build_log_debug.txt 2>&1 || true
-          echo "Build finished, logs saved to build_log_debug.txt"
+          echo "Debug build finished (possibly with errors), log saved."
 
       - name: Upload debug build logs
         uses: actions/upload-artifact@v4
@@ -160,7 +167,7 @@ jobs:
         run: |
           set -euo pipefail
           ./gradlew testDebugUnitTest --stacktrace --info --no-daemon > test_log.txt 2>&1 || true
-          echo "Tests finished, logs saved to test_log.txt"
+          echo "Unit tests finished, log saved."
 
       - name: Upload unit test logs
         uses: actions/upload-artifact@v4
@@ -174,7 +181,7 @@ jobs:
         run: |
           set -euo pipefail
           ./gradlew lintDebug --stacktrace --info --no-daemon > lint_log.txt 2>&1 || true
-          echo "Lint finished, logs saved to lint_log.txt"
+          echo "Lint finished, log saved."
 
       - name: Upload lint logs
         uses: actions/upload-artifact@v4
@@ -195,7 +202,7 @@ jobs:
         run: |
           set -euo pipefail
           ./gradlew :smartyoutubetv:assembleRelease --stacktrace --info --no-daemon > build_log_release.txt 2>&1 || true
-          echo "Build finished, logs saved to build_log_release.txt"
+          echo "Release build finished (possibly with errors), log saved."
 
       - name: Upload release build logs
         uses: actions/upload-artifact@v4
