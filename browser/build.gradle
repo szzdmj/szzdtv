@@ -1,43 +1,45 @@
 apply plugin: 'com.android.library'
 
-// Default interface methods need Java 8
-compileOptions {
-    sourceCompatibility JavaVersion.VERSION_1_8
-    targetCompatibility JavaVersion.VERSION_1_8
-}
-
-compileSdkVersion project.properties.compileSdkVersion
-buildToolsVersion project.properties.buildToolsVersion
-
-defaultConfig {
-    minSdkVersion project.properties.minSdkVersion
-    targetSdkVersion project.properties.targetSdkVersion
-    versionCode 7
-    versionName "6.4.7"
-    testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
-}
-
-buildTypes {
-    release {
-        minifyEnabled false
-        proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+android {
+    // Default interface methods need Java 8
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
-}
 
-// 单一维度，提供 lite/full/kids 两种口味
-flavorDimensions "default"
-productFlavors {
-    lite {}
-    full {}
-    kids {}
-}
+    compileSdkVersion rootProject.ext.compileSdkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
 
-// 关键：发布 liteDebug 变体，避免解析到 full 变体
-defaultPublishConfig "liteDebug"
+    defaultConfig {
+        minSdkVersion     rootProject.ext.minSdkVersion
+        targetSdkVersion  rootProject.ext.targetSdkVersion
+        versionCode 7
+        versionName "6.4.7"
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+    }
 
-lintOptions {
-    abortOnError true
-    lintConfig rootProject.file('lint.xml')
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    // 单一维度，提供 lite/full/kids 两种口味
+    flavorDimensions "default"
+    productFlavors {
+        lite {}
+        full {}
+        kids {}
+    }
+
+    // 关键：发布 liteDebug 变体，避免解析到 full 变体
+    defaultPublishConfig "liteDebug"
+
+    lintOptions {
+        abortOnError true
+        lintConfig rootProject.file('lint.xml')
+    }
 }
 
 dependencies {
