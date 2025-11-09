@@ -19,7 +19,7 @@ dependencies {
     // Internal modules
     // implementation     project(':sharedutils') // Temporarily removed to test compilation
     // implementation     project(':common') // Temporarily removed to test compilation
-    implementation     project(':browser')
+    // implementation     project(':browser') // Temporarily removed to test compilation
     // implementation     project(':exoplayeractivity') // Temporarily removed to test compilation
 
     // UI / AndroidX
