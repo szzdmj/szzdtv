@@ -1,7 +1,6 @@
 apply plugin: 'com.android.library'
 
 android {
-    // FIX: Default interface methods are only supported starting with Android N (--min-api 24)
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
@@ -16,7 +15,7 @@ android {
         versionCode 1
         versionName "1.0"
 
-        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField "long", "TIMESTAMP", System.currentTimeMillis() + "L"
     }
 
@@ -34,7 +33,8 @@ android {
         kids {}
     }
 
-    lintOptions {
+    // AGP 8：lintOptions -> lint
+    lint {
         abortOnError true
         lintConfig rootProject.file('lint.xml')
     }
