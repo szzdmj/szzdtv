@@ -83,6 +83,10 @@ configurations.all {
 }
 
 dependencies {
+    implementation(platform("com.google.android.exoplayer:exoplayer-bom:2.18.7"))
+    implementation("com.google.android.exoplayer:exoplayer")
+    implementation("com.google.android.exoplayer:extension-leanback")
+
     // Kotlin
     implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.22")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
