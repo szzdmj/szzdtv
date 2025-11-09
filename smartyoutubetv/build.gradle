@@ -34,7 +34,7 @@ dependencies {
 
     // Local HTTP / voice overlay
     implementation 'org.nanohttpd:nanohttpd:'                + rootProject.ext.nanoHttpdVersion
-    implementation 'com.algolia.instantsearch:voice:'        + rootProject.ext.voiceOverlayVersion
+    // implementation 'com.algolia.instantsearch:voice:'        + rootProject.ext.voiceOverlayVersion // Removed as the library is not available
 
     // Network / event bus
     implementation 'com.squareup.okhttp3:okhttp:'            + rootProject.ext.okhttpVersion
