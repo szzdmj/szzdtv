@@ -17,10 +17,10 @@ dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
 
     // Internal modules
-    // implementation     project(':sharedutils') // Temporarily removed to test compilation
-    // implementation     project(':common') // Temporarily removed to test compilation
-    // implementation     project(':browser') // Temporarily removed to test compilation
-    // implementation     project(':exoplayeractivity') // Temporarily removed to test compilation
+    implementation     project(':sharedutils')
+    implementation     project(':common')
+    implementation     project(':browser')
+    implementation     project(':exoplayeractivity')
 
     // UI / AndroidX
     implementation 'androidx.appcompat:appcompat:'           + rootProject.ext.appCompatXLibraryVersion
