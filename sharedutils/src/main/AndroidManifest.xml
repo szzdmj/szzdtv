@@ -1,4 +1,6 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-          package="com.yourcompany.sharedutils">
-    <!-- If it is a pure library with no components you can still leave application out or empty -->
+<?xml version="1.0" encoding="utf-8"?>
+<manifest package="com.example.sharedutils"
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- library module 可不含 <application>；如需可添加 -->
 </manifest>
