@@ -53,15 +53,14 @@ dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation 'androidx.appcompat:appcompat:' + rootProject.ext.appCompatXLibraryVersion
     implementation 'com.squareup.okhttp3:okhttp:' + rootProject.ext.okhttpVersion
-    implementation 'com.squareup:otto:' + rootProject.ext.ottoVersion
+    implementation 'com.squareup.otto:' + rootProject.ext.ottoVersion
     implementation 'dnsjava:dnsjava:' + rootProject.ext.dnsjavaVersion
 
     implementation project(path: ':sharedutils')
     implementation project(path: ':common')
     // implementation project(path: ':appupdatechecker') // Removed as the module does not exist
 
-    // 仅启用 lite 口味的 Crosswalk，防止触发 full 口味任务
-    liteImplementation 'org.xwalk:xwalk_shared_library:' + rootProject.ext.xwalkSharedLibraryVersion
-    // 如需 full 再打开下面一行，并确保依赖可解析
+    // Removed deprecated Crosswalk dependency to fix build failure
+    // liteImplementation 'org.xwalk:xwalk_shared_library:' + rootProject.ext.xwalkSharedLibraryVersion
     // fullImplementation 'org.xwalk:xwalk_core_library:' + rootProject.ext.xwalkCoreLibraryVersion
 }
