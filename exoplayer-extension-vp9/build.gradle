@@ -18,16 +18,16 @@ android {
 
     sourceSets.main {
         jniLibs.srcDir 'src/main/libs'
-        jni.srcDirs = [] // Disable the automatic ndk-build call by Android Studio.
+        jni.srcDirs = []
     }
 
     testOptions.unitTests.includeAndroidResources = true
 }
 
 dependencies {
-    // used along with vp9 extension
-    // implementation 'com.amazon.android:exoplayer-core:' + amazonExoplayerVersion
-    implementation 'com.google.android.exoplayer:exoplayer-core:' + exoplayerVersion
+    // 官方 ExoPlayer VP9 擴充所需核心
+    implementation platform('com.google.android.exoplayer:exoplayer-bom:' + exoplayerVersion)
+    implementation 'com.google.android.exoplayer:exoplayer-core'
 
     implementation 'androidx.annotation:annotation:' + appCompatXLibraryVersion
 }
