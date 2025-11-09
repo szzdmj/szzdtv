@@ -1,19 +1,15 @@
-// 仅包含项目内实际存在的模块（补上 :sharedutils）
-include ':smartyoutubetv', ':browser', ':exoplayeractivity', ':common', ':sharedutils'
-
-// 可选引入外部子模块（存在才应用），避免因缺失文件导致失败
-def rootDir = settingsDir
-def tryApply = { baseName ->
-    def root = new File(rootDir, "../${baseName}").exists() ? new File(rootDir, "../${baseName}") : new File(rootDir, "./${baseName}")
-    def core = new File(root, 'core_settings.gradle')
-    if (core.exists()) {
-        apply from: core
-        println "INFO: Applied ${core}"
-    } else {
-        println "WARN: ${baseName} core_settings.gradle not found at ${core}, skipping."
-    }
+pluginManagement {
+  repositories {
+    google()
+    mavenCentral()
+    gradlePluginPortal()
+  }
+  plugins {
+    id("com.android.application") version "8.4.2"
+    id("com.android.library") version "8.4.2"
+    id("org.jetbrains.kotlin.android") version "1.9.22"
+  }
 }
-tryApply('SharedModules')
-tryApply('MediaServiceCore')
 
-// 不再设置 gradle.ext.sharedModulesConstants（所有常量已在顶层 build.gradle 的 ext 中）
+rootProject.name = "szzdtv"
+// include(...) 視你的專案實際模組而定
