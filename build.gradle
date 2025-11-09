@@ -2,7 +2,6 @@
 
 buildscript {
     repositories {
-        // 重要：Google 优先，保证 AndroidX/Jetifier 等解析正确
         google()
         mavenCentral()
         jcenter()
@@ -45,15 +44,8 @@ ext {
     xwalkSharedLibraryVersion = '23.53.589.4'
     xwalkCoreLibraryVersion   = '23.53.589.4'
 
-    // App / Exo
-    nanoHttpdVersion         = '2.3.1'
-    voiceOverlayVersion      = '1.0.0'
-    constraintLayoutXVersion = '1.1.3'
-    firebaseCrashlyticsVersion = '17.0.0'
-
-    // ExoPlayer family
-    amazonExoplayerVersion      = '2.12.1'
-    exoplayerVersion            = '2.12.1'
+    // App / Exo (官方版本；已移除 amazonExoplayerVersion)
+    exoplayerVersion = '2.18.7'
 
     // PreviewSeekBar / Glide
     previewSeekBarDevVersion    = '2.18.1.0'
