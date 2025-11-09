@@ -1,0 +1,5 @@
+<resources>
+    <style name="Theme.TvApp" parent="Theme.Leanback">
+        <!-- 可在此定制色彩 / 字体 -->
+    </style>
+</resources>
