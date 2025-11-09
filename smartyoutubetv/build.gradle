@@ -11,6 +11,15 @@ android {
         versionCode 1319
         versionName "6.17.739"
     }
+
+    productFlavors {
+        full {
+        }
+        lite {
+        }
+        kids {
+        }
+    }
 }
 
 dependencies {
