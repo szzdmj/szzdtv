@@ -1,257 +1,32 @@
-name: "Android CI - szzdtv (legacy stack with auto wrapper and tightened trimmed logs)"
+name: Android CI - Gradle 8.x + Java 17
 
 on:
   push:
-    branches: [ "main", "master", "main-branch" ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ "main", "master", "main-branch" ]
-  workflow_dispatch:
-    inputs:
-      nano_branch:
-        description: "Branch/commit of szzdmj/nanohttpd to fetch index.html from"
-        required: false
-        default: "master"
-      sz_ref:
-        description: "Branch/commit of szmj0/szmj0.github.io to fetch webjs.js & sw.js from"
-        required: false
-        default: "b6977c914a9a1aabafb5bddd6817eea85a2a8738"
-
-permissions:
-  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      GRADLE_OPTS: -Dorg.gradle.jvmargs='-Xmx2g -Dfile.encoding=UTF-8'
-      # 可调紧缩参数
-      ERROR_BLOCK_LIMIT: "200"        # 最后保留的 ERROR/WARN/Exception 匹配行数量
-      TAIL_CONTEXT: "200"             # 额外尾部上下文行数量
-      LOG_SIZE_THRESHOLD: "512000"    # 触发裁剪的字节阈值 (≈500KB)
 
     steps:
-      - name: "Checkout"
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: "Set up JDK 17 (for sdkmanager)"
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
           cache: gradle
 
-      - name: "Install isolated Android SDK (API 28 only) and accept licenses"
-        shell: bash
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="$RUNNER_TEMP/android-sdk"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
-          echo "ANDROID_HOME=${ANDROID_HOME}" >> "$GITHUB_ENV"
-          mkdir -p "${ANDROID_SDK_ROOT}/cmdline-tools"
-          pushd "${ANDROID_SDK_ROOT}/cmdline-tools" >/dev/null
-          CTL_ZIP="commandlinetools-linux-11076708_latest.zip"
-          URL_BASE="https://dl.google.com/android/repository"
-          if ! curl -fsSL --retry 3 -o cmdline-tools.zip "${URL_BASE}/${CTL_ZIP}"; then
-            curl -fsSL --retry 3 -o cmdline-tools.zip "${URL_BASE}/commandlinetools-linux-9477386_latest.zip"
-          fi
-          unzip -q cmdline-tools.zip
-          rm -f cmdline-tools.zip
-          if [ -d "cmdline-tools" ]; then
-            mv cmdline-tools latest
-          fi
-          popd >/dev/null
-          SDKM="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
-          yes | "${SDKM}" --sdk_root="${ANDROID_SDK_ROOT}" --licenses >/dev/null 2>&1 || true
-          "${SDKM}" --sdk_root="${ANDROID_SDK_ROOT}" "platform-tools" "build-tools;28.0.3" "platforms;android-28"
-
-      - name: "Prepare PWA assets (index.html, webjs.js, sw.js)"
-        env:
-          NBR: ${{ github.event.inputs.nano_branch || 'master' }}
-          SZR: ${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          A="smartyoutubetv/src/main/assets"
-          mkdir -p "$A"
-          echo "Fetching index.html from szzdmj/nanohttpd@${NBR}"
-          base_nano="https://raw.githubusercontent.com/szzdmj/nanohttpd/${NBR}/android-asset-webshell/app/src/main/assets"
-          curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/index.html" "${base_nano}/index.html"
-          echo "Fetching webjs.js & sw.js from szmj0/szmj0.github.io@${SZR}"
-          base_sz="https://raw.githubusercontent.com/szmj0/szmj0.github.io/${SZR}"
-          curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/webjs.js" "${base_sz}/webjs.js"
-          curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/sw.js"     "${base_sz}/sw.js"
-          echo "Assets present in ${A}:"
-          ls -l "${A}"
-          echo "index.html head:"
-          sed -n '1,40p' "${A}/index.html" || true
-
-      - name: "Set up JDK 11 (for legacy Gradle/AGP build)"
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "11"
-
-      - name: "Generate proper Gradle Wrapper (Gradle 5.4.1)"
+      # 使用 Gradle 官方 Action（自動偵測 wrapper）
+      - name: Setup Gradle
         uses: gradle/gradle-build-action@v3
         with:
-          gradle-version: 5.4.1
-          arguments: wrapper --gradle-version 5.4.1 --distribution-type bin
-        env:
-          GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
+          cache-read-only: false
 
-      - name: "Auto commit updated Gradle wrapper (if changed)"
-        if: success()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
+      - name: Build
         run: |
-          set -euo pipefail
-          CHANGED=$(git status --porcelain gradle/wrapper gradlew gradlew.bat 2>/dev/null || true)
-          if [ -n "${CHANGED}" ]; then
-            echo "Wrapper changes detected:"
-            echo "${CHANGED}"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git config user.name "github-actions[bot]"
-            git add gradle/wrapper gradlew gradlew.bat
-            git commit -m "chore: refresh Gradle wrapper to 5.4.1 [skip ci]"
-            git push origin HEAD:${GITHUB_REF#refs/heads/}
-            echo "Wrapper changes pushed."
-          else
-            echo "No wrapper changes to commit."
-          fi
-
-      - name: "Make gradlew executable"
-        shell: bash
-        run: chmod +x gradlew
-
-      - name: "Verify Gradle version via wrapper"
-        shell: bash
-        run: ./gradlew -v
-
-      - name: "List projects"
-        shell: bash
-        run: ./gradlew projects --no-daemon --info
-
-      - name: "List tasks in :smartyoutubetv"
-        shell: bash
-        run: ./gradlew :smartyoutubetv:tasks --all --no-daemon --info
-
-      - name: "Build Debug (:smartyoutubetv) and save logs"
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./gradlew :smartyoutubetv:assembleDebug --stacktrace --info --no-daemon > build_log_debug.txt 2>&1 || true
-          echo "Debug build finished (possibly with errors), log saved."
-
-      - name: "Unit tests and save logs"
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./gradlew testDebugUnitTest --stacktrace --info --no-daemon > test_log.txt 2>&1 || true
-          echo "Unit tests finished, log saved."
-
-      - name: "Lint and save logs"
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./gradlew lintDebug --stacktrace --info --no-daemon > lint_log.txt 2>&1 || true
-          echo "Lint finished, log saved."
-
-      - name: "Build Release (:smartyoutubetv) and save logs"
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./gradlew :smartyoutubetv:assembleRelease --stacktrace --info --no-daemon > build_log_release.txt 2>&1 || true
-          echo "Release build finished (possibly with errors), log saved."
-
-      - name: "Trim logs (tight mode - last N ERROR/WARN matches) if oversized (>500KB)"
-        shell: bash
-        run: |
-          set -euo pipefail
-          trim_log() {
-            local src="$1"; local dst="$2"
-            if [ ! -f "$src" ]; then echo "Missing log $src"; return; fi
-            local size
-            size=$(wc -c < "$src" || echo 0)
-            local threshold="${LOG_SIZE_THRESHOLD}"
-            local limit="${ERROR_BLOCK_LIMIT}"
-            local tailLines="${TAIL_CONTEXT}"
-
-            if [ "$size" -gt "$threshold" ]; then
-              echo "Log $src size $size > $threshold, creating tightened trimmed version $dst (limit=$limit, tail=$tailLines)"
-              awk -v limit="$limit" -v tailLines="$tailLines" '
-                {
-                  all[total++] = $0
-                  if ($0 ~ /ERROR|Exception|Failed|WARNING|WARN|NoClassDefFoundError/) {
-                    matches[count++] = $0
-                  }
-                }
-                END {
-                  print "=== TIGHT TRIMMED VERSION (source >500KB) ==="
-                  print "=== Last " limit " ERROR/WARN/Exception matched lines ==="
-                  start = (count > limit) ? count - limit : 0
-                  for (i = start; i < count; i++) {
-                    print matches[i]
-                  }
-                  print "=== Tail (last " tailLines " lines) ==="
-                  tailStart = (total > tailLines) ? total - tailLines : 0
-                  for (i = tailStart; i < total; i++) {
-                    print all[i]
-                  }
-                }
-              ' "$src" > "$dst"
-            else
-              cp "$src" "$dst"
-              echo "Log $src size $size <= $threshold, copied unchanged to $dst"
-            fi
-          }
-          trim_log build_log_debug.txt     build_log_debug_trimmed.txt
-          trim_log test_log.txt            test_log_trimmed.txt
-          trim_log lint_log.txt            lint_log_trimmed.txt
-          trim_log build_log_release.txt   build_log_release_trimmed.txt
-
-      - name: "Upload logs (original)"
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: logs-original
-          path: |
-            build_log_debug.txt
-            test_log.txt
-            lint_log.txt
-            build_log_release.txt
-
-      - name: "Upload logs (tight-trimmed)"
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: logs-trimmed-tight
-          path: |
-            build_log_debug_trimmed.txt
-            test_log_trimmed.txt
-            lint_log_trimmed.txt
-            build_log_release_trimmed.txt
-
-      - name: "Upload debug APK (if successful)"
-        uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: szzdtv-debug-apk
-          path: smartyoutubetv/build/outputs/apk/debug/*.apk
-
-      - name: "Upload release APK (if successful)"
-        uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: szzdtv-release-apk
-          path: smartyoutubetv/build/outputs/apk/release/*.apk
-
-      - name: "Upload legacy app module APK (optional)"
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-apk
-          path: app/build/outputs/apk/release/*.apk
+          ./gradlew --version
+          ./gradlew clean build -S
