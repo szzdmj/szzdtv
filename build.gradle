@@ -1,24 +1,12 @@
-// Top-level build file
-
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-        jcenter()
-        maven { url 'https://maven.google.com/'; name 'Google' }
-    }
-    dependencies {
-        classpath 'com.android.tools.build:gradle:3.5.0'
-    }
-    ext {
-        compileSdkVersion = 28
-        buildToolsVersion = "28.0.3"
-        minSdkVersion = 14
-        targetSdkVersion = 26
-    }
-}
+// Root build (migrated for AGP 8 / Gradle 8)
 
 ext {
+    // Toolchain targets
+    compileSdkVersion = 34
+    buildToolsVersion = "34.0.0"
+    minSdkVersion = 22
+    targetSdkVersion = 34
+
     // AndroidX / Support
     appCompatXLibraryVersion = '1.1.0'
     materialLibraryVersion   = '1.1.0'
@@ -40,11 +28,11 @@ ext {
     apacheCommonsLangVersion = '3.9'
     jsonPathVersion     = '2.4.0'
 
-    // Crosswalk
+    // Crosswalk (保留如需)
     xwalkSharedLibraryVersion = '23.53.589.4'
     xwalkCoreLibraryVersion   = '23.53.589.4'
 
-    // App / Exo (官方版本；已移除 amazonExoplayerVersion)
+    // ExoPlayer (官方)
     exoplayerVersion = '2.18.7'
 
     // PreviewSeekBar / Glide
@@ -57,7 +45,7 @@ allprojects {
     repositories {
         google()
         mavenCentral()
-        jcenter()
+        // jcenter 已關閉，僅當必要時保留來源鏡像
         maven { url 'https://maven.google.com/'; name 'Google' }
         maven { url 'https://download.01.org/crosswalk/releases/crosswalk/android/maven2' }
         maven { url 'https://jitpack.io' }
