@@ -6,8 +6,7 @@
 
     <!-- NOTE: ExoApplication: exoplayer specific params -->
     <application
-        android:label="@string/app_name"
-        tools:node="merge">
+        android:label="@string/app_name">
     </application>
 
 </manifest>
