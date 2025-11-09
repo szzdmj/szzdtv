@@ -1,4 +1,4 @@
-name: Android CI - szzdtv (merged, auto-refresh Gradle Wrapper 5.4.1)
+name: Android CI - szzdtv (merged, generate proper Gradle Wrapper 5.4.1)
 
 on:
   push:
@@ -79,74 +79,51 @@ jobs:
           echo "index.html head:"
           sed -n '1,40p' "${A}/index.html" || true
 
-      - name: Refresh Gradle Wrapper to 5.4.1 (download jar + scripts)
-        shell: bash
-        run: |
-          set -euo pipefail
-          WRAP_DIR="gradle/wrapper"
-          mkdir -p "${WRAP_DIR}"
-
-          echo "Writing gradle-wrapper.properties (strip YAML indentation)."
-          cat <<'EOF' | sed 's/^[[:space:]]\{10\}//' > "${WRAP_DIR}/gradle-wrapper.properties"
-                    distributionBase=GRADLE_USER_HOME
-                    distributionPath=wrapper/dists
-                    distributionUrl=https\://services.gradle.org/distributions/gradle-5.4.1-bin.zip
-                    zipStoreBase=GRADLE_USER_HOME
-                    zipStorePath=wrapper/dists
-          EOF
-
-          echo "Downloading clean gradlew scripts from Gradle v5.4.1 tag."
-          curl -fsSL --retry 3 -o gradlew     https://raw.githubusercontent.com/gradle/gradle/v5.4.1/gradlew
-          curl -fsSL --retry 3 -o gradlew.bat https://raw.githubusercontent.com/gradle/gradle/v5.4.1/gradlew.bat
-          chmod +x gradlew
-
-          echo "Downloading Gradle 5.4.1 distribution..."
-          TMP_DIR="$(mktemp -d)"
-          curl -fsSL --retry 3 -o "${TMP_DIR}/gradle.zip" "https://services.gradle.org/distributions/gradle-5.4.1-bin.zip"
-          unzip -q "${TMP_DIR}/gradle.zip" -d "${TMP_DIR}"
-
-          # First look in lib/ (Gradle 5.x layout)
-          WRAP_JAR="$(find "${TMP_DIR}" -type f -path '*/lib/gradle-wrapper-*.jar' -print -quit)"
-          # Fallback for newer distributions that may put it under plugins (future-proof)
-          if [ -z "${WRAP_JAR}" ] || [ ! -f "${WRAP_JAR}" ]; then
-            WRAP_JAR="$(find "${TMP_DIR}" -type f -path '*/lib/plugins/gradle-wrapper-*.jar' -print -quit)"
-          fi
-
-          if [ -z "${WRAP_JAR}" ] || [ ! -f "${WRAP_JAR}" ]; then
-            echo "Wrapper jar not found. Listing candidate files (depth 3) for debugging:"
-            find "${TMP_DIR}" -maxdepth 3 -type f | sed 's/^/  /'
-            exit 1
-          fi
-
-          echo "Found wrapper jar: ${WRAP_JAR}"
-          cp -f "${WRAP_JAR}" "${WRAP_DIR}/gradle-wrapper.jar"
-          echo "Gradle wrapper refreshed."
-
-      - name: Make gradlew executable
-        shell: bash
-        run: chmod +x gradlew
-
-      - name: Set up JDK 11 (legacy Gradle/AGP build usage)
+      - name: Set up JDK 11 (for legacy Gradle/AGP build)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '11'
 
-      - name: Verify Gradle version
+      - name: Generate proper Gradle Wrapper (Gradle 5.4.1)
+        uses: gradle/gradle-build-action@v3
+        with:
+          gradle-version: 5.4.1
+          arguments: wrapper --gradle-version 5.4.1 --distribution-type bin
+        env:
+          # 防止 wrapper 任务受已有损坏 wrapper 影响，强制使用下载的分发执行
+          GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
+
+      - name: Show generated wrapper files
         shell: bash
-        run: ./gradlew -v || true
+        run: |
+          set -euo pipefail
+          echo "Listing gradle/wrapper after wrapper task:"
+          ls -l gradle/wrapper || true
+          echo "gradle-wrapper.properties content:"
+          sed -n '1,40p' gradle/wrapper/gradle-wrapper.properties || true
+          echo "Checking wrapper jar contains CommandLineParser reference:"
+          if unzip -l gradle/wrapper/gradle-wrapper.jar | grep -q 'org/gradle/cli/CommandLineParser.class'; then
+            echo "Wrapper jar includes CLI parser classes."
+          else
+            echo "WARNING: Wrapper jar missing CLI parser classes (older minimal style)."
+          fi
+
+      - name: Make gradlew executable
+        shell: bash
+        run: chmod +x gradlew
+
+      - name: Verify Gradle version via wrapper
+        shell: bash
+        run: ./gradlew -v
 
       - name: List projects
-        uses: gradle/gradle-build-action@v3
-        with:
-          gradle-version: 5.4.1
-          arguments: projects --no-daemon --info
+        shell: bash
+        run: ./gradlew projects --no-daemon --info
 
       - name: List tasks in :smartyoutubetv
-        uses: gradle/gradle-build-action@v3
-        with:
-          gradle-version: 5.4.1
-          arguments: :smartyoutubetv:tasks --all --no-daemon --info
+        shell: bash
+        run: ./gradlew :smartyoutubetv:tasks --all --no-daemon --info
 
       - name: Build Debug (:smartyoutubetv) and save logs
         shell: bash
