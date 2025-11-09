@@ -4,19 +4,13 @@
 4|           android:installLocation="auto"
 5|           package="com.liskovsoft.smartyoutubetv">
 6| 
-7|     <uses-permission android:name="android.permission.INTERNET"/>
-8|     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-9|     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
-10|     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
-11|     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
-12| 
-13|     <!-- NOTE: ExoApplication: exoplayer specific params -->
-14|     <application
-15|         android:label="@string/app_name"
-16|         tools:node="merge">
-17| 
-18|         <!-- allow to use repacked XWalk's apk -->
-19|         <meta-data android:name="xwalk_verify" android:value="disable" />
-20|     </application>
-21| 
-22| </manifest>
+7|     <!-- NOTE: ExoApplication: exoplayer specific params -->
+8|     <application
+9|         android:label="@string/app_name"
+10|         tools:node="merge">
+11| 
+12|         <!-- allow to use repacked XWalk's apk -->
+13|         <meta-data android:name="xwalk_verify" android:value="disable" />
+14|     </application>
+15| 
+16| </manifest>
