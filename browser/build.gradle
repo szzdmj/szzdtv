@@ -44,7 +44,7 @@ android {
 }
 
 dependencies {
-    androidTestImplementation('com.android.support.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion) {
+    androidTestImplementation('androidx.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion) {
         exclude group: 'com.android.support', module: 'support-annotations'
     }
     testImplementation 'junit:junit:' + rootProject.ext.junitVersion
