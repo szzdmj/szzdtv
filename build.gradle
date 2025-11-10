@@ -1,70 +1,65 @@
-// Root build (migrated for AGP 8 / Gradle 8)
+apply plugin: 'com.android.library'
 
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
+android {
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
-    dependencies {
-        classpath 'com.android.tools.build:gradle:8.4.2'
+
+    compileSdkVersion rootProject.ext.compileSdkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+
+    defaultConfig {
+        minSdkVersion     rootProject.ext.minSdkVersion
+        targetSdkVersion  rootProject.ext.targetSdkVersion
+        versionCode 7
+        versionName "6.4.7"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
-}
 
-ext {
-    // Toolchain targets
-    compileSdkVersion = 34
-    buildToolsVersion = "34.0.0"
-    minSdkVersion = 22
-    targetSdkVersion = 34
-
-    // AndroidX / Support
-    appCompatXLibraryVersion = '1.1.0'
-    materialLibraryVersion   = '1.1.0'
-    multiDexVersion          = '2.0.1'
-
-    // Test
-    junitVersion        = '4.12'
-    espressoCoreVersion = '3.0.2'
-    robolectricVersion  = '4.3.1'
-    assertJVersion      = '3.12.2'
-    commonsIOVersion    = '2.6'
-
-    // Network / Util
-    okhttpVersion       = '3.12.13'
-    ottoVersion         = '1.3.8'
-    dnsjavaVersion      = '3.5.2'
-    gsonVersion         = '2.8.9'
-    diskLruCacheVersion = '2.0.2'
-    apacheCommonsLangVersion = '3.9'
-    jsonPathVersion     = '2.4.0'
-
-    // Crosswalk (保留如需)
-    xwalkSharedLibraryVersion = '23.53.589.4'
-    xwalkCoreLibraryVersion   = '23.53.589.4'
-
-    // ExoPlayer (官方)
-    exoplayerVersion = '2.18.7'
-
-    // PreviewSeekBar / Glide
-    previewSeekBarDevVersion    = '2.18.1.0'
-    previewSeekBarExoDevVersion = '2.18.1.0'
-    glideVersion                = '4.11.0'
-}
-
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-        // jcenter 已關閉，僅當必要時保留來源鏡像
-        maven { url 'https://maven.google.com/'; name 'Google' }
-        maven { url 'https://download.01.org/crosswalk/releases/crosswalk/android/maven2' }
-        maven { url 'https://jitpack.io' }
-    }
-    gradle.projectsEvaluated {
-        tasks.withType(JavaCompile) {
-            options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+
+    flavorDimensions "default"
+    productFlavors {
+        lite {}
+        full {}
+        kids {}
+    }
+
+    // AGP 8：移除 defaultPublishConfig，必要時改為 publishing { singleVariant("liteDebug") }
+    // publishing {
+    //     singleVariant("liteDebug")
+    // }
+
+    // AGP 8：將 lintOptions 改為 lint 區塊
+    lint {
+        abortOnError false
+        check false
+        lintConfig rootProject.file('lint.xml')
+    }
 }
 
-task clean(type: Delete) { delete rootProject.buildDir }
+dependencies {
+    androidTestImplementation('androidx.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion) {
+        exclude group: 'com.android.support', module: 'support-annotations'
+    }
+    testImplementation 'junit:junit:' + rootProject.ext.junitVersion
+
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation 'androidx.appcompat:appcompat:' + rootProject.ext.appCompatXLibraryVersion
+    implementation 'com.squareup.okhttp3:okhttp:' + rootProject.ext.okhttpVersion
+    implementation 'com.squareup:otto:' + rootProject.ext.ottoVersion
+    implementation 'dnsjava:dnsjava:' + rootProject.ext.dnsjavaVersion
+
+    implementation project(path: ':sharedutils')
+    implementation project(path: ':common')
+
+    // Crosswalk 已移除（如需請自行還原）
+    // liteImplementation 'org.xwalk:xwalk_shared_library:' + rootProject.ext.xwalkSharedLibraryVersion
+    // fullImplementation 'org.xwalk:xwalk_core_library:' + rootProject.ext.xwalkCoreLibraryVersion
+}
