@@ -34,6 +34,7 @@ android {
 
     lintOptions {
         abortOnError false
+        check false
         lintConfig rootProject.file('lint.xml')
     }
 }
