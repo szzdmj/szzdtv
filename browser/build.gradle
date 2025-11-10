@@ -37,7 +37,7 @@ android {
     // }
 
     // AGP 8：將 lintOptions 改為 lint 區塊
-    lint {
+    lintOptions {
         abortOnError false
         check false
         lintConfig rootProject.file('lint.xml')
