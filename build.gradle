@@ -1,5 +1,15 @@
 // Root build (migrated for AGP 8 / Gradle 8)
 
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.4.2'
+    }
+}
+
 ext {
     // Toolchain targets
     compileSdkVersion = 34
