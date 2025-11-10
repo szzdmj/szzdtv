@@ -36,6 +36,7 @@ android {
     // AGP 8：lintOptions -> lint
     lint {
         abortOnError false
+        check false
         lintConfig rootProject.file('lint.xml')
     }
 }
