@@ -12,4 +12,13 @@ pluginManagement {
 }
 
 rootProject.name = "szzdtv"
-// include(...) 視你的專案實際模組而定
+
+// Include Android modules
+include ':app'
+include ':smartyoutubetv'
+include ':browser'
+include ':common'
+include ':exoplayer-extension-vp9'
+include ':exoplayeractivity'
+include ':pwaapp'
+include ':sharedutils'
