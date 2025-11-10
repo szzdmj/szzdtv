@@ -80,19 +80,12 @@ jobs:
           base_nano="https://raw.githubusercontent.com/szzdmj/nanohttpd/${NBR}/android-asset-webshell/app/src/main/assets"
           curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/index.html" "${base_nano}/index.html"
           echo "Fetching webjs.js & sw.js from szmj0/szmj0.github.io@${SZR}"
-          base_sz="https://raw.githubusercontent.com/szmj0/szmj0.github.io/${SZR}"
           curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/webjs.js" "${base_sz}/webjs.js"
           curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/sw.js"     "${base_sz}/sw.js"
           echo "Assets present in ${A}:"
           ls -l "${A}"
           echo "index.html head:"
           sed -n '1,40p' "${A}/index.html" || true
-
-      - name: "Set up JDK 11 (for legacy Gradle/AGP build)"
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "11"
 
       # 使用 Gradle 官方 Action（自動偵測 wrapper）
       - name: Setup Gradle
@@ -168,28 +161,28 @@ jobs:
       - name: "Build Debug (:smartyoutubetv) and save logs"
         shell: bash
         run: |
-          set -euo pipefail
+          set -eo pipefail
           ./gradlew :smartyoutubetv:assembleDebug --stacktrace --info --no-daemon > build_log_debug.txt 2>&1 || true
           echo "Debug build finished (possibly with errors), log saved."
 
       - name: "Unit tests and save logs"
         shell: bash
         run: |
-          set -euo pipefail
+          set -eo pipefail
           ./gradlew testDebugUnitTest --stacktrace --info --no-daemon > test_log.txt 2>&1 || true
           echo "Unit tests finished, log saved."
 
       - name: "Lint and save logs"
         shell: bash
         run: |
-          set -euo pipefail
+          set -eo pipefail
           ./gradlew lintDebug --stacktrace --info --no-daemon > lint_log.txt 2>&1 || true
           echo "Lint finished, log saved."
 
       - name: "Build Release (:smartyoutubetv) and save logs"
         shell: bash
         run: |
-          set -euo pipefail
+          set -eo pipefail
           ./gradlew :smartyoutubetv:assembleRelease --stacktrace --info --no-daemon > build_log_release.txt 2>&1 || true
           echo "Release build finished (possibly with errors), log saved."
 
