@@ -68,18 +68,18 @@ jobs:
           "${SDKM}" --sdk_root="${ANDROID_SDK_ROOT}" "platform-tools" "build-tools;28.0.3" "platforms;android-28"
 
       - name: "Prepare PWA assets (index.html, webjs.js, sw.js)"
-        env:
-          NBR: ${{ github.event.inputs.nano_branch || 'master' }}
-          SZR: ${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}
         shell: bash
         run: |
           set -euo pipefail
+          NBR="${{ github.event.inputs.nano_branch || 'master' }}"
+          SZR="${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}"
           A="smartyoutubetv/src/main/assets"
           mkdir -p "$A"
           echo "Fetching index.html from szzdmj/nanohttpd@${NBR}"
           base_nano="https://raw.githubusercontent.com/szzdmj/nanohttpd/${NBR}/android-asset-webshell/app/src/main/assets"
           curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/index.html" "${base_nano}/index.html"
           echo "Fetching webjs.js & sw.js from szmj0/szmj0.github.io@${SZR}"
+          base_sz="https://raw.githubusercontent.com/szmj0/szmj0.github.io/${SZR}"
           curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/webjs.js" "${base_sz}/webjs.js"
           curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/sw.js"     "${base_sz}/sw.js"
           echo "Assets present in ${A}:"
@@ -161,7 +161,7 @@ jobs:
       - name: "Build Debug (:smartyoutubetv) and save logs"
         shell: bash
         run: |
-          set -eo pipefail
+          set -euo pipefail
           ./gradlew :smartyoutubetv:assembleDebug --stacktrace --info --no-daemon > build_log_debug.txt 2>&1 || true
           echo "Debug build finished (possibly with errors), log saved."
 
@@ -175,14 +175,14 @@ jobs:
       - name: "Lint and save logs"
         shell: bash
         run: |
-          set -eo pipefail
+          set -euo pipefail
           ./gradlew lintDebug --stacktrace --info --no-daemon > lint_log.txt 2>&1 || true
           echo "Lint finished, log saved."
 
       - name: "Build Release (:smartyoutubetv) and save logs"
         shell: bash
         run: |
-          set -eo pipefail
+          set -euo pipefail
           ./gradlew :smartyoutubetv:assembleRelease --stacktrace --info --no-daemon > build_log_release.txt 2>&1 || true
           echo "Release build finished (possibly with errors), log saved."
 
