@@ -1,6 +1,7 @@
 apply plugin: 'com.android.library'
 
 android {
+    namespace "com.liskovsoft.smartyoutubetv.common"
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
@@ -61,3 +62,4 @@ dependencies {
     implementation 'androidx.multidex:multidex:' + rootProject.ext.multiDexVersion
     implementation 'com.jakewharton:disklrucache:' + rootProject.ext.diskLruCacheVersion
 }
+
