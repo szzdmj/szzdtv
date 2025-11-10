@@ -10,7 +10,7 @@ ext {
     // AndroidX / Support
     appCompatXLibraryVersion = '1.1.0'
     materialLibraryVersion   = '1.1.0'
-    multiDexVersion          = '1.0.3'
+    multiDexVersion          = '2.0.1'
 
     // Test
     junitVersion        = '4.12'
