@@ -2,6 +2,7 @@ apply from: gradle.ext.sharedModulesConstants
 apply plugin: 'com.android.library'
 
 android {
+    namespace "com.google.android.exoplayer2.ext.vp9"
     compileSdkVersion project.properties.compileSdkVersion
 
     compileOptions {
@@ -25,7 +26,7 @@ android {
 }
 
 dependencies {
-    // 官方 ExoPlayer VP9 擴充所需核心
+    // 官方 ExoPlayer VP9 扩充所需核心
     implementation platform('com.google.android.exoplayer:exoplayer-bom:' + exoplayerVersion)
     implementation 'com.google.android.exoplayer:exoplayer-core'
 
