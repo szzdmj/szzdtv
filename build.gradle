@@ -62,9 +62,6 @@ allprojects {
     repositories {
         google()
         mavenCentral()
-        // jcenter 已關閉，僅當必要時保留來源鏡像
-        maven { url 'https://maven.google.com/'; name 'Google' }
-        maven { url 'https://download.01.org/crosswalk/releases/crosswalk/android/maven2' }
         maven { url 'https://jitpack.io' }
     }
     gradle.projectsEvaluated {
