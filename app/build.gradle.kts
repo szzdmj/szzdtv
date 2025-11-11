@@ -1,56 +1,39 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("androidx.navigation.safeargs.kotlin")
+    id("kotlin-kapt")
+    id("kotlin-parcelize")
+    id("dagger.hilt.android.plugin")
+    id("kotlinx-serialization")
 }
 
 android {
-    namespace = "com.example.tvapp"
+    namespace = "com.liskovsoft.smartyoutubetv2"  // Updated namespace
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.tvapp"
+        applicationId = "com.liskovsoft.smartyoutubetv2"
         minSdk = 22
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        vectorDrawables.useSupportLibrary = true
+        vectorDrawables {
+            useSupportLibrary = true
+        }
     }
 
     buildTypes {
-        debug {
-            applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
-        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
-                "proguard-exoplayer.pro"
+                "proguard-rules.pro"
             )
         }
-    }
-
-    packaging {
-        resources {
-            excludes += setOf(
-                "META-INF/DEPENDENCIES",
-                "META-INF/LICENSE",
-                "META-INF/LICENSE.txt",
-                "META-INF/NOTICE",
-                "META-INF/NOTICE.txt",
-                "META-INF/ASL2.0",
-                "META-INF/AL2.0",
-                "META-INF/LGPL2.1"
-            )
-        }
-    }
-
-    buildFeatures {
-        viewBinding = true
     }
 
     compileOptions {
@@ -78,12 +61,11 @@ android {
 
 // 依赖由 BOM 统一版本管理，移除强制锁定以避免冲突
 dependencies {
-    // Media3（替代 ExoPlayer）：使用 BOM 统一版本
-    implementation(platform("androidx.media3:media3-bom:1.4.1"))
-    implementation("androidx.media3:media3-exoplayer")
-    implementation("androidx.media3:media3-ui")
-    implementation("androidx.media3:media3-session")
-    implementation("androidx.media3:media3-datasource-okhttp")
+    // Media3 individual versions (BOM removed)
+    implementation("androidx.media3:media3-exoplayer:1.4.0")
+    implementation("androidx.media3:media3-ui:1.4.0")
+    implementation("androidx.media3:media3-session:1.4.0")
+    implementation("androidx.media3:media3-datasource-okhttp:1.4.0")
 
     // Kotlin
     implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.22")
@@ -105,10 +87,10 @@ dependencies {
     // Media / ExoPlayer 生态
     implementation("androidx.media:media:1.6.0")
 
-    // 预览进度条：与 Media3 版本适配
-    implementation("io.github.rubensousa:previewseekbar-media3:2.23.0") {
-        exclude(group = "com.amazon.android")
-    }
+    // 预览进度条：与 Media3 版本适配 (commented out due to 401 error)
+    // implementation("io.github.rubensousa:previewseekbar-media3:2.23.0") {
+    //     exclude(group = "com.amazon.android")
+    // }
 
     // 网络 & 数据
     implementation("com.squareup.okhttp3:okhttp:4.11.0")
