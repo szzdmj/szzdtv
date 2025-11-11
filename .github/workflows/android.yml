@@ -24,10 +24,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GRADLE_OPTS: -Dorg.gradle.jvmargs='-Xmx2g -Dfile.encoding=UTF-8'
-      # 可调紧缩参数
-      ERROR_BLOCK_LIMIT: "200"        # 最后保留的 ERROR/WARN/Exception 匹配行数量
-      TAIL_CONTEXT: "200"             # 额外尾部上下文行数量
-      LOG_SIZE_THRESHOLD: "512000"    # 触发裁剪的字节阈值 (≈500KB)
+      ERROR_BLOCK_LIMIT: "200"
+      TAIL_CONTEXT: "200"
+      LOG_SIZE_THRESHOLD: "512000"
 
     steps:
       - name: "Checkout"
@@ -87,29 +86,19 @@ jobs:
           echo "index.html head:"
           sed -n '1,40p' "${A}/index.html" || true
 
-      # 使用 Gradle 官方 Action（自动侦测 wrapper）
-      - name: Setup Gradle
+      - name: Setup Gradle (use wrapper)
         uses: gradle/gradle-build-action@v3
         with:
           cache-read-only: false
 
-      - name: List all tasks (root)
-        uses: gradle/gradle-build-action@v3
-        with:
-          arguments: tasks --all --no-daemon --info
-
-      - name: List smartyoutubetv tasks
-        uses: gradle/gradle-build-action@v3
-        with:
-          arguments: :smartyoutubetv:tasks --all --no-daemon --info
-
+      # Run a full build early with explicit flags and capture logs, so we always get details.
       - name: Build (full logs; disable configuration cache for debugging)
         shell: bash
+        continue-on-error: true
         run: |
           set -eo pipefail
           mkdir -p build-logs
           ./gradlew --version | tee build-logs/gradle-version.txt
-          # 关闭组态快取，完整输出错误（恢复 What went wrong）
           ./gradlew --no-configuration-cache clean build --stacktrace --info --warning-mode all | tee build-logs/build.log
 
       - name: Upload build logs
@@ -119,129 +108,70 @@ jobs:
           name: gradle-build-logs
           path: build-logs/
 
-      - name: Upload configuration cache report (if any)
-        if: always()
-        uses: actions/upload-artifact@v4
+      # Make discovery steps non-fatal and verbose
+      - name: List all tasks (root)
+        uses: gradle/gradle-build-action@v3
+        continue-on-error: true
         with:
-          name: configuration-cache-report
-          path: build/reports/configuration-cache/**
-          if-no-files-found: ignore
+          arguments: tasks --all --no-daemon --info --stacktrace --no-configuration-cache
+
+      - name: List smartyoutubetv tasks
+        uses: gradle/gradle-build-action@v3
+        continue-on-error: true
+        with:
+          arguments: :smartyoutubetv:tasks --all --no-daemon --info --stacktrace --no-configuration-cache
 
       - name: Build
         run: |
           ./gradlew --version
           ./gradlew clean build -S
 
-      - name: "Auto commit updated Gradle wrapper (if changed)"
-        if: success()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          CHANGED=$(git status --porcelain gradle/wrapper gradlew gradlew.bat 2>/dev/null || true)
-          if [ -n "${CHANGED}" ]; then
-            echo "Wrapper changes detected:"
-            echo "${CHANGED}"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git config user.name "github-actions[bot]"
-            git add gradle/wrapper gradlew gradlew.bat
-            git commit -m "chore: refresh Gradle wrapper to 5.4.1 [skip ci]"
-            git push origin HEAD:${GITHUB_REF#refs/heads/}
-            echo "Wrapper changes pushed."
-          else
-            echo "No wrapper changes to commit."
-          fi
-
       - name: "Make gradlew executable"
+        if: always()
         shell: bash
         run: chmod +x gradlew
 
-      - name: "Verify Gradle version via wrapper"
-        shell: bash
-        run: ./gradlew -v
-
       - name: "List projects"
+        if: always()
         shell: bash
-        run: ./gradlew projects --no-daemon --info
+        run: ./gradlew projects --no-daemon --info --stacktrace --no-configuration-cache
 
       - name: "List tasks in :smartyoutubetv"
+        if: always()
         shell: bash
-        run: ./gradlew :smartyoutubetv:tasks --all --no-daemon --info
+        run: ./gradlew :smartyoutubetv:tasks --all --no-daemon --info --stacktrace --no-configuration-cache
 
       - name: "Build Debug (:smartyoutubetv) and save logs"
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew :smartyoutubetv:assembleDebug --stacktrace --info --no-daemon > build_log_debug.txt 2>&1 || true
+          ./gradlew :smartyoutubetv:assembleDebug --stacktrace --info --no-daemon --no-configuration-cache > build_log_debug.txt 2>&1 || true
           echo "Debug build finished (possibly with errors), log saved."
 
       - name: "Unit tests and save logs"
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew testDebugUnitTest --stacktrace --info --no-daemon > test_log.txt 2>&1 || true
+          ./gradlew testDebugUnitTest --stacktrace --info --no-daemon --no-configuration-cache > test_log.txt 2>&1 || true
           echo "Unit tests finished, log saved."
 
       - name: "Lint and save logs"
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew lintDebug --stacktrace --info --no-daemon > lint_log.txt 2>&1 || true
+          ./gradlew lintDebug --stacktrace --info --no-daemon --no-configuration-cache > lint_log.txt 2>&1 || true
           echo "Lint finished, log saved."
 
       - name: "Build Release (:smartyoutubetv) and save logs"
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew :smartyoutubetv:assembleRelease --stacktrace --info --no-daemon > build_log_release.txt 2>&1 || true
+          ./gradlew :smartyoutubetv:assembleRelease --stacktrace --info --no-daemon --no-configuration-cache > build_log_release.txt 2>&1 || true
           echo "Release build finished (possibly with errors), log saved."
-
-      - name: "Trim logs (tight mode - last N ERROR/WARN matches) if oversized (>500KB)"
-        shell: bash
-        run: |
-          set -euo pipefail
-          trim_log() {
-            local src="$1"; local dst="$2"
-            if [ ! -f "$src" ]; then echo "Missing log $src"; return; fi
-            local size
-            size=$(wc -c < "$src" || echo 0)
-            local threshold="${LOG_SIZE_THRESHOLD}"
-            local limit="${ERROR_BLOCK_LIMIT}"
-            local tailLines="${TAIL_CONTEXT}"
-
-            if [ "$size" -gt "$threshold" ]; then
-              echo "Log $src size $size > $threshold, creating tightened trimmed version $dst (limit=$limit, tail=$tailLines)"
-              awk -v limit="$limit" -v tailLines="$tailLines" '
-                {
-                  all[total++] = $0
-                  if ($0 ~ /ERROR|Exception|Failed|WARNING|WARN|NoClassDefFoundError/) {
-                    matches[count++] = $0
-                  }
-                }
-                END {
-                  print "=== TIGHT TRIMMED VERSION (source >500KB) ==="
-                  print "=== Last " limit " ERROR/WARN/Exception matched lines ==="
-                  start = (count > limit) ? count - limit : 0
-                  for (i = start; i < count; i++) {
-                    print matches[i]
-                  }
-                  print "=== Tail (last " tailLines " lines) ==="
-                  tailStart = (total > tailLines) ? total - tailLines : 0
-                  for (i = tailStart; i < total; i++) {
-                    print all[i]
-                  }
-                }
-              ' "$src" > "$dst"
-            else
-              cp "$src" "$dst"
-              echo "Log $src size $size <= $threshold, copied unchanged to $dst"
-            fi
-          }
-          trim_log build_log_debug.txt     build_log_debug_trimmed.txt
-          trim_log test_log.txt            test_log_trimmed.txt
-          trim_log lint_log.txt            lint_log_trimmed.txt
-          trim_log build_log_release.txt   build_log_release_trimmed.txt
 
       - name: "Upload logs (original)"
         uses: actions/upload-artifact@v4
@@ -264,24 +194,3 @@ jobs:
             test_log_trimmed.txt
             lint_log_trimmed.txt
             build_log_release_trimmed.txt
-
-      - name: "Upload debug APK (if successful)"
-        uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: szzdtv-debug-apk
-          path: smartyoutubetv/build/outputs/apk/debug/*.apk
-
-      - name: "Upload release APK (if successful)"
-        uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: szzdtv-release-apk
-          path: smartyoutubetv/build/outputs/apk/release/*.apk
-
-      - name: "Upload legacy app module APK (optional)"
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-apk
-          path: app/build/outputs/apk/release/*.apk
