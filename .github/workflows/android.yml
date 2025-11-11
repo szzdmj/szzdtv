@@ -40,8 +40,8 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          GOOGLE_URL="https://dl.google.com/android/maven2/androidx/media3/media3-bom/1.6.1/media3-bom-1.6.1.pom"
-          CENTRAL_URL="https://repo1.maven.org/maven2/androidx/media3/media3-bom/1.6.1/media3-bom-1.6.1.pom"
+          GOOGLE_URL="https://dl.google.com/android/maven2/androidx/media3/media3-bom/1.4.0/media3-bom-1.4.0.pom"
+          CENTRAL_URL="https://repo1.maven.org/maven2/androidx/media3/media3-bom/1.4.0/media3-bom-1.4.0.pom"
           if curl -fsSL -o /dev/null "$GOOGLE_URL"; then
             echo "Media3 BOM reachable on Google Maven"
           elif curl -fsSL -o /dev/null "$CENTRAL_URL"; then
