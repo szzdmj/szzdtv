@@ -26,13 +26,17 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: "17"
           cache: gradle
 
-      - name: Setup Gradle (build cache)
+      - name: Setup Gradle (use wrapper)
         uses: gradle/gradle-build-action@v3
         with:
           cache-read-only: false
+
+      # Now run any Gradle commands
+      - name: Build (refresh)
+        run: ./gradlew --refresh-dependencies assembleDebug
 
       - name: Sync Android SDK (minimal)
         run: |
