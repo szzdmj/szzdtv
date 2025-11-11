@@ -59,4 +59,7 @@ dependencies {
     implementation "androidx.media3:media3-ui:1.4.0"
     implementation "androidx.media3:media3-session:1.4.0"
     implementation "androidx.media3:media3-datasource-okhttp:1.4.0"
+
+    // PreviewSeekBar (commented out to avoid 401 error)
+    // implementation "io.github.rubensousa:previewseekbar-media3:2.23.0"
 }
