@@ -6,6 +6,7 @@ pluginManagement {
     }
 }
 dependencyResolutionManagement {
+    // Prefer repositories defined here over project-level repos
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
         // Resolve AndroidX/Media3 and io.github.* from official repos
