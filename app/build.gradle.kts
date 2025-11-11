@@ -14,7 +14,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     // id("androidx.navigation.safeargs.kotlin")  // Removed
     // id("kotlin-kapt")  // Removed - kapt is enabled by Kotlin plugin
-    id("kotlin-parcelize")
+    // id("kotlin-parcelize")  // Removed - parcelize is enabled by Kotlin plugin
     id("dagger.hilt.android.plugin")
     id("kotlinx-serialization")
 }
@@ -70,7 +70,6 @@ android {
     // experimentalProperties["android.experimental.r8.dex-startup-optimization"] = true
 }
 
-// 依赖由 BOM 统一版本管理，移除强制锁定以避免冲突
 dependencies {
     // Media3 individual versions (BOM removed)
     implementation("androidx.media3:media3-exoplayer:1.4.0")
