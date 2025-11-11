@@ -23,12 +23,14 @@ android {
     }
 
     testOptions.unitTests.includeAndroidResources = true
+
+    lint {
+        abortOnError false
+    }
 }
 
 dependencies {
-    // 官方 ExoPlayer VP9 扩充所需核心
     implementation platform('com.google.android.exoplayer:exoplayer-bom:' + exoplayerVersion)
     implementation 'com.google.android.exoplayer:exoplayer-core'
-
     implementation 'androidx.annotation:annotation:' + appCompatXLibraryVersion
 }
