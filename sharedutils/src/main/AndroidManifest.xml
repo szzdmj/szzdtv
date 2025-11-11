@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest package="com.example.sharedutils"
+<manifest package="com.liskovsoft.sharedutils"
     xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- library module 可不含 <application>；如需可添加 -->
