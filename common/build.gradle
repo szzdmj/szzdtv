@@ -2,31 +2,45 @@ apply plugin: 'com.android.library'
 
 android {
     namespace "com.liskovsoft.smartyoutubetv.common"
-    defaultConfig {
-        // buildConfigField "long", "TIMESTAMP", System.currentTimeMillis() + "L"
-    }
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
 
+    // 使用 root 里的统一版本
     compileSdkVersion rootProject.ext.compileSdkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
 
+    // 解决 “defaultConfig contains custom BuildConfig fields, but the feature is disabled”
+    // 显式打开 buildConfig 特性
+    buildFeatures {
+        buildConfig = true
+    }
+
+    // 唯一的 defaultConfig（去掉了原文件里两处重复的 defaultConfig 块）
     defaultConfig {
         minSdkVersion     rootProject.ext.minSdkVersion
         targetSdkVersion  rootProject.ext.targetSdkVersion
+
         versionCode 1
         versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField "long", "TIMESTAMP", System.currentTimeMillis() + "L"
+
+        // 动态时间戳会让配置缓存每次失效，必要时可改为静态值或来自 rootProject.ext
+        // 方案 A（保持动态，不使用配置缓存时可接受）：
+        // buildConfigField "long", "TIMESTAMP", "${System.currentTimeMillis()}L"
+
+        // 方案 B（推荐：在根 build.gradle 里 ext.buildTimestamp = System.currentTimeMillis()，这里引用一次，保证同一次构建稳定）：
+        // buildConfigField "long", "TIMESTAMP", "${rootProject.ext.buildTimestamp}L"
+
+        // 方案 C（完全固定，便于缓存）：
+        buildConfigField "long", "TIMESTAMP", "0L"
     }
 
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            // 可根据需要添加 debug 额外字段
         }
     }
 
@@ -37,10 +51,15 @@ android {
         kids {}
     }
 
-    // AGP 8：lintOptions -> lint
-    lintOptions {
+    // AGP 8 推荐用 lint {} 而不是已废弃的 lintOptions {}
+    lint {
         abortOnError false
         lintConfig rootProject.file('lint.xml')
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
 }
 
@@ -63,7 +82,5 @@ dependencies {
     implementation 'com.google.code.gson:gson:' + rootProject.ext.gsonVersion
 
     implementation 'androidx.multidex:multidex:' + rootProject.ext.multiDexVersion
-    implementation 'com.jakewharton:disklrucache:' + rootProject.ext.diskLruCacheVersion
+    implementation 'com.jakewharton:disklrucache:' + rootProject.ext.diskLruCacheVersion'
 }
-
-
