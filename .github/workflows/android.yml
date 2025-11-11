@@ -34,7 +34,7 @@ jobs:
           set -eo pipefail
           mkdir -p build-logs
           ./gradlew --version | tee build-logs/gradle-version.txt
-          ./gradlew --no-configuration-cache clean build --stacktrace --info --warning-mode all | tee build-logs/build.log
+          ./gradlew --no-configuration-cache --no-build-cache clean build --stacktrace --info --warning-mode all | tee build-logs/build.log
 
       - name: Create trimmed logs
         if: always()
