@@ -2,6 +2,7 @@ apply plugin: 'com.android.library'
 
 android {
     namespace "com.liskovsoft.exoplayeractivity"
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
@@ -15,6 +16,7 @@ android {
         targetSdkVersion  rootProject.ext.targetSdkVersion
         versionCode 22
         versionName "0.7.2"
+
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField "long", "TIMESTAMP", System.currentTimeMillis() + "L"
     }
@@ -33,6 +35,7 @@ android {
         kids { matchingFallbacks = ['lite'] }
     }
 
+    // 可选：把旧的 lintOptions 统一到 lint 块
     lint {
         abortOnError true
         lintConfig rootProject.file('lint.xml')
