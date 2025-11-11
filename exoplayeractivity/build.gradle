@@ -1,7 +1,6 @@
 apply plugin: 'com.android.library'
 
 android {
-    namespace "com.liskovsoft.browser"
     namespace "com.liskovsoft.exoplayeractivity"
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -16,7 +15,6 @@ android {
         targetSdkVersion  rootProject.ext.targetSdkVersion
         versionCode 22
         versionName "0.7.2"
-
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField "long", "TIMESTAMP", System.currentTimeMillis() + "L"
     }
@@ -35,7 +33,6 @@ android {
         kids { matchingFallbacks = ['lite'] }
     }
 
-    // AGP 8：lintOptions -> lint
     lint {
         abortOnError true
         lintConfig rootProject.file('lint.xml')
@@ -57,15 +54,12 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:' + rootProject.ext.constraintLayoutXVersion
     implementation 'androidx.collection:collection:' + rootProject.ext.appCompatXLibraryVersion
 
-    // 官方 ExoPlayer（使用 BOM 对齐版本）
     implementation platform('com.google.android.exoplayer:exoplayer-bom:' + rootProject.ext.exoplayerVersion)
     implementation 'com.google.android.exoplayer:exoplayer'
     implementation 'com.google.android.exoplayer:extension-okhttp'
 
-    // PreviewSeekBar
     implementation 'com.github.rubensousa:previewseekbar:' + rootProject.ext.previewSeekBarDevVersion
     implementation('com.github.rubensousa:previewseekbar-exoplayer:' + rootProject.ext.previewSeekBarExoDevVersion) {
-        // 防止残留 Amazon transitive
         exclude group: 'com.amazon.android'
     }
 
