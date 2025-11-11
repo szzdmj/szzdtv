@@ -1,6 +1,7 @@
 apply plugin: 'com.android.library'
 
 android {
+    namespace "com.liskovsoft.browser"
     namespace "com.liskovsoft.exoplayeractivity"
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
