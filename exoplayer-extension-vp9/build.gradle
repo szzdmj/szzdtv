@@ -1,10 +1,10 @@
-apply from: gradle.ext.sharedModulesConstants
+apply from: rootProject.ext.sharedModulesConstants
 apply plugin: 'com.android.library'
 
 android {
     namespace "com.google.android.exoplayer2.ext.vp9"
 
-    compileSdkVersion project.properties.compileSdkVersion
+    compileSdkVersion rootProject.ext.compileSdkVersion
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -12,8 +12,8 @@ android {
     }
 
     defaultConfig {
-        minSdkVersion project.properties.minSdkVersion
-        targetSdkVersion project.properties.targetSdkVersion
+        minSdkVersion     rootProject.ext.minSdkVersion
+        targetSdkVersion  rootProject.ext.targetSdkVersion
         consumerProguardFiles 'proguard-rules.txt'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
@@ -23,7 +23,11 @@ android {
         jni.srcDirs = []
     }
 
-    testOptions.unitTests.includeAndroidResources = true
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+        }
+    }
 
     lint {
         abortOnError false
@@ -31,7 +35,7 @@ android {
 }
 
 dependencies {
-    implementation platform('com.google.android.exoplayer:exoplayer-bom:' + exoplayerVersion)
+    implementation platform('com.google.android.exoplayer:exoplayer-bom:' + rootProject.ext.exoplayerVersion)
     implementation 'com.google.android.exoplayer:exoplayer-core'
-    implementation 'androidx.annotation:annotation:' + appCompatXLibraryVersion
+    implementation 'androidx.annotation:annotation:' + rootProject.ext.appCompatXLibraryVersion
 }
