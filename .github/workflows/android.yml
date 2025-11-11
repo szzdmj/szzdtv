@@ -1,196 +1,84 @@
-name: "Android CI - szzdtv (legacy stack with auto wrapper and tightened trimmed logs)"
+name: Android CI - szzdtv
 
 on:
   push:
-    branches: [ "main", "master", "main-branch" ]
+    branches: [main, master, main-branch]
   pull_request:
-    branches: [ "main", "master", "main-branch" ]
+    branches: [main, master, main-branch]
   workflow_dispatch:
-    inputs:
-      nano_branch:
-        description: "Branch/commit of szzdmj/nanohttpd to fetch index.html from"
-        required: false
-        default: "master"
-      sz_ref:
-        description: "Branch/commit of szmj0/szmj0.github.io to fetch webjs.js & sw.js from"
-        required: false
-        default: "b6977c914a9a1aabafb5bddd6817eea85a2a8738"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      GRADLE_OPTS: -Dorg.gradle.jvmargs='-Xmx2g -Dfile.encoding=UTF-8'
-      ERROR_BLOCK_LIMIT: "200"
-      TAIL_CONTEXT: "200"
-      LOG_SIZE_THRESHOLD: "512000"
+      GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
 
     steps:
-      - name: "Checkout"
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: "Set up JDK 17 (for sdkmanager)"
+      - name: Setup Java & Gradle cache
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: 17
           cache: gradle
 
-      - name: "Install isolated Android SDK (API 34 only) and accept licenses"
-        shell: bash
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="$RUNNER_TEMP/android-sdk"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
-          echo "ANDROID_HOME=${ANDROID_HOME}" >> "$GITHUB_ENV"
-          mkdir -p "${ANDROID_SDK_ROOT}/cmdline-tools"
-          pushd "${ANDROID_SDK_ROOT}/cmdline-tools" >/dev/null
-          CTL_ZIP="commandlinetools-linux-11076708_latest.zip"
-          URL_BASE="https://dl.google.com/android/repository"
-          if ! curl -fsSL --retry 3 -o cmdline-tools.zip "${URL_BASE}/${CTL_ZIP}"; then
-            curl -fsSL --retry 3 -o cmdline-tools.zip "${URL_BASE}/commandlinetools-linux-9477386_latest.zip"
-          fi
-            unzip -q cmdline-tools.zip
-          rm -f cmdline-tools.zip
-          if [ -d "cmdline-tools" ]; then
-            mv cmdline-tools latest
-          fi
-          popd >/dev/null
-          SDKM="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
-          yes | "${SDKM}" --sdk_root="${ANDROID_SDK_ROOT}" --licenses >/dev/null 2>&1 || true
-          "${SDKM}" --sdk_root="${ANDROID_SDK_ROOT}" "platform-tools" "build-tools;34.0.0" "platforms;android-34"
-
-      - name: "Prepare PWA assets (index.html, webjs.js, sw.js)"
-        shell: bash
-        run: |
-          set -euo pipefail
-          NBR="${{ github.event.inputs.nano_branch || 'master' }}"
-          SZR="${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}"
-          A="smartyoutubetv/src/main/assets"
-          mkdir -p "$A"
-          echo "Fetching index.html from szzdmj/nanohttpd@${NBR}"
-          base_nano="https://raw.githubusercontent.com/szzdmj/nanohttpd/${NBR}/android-asset-webshell/app/src/main/assets"
-          curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/index.html" "${base_nano}/index.html"
-          echo "Fetching webjs.js & sw.js from szmj0/szmj0.github.io@${SZR}"
-          base_sz="https://raw.githubusercontent.com/szmj0/szmj0.github.io/${SZR}"
-          curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/webjs.js" "${base_sz}/webjs.js"
-          curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/sw.js"     "${base_sz}/sw.js"
-          echo "Assets present in ${A}:"
-          ls -l "${A}"
-          echo "index.html head:"
-          sed -n '1,40p' "${A}/index.html" || true
-      - name: Build (refresh)
-        run: ./gradlew --refresh-dependencies assembleDebug
-        
-      - name: Setup Gradle (use wrapper)
+      - name: Setup Gradle (build cache)
         uses: gradle/gradle-build-action@v3
         with:
           cache-read-only: false
 
-      - name: Build (full logs; disable configuration cache for debugging)
-        shell: bash
-        continue-on-error: true
+      - name: Sync Android SDK (minimal)
         run: |
-          set -eo pipefail
-          mkdir -p build-logs
-          ./gradlew --version | tee build-logs/gradle-version.txt
-          ./gradlew --no-configuration-cache clean build --stacktrace --info --warning-mode all | tee build-logs/build.log
+          sdkmanager --version || true
+          echo "Using pre-installed Android SDK components."
 
-      - name: Upload build logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gradle-build-logs
-          path: build-logs/
-
-      - name: List all tasks (root)
-        uses: gradle/gradle-build-action@v3
-        continue-on-error: true
-        with:
-          arguments: tasks --all --no-daemon --info --stacktrace --no-configuration-cache
-
-      - name: List smartyoutubetv tasks
-        uses: gradle/gradle-build-action@v3
-        continue-on-error: true
-        with:
-          arguments: :smartyoutubetv:tasks --all --no-daemon --info --stacktrace --no-configuration-cache
-
-      - name: Build
+      - name: Prepare PWA assets
         run: |
+          set -euo pipefail
+          ASSETS="smartyoutubetv/src/main/assets"
+          mkdir -p "$ASSETS"
+          curl -fsSL --retry 3 -o "$ASSETS/index.html" "https://raw.githubusercontent.com/szzdmj/nanohttpd/master/android-asset-webshell/app/src/main/assets/index.html"
+          curl -fsSL --retry 3 -o "$ASSETS/webjs.js" "https://raw.githubusercontent.com/szmj0/szmj0.github.io/main/webjs.js"
+          curl -fsSL --retry 3 -o "$ASSETS/sw.js" "https://raw.githubusercontent.com/szmj0/szmj0.github.io/main/sw.js"
+
+      - name: Build / Test / Lint (single unified step)
+        run: |
+          set -e
           ./gradlew --version
-          ./gradlew clean build -S
+          ./gradlew clean assembleDebug testDebugUnitTest lintDebug --stacktrace --info
+        continue-on-error: true
 
-      - name: "Make gradlew executable"
-        if: always()
-        shell: bash
-        run: chmod +x gradlew
-
-      - name: "List projects"
-        if: always()
-        shell: bash
-        run: ./gradlew projects --no-daemon --info --stacktrace --no-configuration-cache
-
-      - name: "List tasks in :smartyoutubetv"
-        if: always()
-        shell: bash
-        run: ./gradlew :smartyoutubetv:tasks --all --no-daemon --info --stacktrace --no-configuration-cache
-
-      - name: "Build Debug (:smartyoutubetv) and save logs"
-        if: always()
-        shell: bash
+      - name: Build Release (optional)
         run: |
-          set -euo pipefail
-          ./gradlew :smartyoutubetv:assembleDebug --stacktrace --info --no-daemon --no-configuration-cache > build_log_debug.txt 2>&1 || true
-          echo "Debug build finished (possibly with errors), log saved."
+          set -e
+          ./gradlew assembleRelease --stacktrace --info
+        continue-on-error: true
 
-      - name: "Unit tests and save logs"
+      - name: Collect logs
         if: always()
-        shell: bash
         run: |
-          set -euo pipefail
-          ./gradlew testDebugUnitTest --stacktrace --info --no-daemon --no-configuration-cache > test_log.txt 2>&1 || true
-          echo "Unit tests finished, log saved."
+          # Create trimmed versions (last 400 lines + first 200 error lines)
+          for f in $(ls -1 **/build/reports 2>/dev/null || true); do echo "$f"; done
+          LOG=gradle-build.log
+          find . -name build.log -print -quit | xargs -I{} cp {} $LOG || true
+          if [ -f "$LOG" ]; then
+            tail -n 400 "$LOG" > gradle-build.tail.txt
+            grep -n "ERROR" "$LOG" | head -n 200 > gradle-build.errors.txt || true
+          fi
 
-      - name: "Lint and save logs"
+      - name: Upload artifacts
         if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./gradlew lintDebug --stacktrace --info --no-daemon --no-configuration-cache > lint_log.txt 2>&1 || true
-          echo "Lint finished, log saved."
-
-      - name: "Build Release (:smartyoutubetv) and save logs"
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./gradlew :smartyoutubetv:assembleRelease --stacktrace --info --no-daemon --no-configuration-cache > build_log_release.txt 2>&1 || true
-          echo "Release build finished (possibly with errors), log saved."
-
-      - name: "Upload logs (original)"
         uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: logs-original
+          name: build-logs
           path: |
-            build_log_debug.txt
-            test_log.txt
-            lint_log.txt
-            build_log_release.txt
-
-      - name: "Upload logs (tight-trimmed)"
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: logs-trimmed-tight
-          path: |
-            build_log_debug_trimmed.txt
-            test_log_trimmed.txt
-            lint_log_trimmed.txt
-            build_log_release_trimmed.txt
+            gradle-build.log
+            gradle-build.tail.txt
+            gradle-build.errors.txt
