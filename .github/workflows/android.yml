@@ -87,29 +87,29 @@ jobs:
           echo "index.html head:"
           sed -n '1,40p' "${A}/index.html" || true
 
-      # 使用 Gradle 官方 Action（自動偵測 wrapper）
+      # 使用 Gradle 官方 Action（自动侦测 wrapper）
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v3
         with:
           cache-read-only: false
+
       - name: List all tasks (root)
         uses: gradle/gradle-build-action@v3
         with:
-          gradle-version: 5.4.1
           arguments: tasks --all --no-daemon --info
 
       - name: List smartyoutubetv tasks
         uses: gradle/gradle-build-action@v3
         with:
-          gradle-version: 5.4.1
           arguments: :smartyoutubetv:tasks --all --no-daemon --info
+
       - name: Build (full logs; disable configuration cache for debugging)
         shell: bash
         run: |
           set -eo pipefail
           mkdir -p build-logs
           ./gradlew --version | tee build-logs/gradle-version.txt
-          # 關閉組態快取，完整輸出錯誤（恢復 What went wrong）
+          # 关闭组态快取，完整输出错误（恢复 What went wrong）
           ./gradlew --no-configuration-cache clean build --stacktrace --info --warning-mode all | tee build-logs/build.log
 
       - name: Upload build logs
