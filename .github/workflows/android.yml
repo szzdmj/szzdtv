@@ -56,7 +56,7 @@ jobs:
           if ! curl -fsSL --retry 3 -o cmdline-tools.zip "${URL_BASE}/${CTL_ZIP}"; then
             curl -fsSL --retry 3 -o cmdline-tools.zip "${URL_BASE}/commandlinetools-linux-9477386_latest.zip"
           fi
-          unzip -q cmdline-tools.zip
+            unzip -q cmdline-tools.zip
           rm -f cmdline-tools.zip
           if [ -d "cmdline-tools" ]; then
             mv cmdline-tools latest
@@ -93,7 +93,6 @@ jobs:
         with:
           cache-read-only: false
 
-      # Run a full build early with explicit flags and capture logs, so we always get details.
       - name: Build (full logs; disable configuration cache for debugging)
         shell: bash
         continue-on-error: true
@@ -110,7 +109,6 @@ jobs:
           name: gradle-build-logs
           path: build-logs/
 
-      # Make discovery steps non-fatal and verbose
       - name: List all tasks (root)
         uses: gradle/gradle-build-action@v3
         continue-on-error: true
