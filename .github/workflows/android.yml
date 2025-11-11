@@ -85,7 +85,9 @@ jobs:
           ls -l "${A}"
           echo "index.html head:"
           sed -n '1,40p' "${A}/index.html" || true
-
+      - name: Build (refresh)
+        run: ./gradlew --refresh-dependencies assembleDebug
+        
       - name: Setup Gradle (use wrapper)
         uses: gradle/gradle-build-action@v3
         with:
