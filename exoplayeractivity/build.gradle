@@ -35,7 +35,7 @@ android {
         kids { matchingFallbacks = ['lite'] }
     }
 
-    // 可选：把旧的 lintOptions 统一到 lint 块
+    // 统一使用 lint 块（可保留你现有设置）
     lint {
         abortOnError true
         lintConfig rootProject.file('lint.xml')
