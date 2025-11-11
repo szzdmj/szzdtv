@@ -4,7 +4,7 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath("androidx.navigation:navigation-safe-args-gradle-plugin:2.9.6")
+        // classpath("androidx.navigation:navigation-safe-args-gradle-plugin:2.9.6")  // Removed
         classpath("com.google.dagger:hilt-android-gradle-plugin:2.48")
     }
 }
@@ -12,7 +12,7 @@ buildscript {
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("androidx.navigation.safeargs.kotlin")
+    // id("androidx.navigation.safeargs.kotlin")  // Removed
     id("kotlin-kapt")
     id("kotlin-parcelize")
     id("dagger.hilt.android.plugin")
