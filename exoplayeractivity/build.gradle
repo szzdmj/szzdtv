@@ -2,23 +2,15 @@ apply plugin: 'com.android.library'
 
 android {
     namespace "com.liskovsoft.exoplayeractivity"
-
     compileSdkVersion rootProject.ext.compileSdkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
 
-    buildFeatures {
-        buildConfig = true
-    }
-
     defaultConfig {
-        minSdkVersion     rootProject.ext.minSdkVersion
-        targetSdkVersion  rootProject.ext.targetSdkVersion
-
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 22
         versionName "0.7.2"
-
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField "long", "TIMESTAMP", "${System.currentTimeMillis()}L"
     }
 
     flavorDimensions "default"
@@ -35,11 +27,6 @@ android {
         }
     }
 
-    lint {
-        abortOnError false
-        lintConfig rootProject.file('lint.xml')
-    }
-
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
@@ -47,36 +34,30 @@ android {
 }
 
 dependencies {
-    androidTestImplementation('androidx.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion) {
-        exclude group: 'com.android.support', module: 'support-annotations'
-    }
-    testImplementation 'junit:junit:' + rootProject.ext.junitVersion
+    implementation project(":sharedutils")
+    implementation project(":common")
+    implementation project(":browser")
 
-    implementation project(path: ':sharedutils')
-    implementation project(path: ':common')
-    implementation project(path: ':browser')
+    implementation fileTree(dir: "libs", include: ["*.jar"])
+    implementation "androidx.appcompat:appcompat:${rootProject.ext.appCompatXLibraryVersion}"
+    implementation "androidx.constraintlayout:constraintlayout:2.1.4"
+    implementation "androidx.collection:collection:1.2.0"
 
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
-    implementation 'androidx.appcompat:appcompat:' + rootProject.ext.appCompatXLibraryVersion
+    // Media3 BOM
+    implementation platform("androidx.media3:media3-bom:${rootProject.ext.media3BomVersion}")
+    implementation "androidx.media3:media3-exoplayer"
+    implementation "androidx.media3:media3-ui"
+    implementation "androidx.media3:media3-session"
+    implementation "androidx.media3:media3-datasource-okhttp"
+    // 可选：软件 VP9
+    // implementation "androidx.media3:media3-exoplayer-ffmpeg"
 
-    // UI 相关（保持）
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'androidx.collection:collection:1.2.0'
+    // PreviewSeekBar (Media3)
+    implementation "io.github.rubensousa:previewseekbar:2.23.0"
+    implementation "io.github.rubensousa:previewseekbar-media3:2.23.0"
 
-    // Media3（替代 ExoPlayer）
-    implementation platform('androidx.media3:media3-bom:' + rootProject.ext.media3BomVersion)
-    implementation 'androidx.media3:media3-exoplayer'
-    implementation 'androidx.media3:media3-ui'
-    implementation 'androidx.media3:media3-session'
-    // 若此前用 extension-okhttp，这里使用 Media3 的 OkHttp DataSource
-    implementation 'androidx.media3:media3-datasource-okhttp'
+    implementation "com.github.bumptech.glide:glide:${rootProject.ext.glideVersion}"
+    annotationProcessor "com.github.bumptech.glide:compiler:${rootProject.ext.glideVersion}"
 
-    // PreviewSeekBar 与 Glide（Media3 版本）
-    implementation 'com.github.rubensousa:previewseekbar:' + rootProject.ext.previewSeekBarDevVersion
-    implementation 'io.github.rubensousa:previewseekbar-media3:2.23.0'
-    implementation 'com.github.bumptech.glide:glide:' + rootProject.ext.glideVersion
-    annotationProcessor 'com.github.bumptech.glide:compiler:' + rootProject.ext.glideVersion
-
-    // AndroidX Multidex
-    implementation 'androidx.multidex:multidex:' + rootProject.ext.multiDexVersion
+    implementation "androidx.multidex:multidex:${rootProject.ext.multiDexVersion}"
 }
