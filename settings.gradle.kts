@@ -12,7 +12,7 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
 
-        // Only use JitPack for com.github.* if you truly need it.
+        // Only use JitPack for com.github.* if you truly need it
         exclusiveContent {
             forRepository {
                 maven("https://jitpack.io")
