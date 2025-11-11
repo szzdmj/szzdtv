@@ -53,4 +53,10 @@ dependencies {
 
     implementation 'com.jakewharton:disklrucache:' + rootProject.ext.diskLruCacheVersion
     implementation 'org.apache.commons:commons-lang3:' + rootProject.ext.apacheCommonsLangVersion
+
+    // Media3 dependencies for the app
+    implementation "androidx.media3:media3-exoplayer:1.4.0"
+    implementation "androidx.media3:media3-ui:1.4.0"
+    implementation "androidx.media3:media3-session:1.4.0"
+    implementation "androidx.media3:media3-datasource-okhttp:1.4.0"
 }
