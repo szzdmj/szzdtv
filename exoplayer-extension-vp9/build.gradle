@@ -3,6 +3,7 @@ apply plugin: 'com.android.library'
 
 android {
     namespace "com.google.android.exoplayer2.ext.vp9"
+
     compileSdkVersion project.properties.compileSdkVersion
 
     compileOptions {
@@ -24,6 +25,7 @@ android {
 
     testOptions.unitTests.includeAndroidResources = true
 
+    // 可选：统一使用 lint 块
     lint {
         abortOnError false
     }
