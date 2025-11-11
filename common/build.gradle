@@ -3,17 +3,15 @@ apply plugin: 'com.android.library'
 android {
     namespace "com.liskovsoft.smartyoutubetv.common"
 
-    // 使用 root 里的统一版本
     compileSdkVersion rootProject.ext.compileSdkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
 
-    // 解决 “defaultConfig contains custom BuildConfig fields, but the feature is disabled”
-    // 显式打开 buildConfig 特性
+    // 显式开启 BuildConfig 生成功能（修复 AGP 校验失败）
     buildFeatures {
         buildConfig = true
     }
 
-    // 唯一的 defaultConfig（去掉了原文件里两处重复的 defaultConfig 块）
+    // 合并为唯一的 defaultConfig
     defaultConfig {
         minSdkVersion     rootProject.ext.minSdkVersion
         targetSdkVersion  rootProject.ext.targetSdkVersion
@@ -23,24 +21,14 @@ android {
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
-        // 动态时间戳会让配置缓存每次失效，必要时可改为静态值或来自 rootProject.ext
-        // 方案 A（保持动态，不使用配置缓存时可接受）：
-        // buildConfigField "long", "TIMESTAMP", "${System.currentTimeMillis()}L"
-
-        // 方案 B（推荐：在根 build.gradle 里 ext.buildTimestamp = System.currentTimeMillis()，这里引用一次，保证同一次构建稳定）：
-        // buildConfigField "long", "TIMESTAMP", "${rootProject.ext.buildTimestamp}L"
-
-        // 方案 C（完全固定，便于缓存）：
-        buildConfigField "long", "TIMESTAMP", "0L"
+        // 动态时间戳（如需稳定配置缓存，可改为 "0L" 或从 rootProject.ext 注入）
+        buildConfigField "long", "TIMESTAMP", "${System.currentTimeMillis()}L"
     }
 
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-        debug {
-            // 可根据需要添加 debug 额外字段
         }
     }
 
@@ -51,7 +39,7 @@ android {
         kids {}
     }
 
-    // AGP 8 推荐用 lint {} 而不是已废弃的 lintOptions {}
+    // AGP 8 推荐使用 lint {}
     lint {
         abortOnError false
         lintConfig rootProject.file('lint.xml')
@@ -82,5 +70,5 @@ dependencies {
     implementation 'com.google.code.gson:gson:' + rootProject.ext.gsonVersion
 
     implementation 'androidx.multidex:multidex:' + rootProject.ext.multiDexVersion
-    implementation 'com.jakewharton:disklrucache:' + rootProject.ext.diskLruCacheVersion'
+    implementation 'com.jakewharton:disklrucache:' + rootProject.ext.diskLruCacheVersion
 }
