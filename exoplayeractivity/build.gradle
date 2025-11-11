@@ -52,9 +52,9 @@ dependencies {
     // 可选：软件 VP9
     // implementation "androidx.media3:media3-exoplayer-ffmpeg"
 
-    // PreviewSeekBar (Media3)
-    implementation "io.github.rubensousa:previewseekbar:2.23.0"
-    implementation "io.github.rubensousa:previewseekbar-media3:2.23.0"
+    // PreviewSeekBar (updated to 1.1.1.0)
+    implementation "com.github.rubensousa:previewseekbar:1.1.1.0"
+    implementation "com.github.rubensousa:previewseekbar-media3:1.1.1.0"
 
     implementation "com.github.bumptech.glide:glide:${rootProject.ext.glideVersion}"
     annotationProcessor "com.github.bumptech.glide:compiler:${rootProject.ext.glideVersion}"
