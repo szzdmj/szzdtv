@@ -21,7 +21,6 @@ android {
         kids { dimension "default" }
     }
 
-    // 可选：统一使用 lint 块
     lint {
         abortOnError false
     }
