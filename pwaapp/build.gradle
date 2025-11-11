@@ -30,7 +30,6 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
-    // 可选：统一使用 lint 块
     lint {
         abortOnError false
     }
