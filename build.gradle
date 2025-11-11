@@ -42,8 +42,8 @@ ext {
     xwalkSharedLibraryVersion = '23.53.589.4'
     xwalkCoreLibraryVersion   = '23.53.589.4'
 
-    // Media3 BOM（updated to available stable 1.6.1）
-    media3BomVersion = '1.6.1'
+    // Media3 BOM（updated to available stable 1.4.0）
+    media3BomVersion = '1.4.0'
 
     // 补回 exoplayeractivity 依赖用到的版本变量
     previewSeekBarDevVersion    = '2.18.1.0'
