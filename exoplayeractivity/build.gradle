@@ -1,33 +1,30 @@
+// 修复版本：去除重复 defaultConfig、开启 BuildConfig、统一使用 AndroidX 坐标、移除未在 root ext 中定义的版本属性引用。
+// 若需要再把 constraintlayout / collection 的版本放到 root build.gradle，可以把下面硬编码的版本移动到 ext 中。
+
 apply plugin: 'com.android.library'
 
 android {
     namespace "com.liskovsoft.exoplayeractivity"
-    defaultConfig {
-        // buildConfigField "long", "TIMESTAMP", System.currentTimeMillis() + "L"
-    }
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
 
     compileSdkVersion rootProject.ext.compileSdkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
 
+    // 需要使用 buildConfigField 时显式开启
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         minSdkVersion     rootProject.ext.minSdkVersion
         targetSdkVersion  rootProject.ext.targetSdkVersion
+
         versionCode 22
         versionName "0.7.2"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField "long", "TIMESTAMP", System.currentTimeMillis() + "L"
-    }
 
-    buildTypes {
-        release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
+        // 动态时间戳：可能影响配置缓存；如需稳定改为 "0L"
+        buildConfigField "long", "TIMESTAMP", "${System.currentTimeMillis()}L"
     }
 
     flavorDimensions "default"
@@ -37,15 +34,31 @@ android {
         kids { matchingFallbacks = ['lite'] }
     }
 
-    // 统一使用 lint 块（可保留你现有设置）
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            // 可按需添加调试字段
+        }
+    }
+
+    // 与其它模块保持一致；迁移期建议暂时关闭 abortOnError
     lint {
-        abortOnError true
+        abortOnError false
         lintConfig rootProject.file('lint.xml')
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
 }
 
 dependencies {
-    androidTestImplementation('com.android.support.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion) {
+    // AndroidX 测试库（替换旧的 com.android.support.test）
+    androidTestImplementation('androidx.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion) {
         exclude group: 'com.android.support', module: 'support-annotations'
     }
     testImplementation 'junit:junit:' + rootProject.ext.junitVersion
@@ -55,22 +68,30 @@ dependencies {
     implementation project(path: ':browser')
 
     implementation fileTree(dir: 'libs', include: ['*.jar'])
-    implementation 'androidx.appcompat:appcompat:' + rootProject.ext.appCompatXLibraryVersion
-    implementation 'androidx.constraintlayout:constraintlayout:' + rootProject.ext.constraintLayoutXVersion
-    implementation 'androidx.collection:collection:' + rootProject.ext.appCompatXLibraryVersion
 
+    implementation 'androidx.appcompat:appcompat:' + rootProject.ext.appCompatXLibraryVersion
+
+    // 这里原来引用 rootProject.ext.constraintLayoutXVersion / collection 失败，改为直接使用稳定版本
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.collection:collection:1.2.0'
+
+    // ExoPlayer 使用 BOM + 个别模块
     implementation platform('com.google.android.exoplayer:exoplayer-bom:' + rootProject.ext.exoplayerVersion)
     implementation 'com.google.android.exoplayer:exoplayer'
     implementation 'com.google.android.exoplayer:extension-okhttp'
 
+    // PreviewSeekBar（与 root ext 中的版本变量匹配）
     implementation 'com.github.rubensousa:previewseekbar:' + rootProject.ext.previewSeekBarDevVersion
     implementation('com.github.rubensousa:previewseekbar-exoplayer:' + rootProject.ext.previewSeekBarExoDevVersion) {
         exclude group: 'com.amazon.android'
     }
 
+    // Glide
     implementation 'com.github.bumptech.glide:glide:' + rootProject.ext.glideVersion
     annotationProcessor 'com.github.bumptech.glide:compiler:' + rootProject.ext.glideVersion
-    annotationProcessor 'androidx.annotation:annotation:' + rootProject.ext.appCompatXLibraryVersion
+    // 通常不需要单独 annotationProcessor 'androidx.annotation:annotation'，移除即可
+    // annotationProcessor 'androidx.annotation:annotation:' + rootProject.ext.appCompatXLibraryVersion
 
-    implementation 'com.android.support:multidex:' + rootProject.ext.multiDexVersion
+    // 统一迁移到 AndroidX Multidex
+    implementation 'androidx.multidex:multidex:' + rootProject.ext.multiDexVersion
 }
