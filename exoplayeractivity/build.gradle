@@ -71,11 +71,9 @@ dependencies {
     // 若此前用 extension-okhttp，这里使用 Media3 的 OkHttp DataSource
     implementation 'androidx.media3:media3-datasource-okhttp'
 
-    // PreviewSeekBar 与 Glide（保持）
+    // PreviewSeekBar 与 Glide（Media3 版本）
     implementation 'com.github.rubensousa:previewseekbar:' + rootProject.ext.previewSeekBarDevVersion
-    implementation('com.github.rubensousa:previewseekbar-exoplayer:' + rootProject.ext.previewSeekBarExoDevVersion) {
-        exclude group: 'com.amazon.android'
-    }
+    implementation 'io.github.rubensousa:previewseekbar-media3:2.23.0'
     implementation 'com.github.bumptech.glide:glide:' + rootProject.ext.glideVersion
     annotationProcessor 'com.github.bumptech.glide:compiler:' + rootProject.ext.glideVersion
 
