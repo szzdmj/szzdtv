@@ -2,7 +2,9 @@ apply plugin: 'com.android.library'
 
 android {
     namespace "com.liskovsoft.exoplayeractivity"
-
+    defaultConfig {
+        // buildConfigField "long", "TIMESTAMP", System.currentTimeMillis() + "L"
+    }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
