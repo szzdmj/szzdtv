@@ -2,6 +2,7 @@ apply plugin: 'com.android.application'
 
 android {
     namespace "com.example.tvapp"
+
     compileSdkVersion 28
     buildToolsVersion "28.0.3"
 
@@ -29,6 +30,7 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
+    // 可选：统一使用 lint 块
     lint {
         abortOnError false
     }
@@ -38,5 +40,6 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.1.0'
     implementation 'com.google.android.material:material:1.1.0'
     implementation 'androidx.multidex:multidex:2.0.1'
+
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
 }
