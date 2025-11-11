@@ -4,16 +4,14 @@
 
     <!-- NOTE: use older sdk -->
     <uses-sdk tools:overrideLibrary="
-        com.google.android.exoplayer2,
-        com.google.android.exoplayer2.ui,
-        com.google.android.exoplayer2.source.dash,
-        com.google.android.exoplayer2.source.hls,
-        com.google.android.exoplayer2.source.smoothstreaming,
-        com.google.android.exoplayer2.core,
+        androidx.media3.common,
+        androidx.media3.exoplayer,
+        androidx.media3.ui,
+        androidx.media3.session,
+        androidx.media3.datasource,
+        androidx.media3.datasource.okhttp,
         com.github.rubensousa.previewseekbar,
-        com.github.rubensousa.previewseekbar.exoplayer,
-        com.google.android.exoplayer2.ext.vp9,
-        com.google.android.exoplayer2.ext.okhttp"/>
+        io.github.rubensousa.previewseekbar.media3"/>
 
     <application>
         <!-- NOTE: exoplayer specific section -->

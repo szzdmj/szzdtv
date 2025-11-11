@@ -78,10 +78,12 @@ android {
 
 // 依赖由 BOM 统一版本管理，移除强制锁定以避免冲突
 dependencies {
-    // ExoPlayer（官方）：使用 BOM 统一版本
-    implementation(platform("com.google.android.exoplayer:exoplayer-bom:2.18.7"))
-    implementation("com.google.android.exoplayer:exoplayer")
-    implementation("com.google.android.exoplayer:extension-leanback")
+    // Media3（替代 ExoPlayer）：使用 BOM 统一版本
+    implementation(platform("androidx.media3:media3-bom:1.4.1"))
+    implementation("androidx.media3:media3-exoplayer")
+    implementation("androidx.media3:media3-ui")
+    implementation("androidx.media3:media3-session")
+    implementation("androidx.media3:media3-datasource-okhttp")
 
     // Kotlin
     implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.22")
@@ -103,8 +105,8 @@ dependencies {
     // Media / ExoPlayer 生态
     implementation("androidx.media:media:1.6.0")
 
-    // 预览进度条：与 ExoPlayer 版本适配
-    implementation("com.github.rubensousa:previewseekbar-exoplayer:3.1.0") {
+    // 预览进度条：与 Media3 版本适配
+    implementation("io.github.rubensousa:previewseekbar-media3:2.23.0") {
         exclude(group = "com.amazon.android")
     }
 
