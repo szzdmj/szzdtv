@@ -34,19 +34,23 @@ dependencies {
     implementation project(':browser')
     implementation project(':exoplayeractivity')
 
-    implementation 'androidx.appcompat:appcompat:'           + rootProject.ext.appCompatXLibraryVersion
-    implementation 'androidx.media:media:'                   + rootProject.ext.appCompatXLibraryVersion
-    implementation 'androidx.recyclerview:recyclerview:'     + rootProject.ext.appCompatXLibraryVersion
-    implementation 'androidx.constraintlayout:constraintlayout:' + rootProject.ext.constraintLayoutXVersion
+    // AppCompat from root ext
+    implementation 'androidx.appcompat:appcompat:' + rootProject.ext.appCompatXLibraryVersion
 
-    implementation 'com.google.code.gson:gson:'              + rootProject.ext.gsonVersion
-    implementation 'com.jayway.jsonpath:json-path:'          + rootProject.ext.jsonPathVersion
+    // Use artifact-appropriate versions instead of appCompatXLibraryVersion
+    implementation 'androidx.media:media:1.6.0'
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
-    implementation 'org.nanohttpd:nanohttpd:'                + rootProject.ext.nanoHttpdVersion
+    implementation 'com.google.code.gson:gson:' + rootProject.ext.gsonVersion
+    implementation 'com.jayway.jsonpath:json-path:' + rootProject.ext.jsonPathVersion
 
-    implementation 'com.squareup.okhttp3:okhttp:'            + rootProject.ext.okhttpVersion
-    implementation 'com.squareup:otto:'                      + rootProject.ext.ottoVersion
+    // nanohttpd: define an explicit version here (no nanoHttpdVersion in root ext)
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
 
-    implementation 'com.jakewharton:disklrucache:'           + rootProject.ext.diskLruCacheVersion
-    implementation 'org.apache.commons:commons-lang3:'       + rootProject.ext.apacheCommonsLangVersion
+    implementation 'com.squareup.okhttp3:okhttp:' + rootProject.ext.okhttpVersion
+    implementation 'com.squareup:otto:' + rootProject.ext.ottoVersion
+
+    implementation 'com.jakewharton:disklrucache:' + rootProject.ext.diskLruCacheVersion
+    implementation 'org.apache.commons:commons-lang3:' + rootProject.ext.apacheCommonsLangVersion
 }
