@@ -1,7 +1,7 @@
 apply plugin: 'com.android.library'
 
 android {
-    namespace "com.example.sharedutils"
+    namespace "com.liskovsoft.sharedutils"
     // Default interface methods need Java 8
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
