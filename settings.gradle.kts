@@ -2,30 +2,14 @@ pluginManagement {
     repositories {
         google()
         mavenCentral()
-        // maven("https://jitpack.io") // 仅在确需 GitHub JitPack 依赖时解注
+        gradlePluginPortal()
     }
 }
-
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
-        // 内容过滤：减少无效探测
-        google {
-            content {
-                includeGroupByRegex("androidx\\..*")
-                includeGroup("com.google.android")
-                includeGroupByRegex("com\\.google\\..*")
-            }
-        }
-        mavenCentral {
-            content {
-                excludeGroupByRegex("androidx\\..*")
-                excludeGroup("com.google.android")
-                excludeGroupByRegex("com\\.google\\..*")
-            }
-        }
+        google()
+        mavenCentral()
+        maven("https://jitpack.io") // only if still needed
     }
 }
-
-rootProject.name = "TvApp"
-include(":app")
