@@ -1,25 +1,24 @@
 pluginManagement {
-  repositories {
-    google()
-    mavenCentral()
-    gradlePluginPortal()
-  }
-  plugins {
-    id("com.android.application") version "8.4.2"
-    id("com.android.library") version "8.4.2"
-    id("org.jetbrains.kotlin.android") version "1.9.22"
-  }
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+    }
 }
 
-rootProject.name = "szzdtv"
-
-// Include Android modules
-include ':app'
-include ':smartyoutubetv'
+rootProject.name = 'szzdtv'
+// include ':app'  // Removed - no manifest or purpose
 include ':browser'
 include ':common'
-// 已迁移至 Media3，暂时移除 ExoPlayer VP9 扩展模块
-// include ':exoplayer-extension-vp9'
 include ':exoplayeractivity'
 include ':pwaapp'
 include ':sharedutils'
+include ':smartyoutubetv'
