@@ -16,7 +16,7 @@ plugins {
     // id("kotlin-kapt")  // Removed - kapt is enabled by Kotlin plugin
     // id("kotlin-parcelize")  // Removed - parcelize is enabled by Kotlin plugin
     id("com.google.dagger.hilt.android") version "2.48"
-    id("org.jetbrains.kotlin.plugin.serialization")
+    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.22"
 }
 
 android {
