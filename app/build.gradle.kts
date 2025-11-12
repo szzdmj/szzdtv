@@ -15,7 +15,7 @@ plugins {
     // id("androidx.navigation.safeargs.kotlin")  // Removed
     // id("kotlin-kapt")  // Removed - kapt is enabled by Kotlin plugin
     // id("kotlin-parcelize")  // Removed - parcelize is enabled by Kotlin plugin
-    id("dagger.hilt.android.plugin") version "2.48"
+    id("com.google.dagger.hilt.android") version "2.48"
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
