@@ -17,6 +17,7 @@ plugins {
     // id("kotlin-parcelize")  // Removed - parcelize is enabled by Kotlin plugin
     id("com.google.dagger.hilt.android") version "2.48"
     id("org.jetbrains.kotlin.plugin.serialization") version "1.9.22"
+    id("com.google.devtools.ksp") version "1.9.22-1.0.17"
 }
 
 android {
@@ -79,7 +80,7 @@ dependencies {
 
     // Hilt
     implementation("com.google.dagger:hilt-android:2.48")
-    kapt("com.google.dagger:hilt-compiler:2.48")
+    ksp("com.google.dagger:hilt-compiler:2.48")
 
     // Kotlin
     implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.22")
