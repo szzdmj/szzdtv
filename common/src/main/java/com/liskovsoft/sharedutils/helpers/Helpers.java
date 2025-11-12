@@ -1,28 +1,36 @@
-package com.liskovsoft.sharedutils.mylogger;
+package com.liskovsoft.sharedutils.helpers;
+
+import android.view.KeyEvent;
 
 /**
- * Minimal logging wrapper providing LOG_TYPE_SYSTEM constant and simple d/e methods.
- * This implementation avoids invalid Java import alias and uses android.util.Log directly.
- * Replace with the real sharedutils.mylogger.Log implementation when available.
+ * Minimal helper stubs used to satisfy compilation.
+ * Replace with the real sharedutils implementation when available.
  */
-public final class Log {
-    public static final String LOG_TYPE_SYSTEM = "system";
+public final class Helpers {
+    private Helpers() {}
 
-    private Log() {}
-
-    public static void d(String tag, String msg) {
-        android.util.Log.d(tag, msg == null ? "" : msg);
-    }
-
-    public static void e(String tag, String msg) {
-        android.util.Log.e(tag, msg == null ? "" : msg);
-    }
-
-    public static void e(String tag, Throwable t) {
-        if (t == null) {
-            android.util.Log.e(tag, "");
-        } else {
-            android.util.Log.e(tag, android.util.Log.getStackTraceString(t));
+    /**
+     * Create a new KeyEvent based on an existing event but with a different key code.
+     */
+    public static KeyEvent newEvent(KeyEvent event, int newKeyCode) {
+        if (event == null) {
+            return null;
         }
+
+        return new KeyEvent(
+                event.getDownTime(),
+                event.getEventTime(),
+                event.getAction(),
+                newKeyCode,
+                event.getRepeatCount(),
+                event.getMetaState()
+        );
+    }
+
+    /**
+     * Minimal stub for stacktrace checks if used elsewhere.
+     */
+    public static boolean checkStackTrace(String keyword) {
+        return false;
     }
 }
