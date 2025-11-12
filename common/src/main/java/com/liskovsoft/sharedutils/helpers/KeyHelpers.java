@@ -1,26 +1,16 @@
-package com.liskovsoft.sharedutils.configparser;
+package com.liskovsoft.sharedutils.helpers;
 
 /**
- * Minimal ConfigParser stub. Real implementation should parse properties/assets.
+ * Minimal KeyHelpers stub. Extend if you need specific reserved-key logic.
  */
-public class ConfigParser {
-    public String get(String key) {
-        return "";
-    }
+public final class KeyHelpers {
+    private KeyHelpers() {}
 
-    public String get(String key, String def) {
-        return def;
-    }
-
-    public String[] getArray(String key) {
-        return new String[0];
-    }
-
-    public boolean getBoolean(String key) {
+    /**
+     * Return true if the key code should be treated as a reserved/ambilight key.
+     * Default: no reserved keys (safe for compilation). Adjust as needed.
+     */
+    public static boolean isAmbilightKey(int keyCode) {
         return false;
-    }
-
-    public boolean getBoolean(String key, boolean def) {
-        return def;
     }
 }
