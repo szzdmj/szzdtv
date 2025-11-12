@@ -35,4 +35,5 @@ ext {
     espressoCoreVersion = '3.5.1'
     junitVersion = '4.13.2'
     dnsjavaVersion = '3.5.1'
+    robolectricVersion = '4.11.1'
 }
