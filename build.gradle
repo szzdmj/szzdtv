@@ -32,4 +32,5 @@ ext {
     okhttpVersion = '4.11.0'
     multiDexVersion = '2.0.1'
     nanoHttpdVersion = '2.3.1'
+    espressoCoreVersion = '3.5.1'
 }
