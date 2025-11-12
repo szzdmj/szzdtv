@@ -18,6 +18,10 @@ task clean(type: Delete) {
 }
 
 ext {
+    compileSdkVersion = 34
+    buildToolsVersion = '34.0.0'
+    minSdkVersion = 22
+    targetSdkVersion = 34
     appCompatXLibraryVersion = '1.6.1'
     glideVersion = '4.16.0'
     gsonVersion = '2.10.1'
