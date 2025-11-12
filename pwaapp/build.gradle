@@ -38,6 +38,6 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.1.0'
     implementation 'com.google.android.material:material:1.1.0'
     implementation 'androidx.multidex:multidex:2.0.1'
-    // 使用 webserver artifact，它包含 org.nanohttpd.protocols.http 和 response 包
-    implementation 'org.nanohttpd:nanohttpd-webserver:2.3.2'
+    // Use released webserver artifact (stable on Maven Central)
+    implementation 'org.nanohttpd:nanohttpd-webserver:2.3.1'
 }
