@@ -1,73 +1,31 @@
-// Root build (migrated for AGP 8 / Gradle 8)
-
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-    }
-    dependencies {
-        classpath 'com.android.tools.build:gradle:8.4.2'
-    }
-}
-
-ext {
-    // Toolchain targets
-    compileSdkVersion = 34
-    buildToolsVersion = "34.0.0"
-    minSdkVersion = 22
-    targetSdkVersion = 34
-
-    // AndroidX / Support
-    appCompatXLibraryVersion = '1.1.0'
-    materialLibraryVersion   = '1.1.0'
-    multiDexVersion          = '2.0.1'
-
-    // Test
-    junitVersion        = '4.12'
-    espressoCoreVersion = '3.0.2'
-    robolectricVersion  = '4.3.1'
-    assertJVersion      = '3.12.2'
-    commonsIOVersion    = '2.6'
-
-    // Network / Util
-    okhttpVersion       = '3.12.13'
-    ottoVersion         = '1.3.8'
-    dnsjavaVersion      = '3.5.2'
-    gsonVersion         = '2.8.9'
-    diskLruCacheVersion = '2.0.2'
-    apacheCommonsLangVersion = '3.9'
-    jsonPathVersion     = '2.4.0'
-
-    // Crosswalk (保留如需)
-    xwalkSharedLibraryVersion = '23.53.589.4'
-    xwalkCoreLibraryVersion   = '23.53.589.4'
-
-    // Media3 BOM removed - using individual versions instead
-
-    // 补回 exoplayeractivity 依赖用到的版本变量
-    previewSeekBarDevVersion    = '2.18.1.0'
-    previewSeekBarExoDevVersion = '2.18.1.0'
-    glideVersion                = '4.11.0'
-
-    // 可选：集中管理常用 AndroidX 组件版本
-    // constraintLayoutVersion = '2.1.4'
-    // recyclerViewVersion     = '1.3.2'
-    // mediaVersion            = '1.6.0'
-    // collectionVersion       = '1.2.0'
-    // nanoHttpdVersion        = '2.3.1'
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+plugins {
+    id 'com.android.application' version '8.4.2' apply false
+    id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+    id 'com.android.library' version '8.4.2' apply false
 }
 
 allprojects {
-    repositories {
-        google()
-        mavenCentral()
-        maven { url 'https://jitpack.io' }
-    }
-    gradle.projectsEvaluated {
-        tasks.withType(JavaCompile) {
-            options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
-        }
-    }
+    // repositories {  // Removed - configured in settings.gradle
+    //     google()
+    //     mavenCentral()
+    //     maven { url 'https://jitpack.io' }
+    // }
 }
 
-task clean(type: Delete) { delete rootProject.buildDir }
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}
+
+ext {
+    appCompatXLibraryVersion = '1.6.1'
+    glideVersion = '4.16.0'
+    gsonVersion = '2.10.1'
+    jsonPathVersion = '2.8.0'
+    ottoVersion = '1.3.8'
+    diskLruCacheVersion = '2.0.2'
+    apacheCommonsLangVersion = '3.14.0'
+    okhttpVersion = '4.11.0'
+    multiDexVersion = '2.0.1'
+    nanoHttpdVersion = '2.3.1'
+}
