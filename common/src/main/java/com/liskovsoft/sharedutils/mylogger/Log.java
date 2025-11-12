@@ -2,7 +2,7 @@ package com.liskovsoft.sharedutils.mylogger;
 
 /**
  * Minimal logging wrapper providing LOG_TYPE_SYSTEM constant and simple d/e methods.
- * This implementation avoids Java import alias (which is invalid in Java) and uses android.util.Log directly.
+ * This implementation avoids invalid Java import alias and uses android.util.Log directly.
  * Replace with the real sharedutils.mylogger.Log implementation when available.
  */
 public final class Log {
