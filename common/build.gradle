@@ -58,8 +58,8 @@ dependencies {
     testImplementation 'junit:junit:' + rootProject.ext.junitVersion
     testImplementation 'org.robolectric:robolectric:' + rootProject.ext.robolectricVersion
 
-    api project(path: ':sharedutils')
-
+    // Ensure sharedutils symbols are available at compile time and transitively to consumers.
+    api project(':sharedutils')
     implementation fileTree(dir: 'libs', include: ['*.jar'])
 
     implementation 'androidx.appcompat:appcompat:' + rootProject.ext.appCompatXLibraryVersion
