@@ -90,9 +90,9 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
 
-    // Leanback / TV
-    implementation("androidx.leanback:leanback:1.1.0")
-    implementation("androidx.leanback:leanback-paging:1.1.0") // 可选
+    // Leanback / TV (downgraded to 1.0.0 for SDK 34 compatibility)
+    implementation("androidx.leanback:leanback:1.0.0")
+    // implementation("androidx.leanback:leanback-paging:1.1.0") // Removed - incompatible
 
     // Lifecycle
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
