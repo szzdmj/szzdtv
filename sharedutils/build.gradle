@@ -33,7 +33,8 @@ android {
         kids {}
     }
 
-    lintOptions {
+    // AGP 8: Use lint instead of lintOptions
+    lint {
         abortOnError false
         lintConfig rootProject.file('lint.xml')
     }
