@@ -38,7 +38,7 @@ android {
     // }
 
     // AGP 8：將 lintOptions 改為 lint 區塊
-    lintOptions {
+    lint {
         abortOnError false
         lintConfig rootProject.file('lint.xml')
     }
@@ -56,7 +56,7 @@ dependencies {
     implementation 'com.squareup:otto:' + rootProject.ext.ottoVersion
     implementation 'dnsjava:dnsjava:' + rootProject.ext.dnsjavaVersion
 
-    implementation project(path: ':sharedutils')
+    api project(path: ':sharedutils')
     implementation project(path: ':common')
 
     // Crosswalk 已移除（如需請自行還原）
