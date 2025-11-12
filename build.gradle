@@ -33,4 +33,5 @@ ext {
     multiDexVersion = '2.0.1'
     nanoHttpdVersion = '2.3.1'
     espressoCoreVersion = '3.5.1'
+    junitVersion = '4.13.2'
 }
