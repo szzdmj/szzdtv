@@ -77,6 +77,10 @@ dependencies {
     implementation("androidx.media3:media3-session:1.4.0")
     implementation("androidx.media3:media3-datasource-okhttp:1.4.0")
 
+    // Hilt
+    implementation("com.google.dagger:hilt-android:2.48")
+    kapt("com.google.dagger:hilt-compiler:2.48")
+
     // Kotlin
     implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.22")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
