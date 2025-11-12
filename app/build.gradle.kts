@@ -5,7 +5,7 @@ buildscript {
     }
     dependencies {
         // classpath("androidx.navigation:navigation-safe-args-gradle-plugin:2.9.6")  // Removed
-        classpath("com.google.dagger:hilt-android-gradle-plugin:2.48")
+        // classpath("com.google.dagger:hilt-android-gradle-plugin:2.48")  // Removed - use version in plugins
     }
 }
 
@@ -15,7 +15,7 @@ plugins {
     // id("androidx.navigation.safeargs.kotlin")  // Removed
     // id("kotlin-kapt")  // Removed - kapt is enabled by Kotlin plugin
     // id("kotlin-parcelize")  // Removed - parcelize is enabled by Kotlin plugin
-    id("dagger.hilt.android.plugin")
+    id("dagger.hilt.android.plugin") version "2.48"
     id("kotlinx-serialization")
 }
 
