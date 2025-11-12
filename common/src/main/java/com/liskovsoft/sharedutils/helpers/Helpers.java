@@ -11,14 +11,12 @@ public final class Helpers {
 
     /**
      * Create a new KeyEvent based on an existing event but with a different key code.
-     * This mirrors common usage in code like: Helpers.newEvent(event, KeyEvent.KEYCODE_BACK)
      */
     public static KeyEvent newEvent(KeyEvent event, int newKeyCode) {
         if (event == null) {
             return null;
         }
 
-        // Use the constructor available on most Android API levels.
         return new KeyEvent(
                 event.getDownTime(),
                 event.getEventTime(),
