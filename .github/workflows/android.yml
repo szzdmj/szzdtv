@@ -21,9 +21,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-# Now run any Gradle commands
-      - name: Build (refresh)
-        run: ./gradlew clean --refresh-dependencies assembleDebug
         
       - name: Setup Java & Gradle cache
         uses: gradle/actions/setup-gradle@v4
