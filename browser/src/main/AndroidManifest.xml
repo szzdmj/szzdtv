@@ -1,9 +1,8 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-          package="com.liskovsoft.browser"
-          xmlns:tools="http://schemas.android.com/tools"
-          android:installLocation="auto">
-
-    <!-- use older sdk -->
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- package attribute removed; namespace must be set in module's build.gradle (android { namespace "..."} ) -->
+    <uses-sdk android:minSdkVersion="21" />
+    <!-- 其余内容保留或合并到此处 -->
     <uses-sdk tools:overrideLibrary="org.xwalk.core"/>
 
     <uses-permission android:name="android.permission.INTERNET"/>
