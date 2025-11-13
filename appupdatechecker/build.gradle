@@ -21,14 +21,17 @@ android {
 
 def manifestRelative = 'src/main/AndroidManifest.xml'
 
+// configuration-time 解析 projectDir
+def projectDirFile = project.layout.projectDirectory.asFile.get()
+
 tasks.register('generateEmptyManifest') { t ->
-    outputs.file("$projectDir/${manifestRelative}")
+    outputs.file("$projectDirFile/${manifestRelative}")
     doLast {
-        def manifestFile = new File(t.project.projectDir, manifestRelative)
+        def manifestFile = new File(projectDirFile, manifestRelative)
         if (!manifestFile.exists()) {
             manifestFile.parentFile.mkdirs()
             manifestFile.text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="szzdtv.appupdatechecker">
+    package="szzdmj.appupdatechecker">
 </manifest>'''
             println "Created empty manifest at ${manifestFile}"
         } else {
