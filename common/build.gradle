@@ -1,58 +1,40 @@
-// Guarded apply for sharedModulesConstants to avoid failure when SharedModules is absent
-def _sharedConstantsFile = null
-try {
-    _sharedConstantsFile = gradle.ext.sharedModulesConstants
-} catch (MissingPropertyException ignored) {
-    // property not defined; will skip applying sharedModulesConstants
-}
-if (_sharedConstantsFile != null && file(_sharedConstantsFile).exists()) {
-    apply from: _sharedConstantsFile
-} else {
-    println "Info: sharedModulesConstants not provided or file not found; skipping apply."
-}
-
 apply plugin: 'com.android.library'
 
 android {
-    // REQUIRED for modern AGP: module namespace
-    namespace "com.liskovsoft.smartyoutubetv.common"
-
-    // Ensure Java 8 compatibility where default interface methods may be used
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
-
-    // Use compileSdkVersion from root ext to remain compatible with project config
-    compileSdkVersion rootProject.ext.compileSdkVersion
-    buildToolsVersion project.properties.buildToolsVersion
+    namespace 'szzdtv.common'
+    compileSdk 33
 
     defaultConfig {
-        minSdkVersion project.properties.minSdkVersion
-        targetSdkVersion project.properties.targetSdkVersion
+        minSdk 21
+        targetSdk 33
         versionCode 1
         versionName "1.0"
-
-        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
     }
 
-    buildTypes {
-        release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+    flavorDimensions "default"
+    productFlavors {
+        kids { dimension "default" }
+        full { dimension "default" }
+        lite { dimension "default" }
+    }
+}
+
+def manifestRelative = 'src/main/AndroidManifest.xml'
+
+tasks.register('generateEmptyManifest') { t ->
+    outputs.file("$projectDir/${manifestRelative}")
+    doLast {
+        def manifestFile = new File(t.project.projectDir, manifestRelative)
+        if (!manifestFile.exists()) {
+            manifestFile.parentFile.mkdirs()
+            manifestFile.text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="szzdtv.common">
+</manifest>'''
+            println "Created empty manifest at ${manifestFile}"
+        } else {
+            println "Manifest already exists at ${manifestFile}"
         }
     }
-
-    lintOptions {
-        abortOnError false
-    }
 }
 
-dependencies {
-    testImplementation 'junit:junit:' + junitVersion
-
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
-
-    // Example common dependencies — modules may override via SharedModules/constants.gradle
-    implementation 'com.google.code.gson:gson:' + gsonVersion
-}
+tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
