@@ -1,4 +1,15 @@
-// Modern settings.gradle with centralized dependencyResolutionManagement (Gradle 7+/8+)
+// Modern settings.gradle with pluginManagement first (required by Gradle)
+// Then dependencyResolutionManagement and module includes.
+// Try to apply SharedModules/core_settings.gradle if present (non-fatal).
+
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
@@ -7,14 +18,6 @@ dependencyResolutionManagement {
         maven { url 'https://jitpack.io' }
         // Uncomment if Crosswalk artifacts are needed:
         // maven { url 'https://download.01.org/crosswalk/releases/crosswalk/android/maven2' }
-    }
-}
-
-pluginManagement {
-    repositories {
-        gradlePluginPortal()
-        google()
-        mavenCentral()
     }
 }
 
