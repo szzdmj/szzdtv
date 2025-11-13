@@ -1,5 +1,20 @@
 apply plugin: 'com.android.application'
 
+/**
+ * Module-level build.gradle for pwaapp.
+ * Ensures mavenCentral() is available (module-level fallback) and uses
+ * the released nanohttpd-webserver artifact that contains
+ * org.nanohttpd.protocols.http and response classes.
+ */
+
+repositories {
+    // module-level repositories as a fallback if root doesn't include mavenCentral
+    google()
+    mavenCentral()
+    // keep jitpack if project uses JitPack elsewhere
+    maven { url 'https://jitpack.io' }
+}
+
 android {
     namespace "com.example.tvapp"
 
@@ -38,6 +53,8 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.1.0'
     implementation 'com.google.android.material:material:1.1.0'
     implementation 'androidx.multidex:multidex:2.0.1'
-    // Use released webserver artifact (stable on Maven Central)
+
+    // Use released webserver artifact which contains org.nanohttpd.protocols.http and response classes.
+    // Version 2.3.1 is available on Maven Central (2.3.2 is not published there).
     implementation 'org.nanohttpd:nanohttpd-webserver:2.3.1'
 }
