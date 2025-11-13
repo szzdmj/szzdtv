@@ -2,105 +2,31 @@ name: Android CI - szzdtv
 
 on:
   push:
-    branches: [main, master, main-branch]
+    branches: [ main ]
   pull_request:
-    branches: [main, master, main-branch]
-  workflow_dispatch:
-
-permissions:
-  contents: read
+    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up JDK 8 (Temurin)
+        uses: actions/setup-java@v3
         with:
-          fetch-depth: 0
-        
-      - name: Setup Java & Gradle cache
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: false
+          distribution: 'temurin'
+          java-version: '8'
+          cache: 'gradle'
 
-      - name: Build (full logs; disable configuration cache for debugging)
-        shell: bash
-        continue-on-error: true
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      - name: Clean Gradle caches (optional, safe)
         run: |
-          set -eo pipefail
-          mkdir -p build-logs
-          ./gradlew --version | tee build-logs/gradle-version.txt
-          ./gradlew --no-configuration-cache --no-build-cache clean build --stacktrace --info --warning-mode all | tee build-logs/build.log
+          rm -rf $HOME/.gradle/caches || true
+          rm -rf $HOME/.gradle/script-security || true
 
-      - name: Create trimmed logs
-        if: always()
-        run: |
-          LOG=build-logs/build.log
-          if [ -f "$LOG" ]; then
-            tail -n 400 "$LOG" > build-logs/build.tail.txt
-            grep -n "ERROR" "$LOG" | head -n 200 > build-logs/build.errors.txt || true
-          fi
-
-      - name: Upload build logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gradle-build-logs
-          path: build-logs/
-
-      # Now run any Gradle commands
-      - name: Build (refresh)
-        run: ./gradlew --refresh-dependencies assembleDebug
-
-      - name: Sync Android SDK (minimal)
-        run: |
-          sdkmanager --version || true
-          echo "Using pre-installed Android SDK components."
-
-      - name: Prepare PWA assets
-        run: |
-          set -euo pipefail
-          ASSETS="smartyoutubetv/src/main/assets"
-          mkdir -p "$ASSETS"
-          curl -fsSL --retry 3 -o "$ASSETS/index.html" "https://raw.githubusercontent.com/szzdmj/nanohttpd/master/android-asset-webshell/app/src/main/assets/index.html"
-          curl -fsSL --retry 3 -o "$ASSETS/webjs.js" "https://raw.githubusercontent.com/szmj0/szmj0.github.io/main/webjs.js"
-          curl -fsSL --retry 3 -o "$ASSETS/sw.js" "https://raw.githubusercontent.com/szmj0/szmj0.github.io/main/sw.js"
-
-      - name: Build / Test / Lint (single unified step)
-        run: |
-          set -e
-          ./gradlew --version
-          ./gradlew clean assembleDebug testDebugUnitTest lintDebug --stacktrace --info
-        continue-on-error: true
-
-      - name: Build Release (optional)
-        run: |
-          set -e
-          ./gradlew assembleRelease --stacktrace --info
-        continue-on-error: true
-
-      - name: Collect logs
-        if: always()
-        run: |
-          # Create trimmed versions (last 400 lines + first 200 error lines)
-          for f in $(ls -1 **/build/reports 2>/dev/null || true); do echo \"$f\"; done
-          LOG=gradle-build.log
-          find . -name build.log -print -quit | xargs -I{} cp {} $LOG || true
-          if [ -f "$LOG" ]; then
-            tail -n 400 "$LOG" > gradle-build.tail.txt
-            grep -n "ERROR" "$LOG" | head -n 200 > gradle-build.errors.txt || true
-          fi
-
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs
-          path: |
-            gradle-build.log
-            gradle-build.tail.txt
-            gradle-build.errors.txt
+      - name: Build (assemble)
+        run: ./gradlew --no-daemon clean assemble
