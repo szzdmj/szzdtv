@@ -1,8 +1,7 @@
 apply plugin: 'com.android.library'
 
 android {
-    // 使用一个简单的 namespace，按需替换
-    namespace 'szzdmj.appupdatechecker'
+    namespace 'szzdtv.appupdatechecker'
     compileSdk 33
 
     defaultConfig {
@@ -12,29 +11,30 @@ android {
         versionName "1.0"
     }
 
-    // 如果你的根项目使用 productFlavors，请确保这里至少有默认 variant（不定义 flavors 即为默认）
-    // 这个模块现在是一个空的 Android library，不包含实现依赖。
+    flavorDimensions "default"
+    productFlavors {
+        kids { dimension "default" }
+        full { dimension "default" }
+        lite { dimension "default" }
+    }
 }
 
-// 任务：在构建开始前确保存在一个最小的 AndroidManifest
-task generateEmptyManifest {
+def manifestRelative = 'src/main/AndroidManifest.xml'
+
+tasks.register('generateEmptyManifest') { t ->
+    outputs.file("$projectDir/${manifestRelative}")
     doLast {
-        def manifestFile = file("src/main/AndroidManifest.xml")
+        def manifestFile = new File(t.project.projectDir, manifestRelative)
         if (!manifestFile.exists()) {
             manifestFile.parentFile.mkdirs()
             manifestFile.text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="szzdmj.appupdatechecker">
+    package="szzdtv.appupdatechecker">
 </manifest>'''
             println "Created empty manifest at ${manifestFile}"
+        } else {
+            println "Manifest already exists at ${manifestFile}"
         }
     }
 }
 
-// 在预构建阶段保证生成 manifest（兼容不同 AGP 任务命名）
-afterEvaluate {
-    if (project.tasks.findByName("preBuild") != null) {
-        preBuild.dependsOn generateEmptyManifest
-    } else {
-        tasks.matching { it.name.endsWith("PreBuild") }.all { it.dependsOn generateEmptyManifest }
-    }
-}
+tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
