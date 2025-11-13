@@ -1,7 +1,6 @@
 apply plugin: 'com.android.library'
 
 android {
-    // 按需修改 namespace
     namespace 'szzdtv.browser'
     compileSdk 33
 
@@ -12,36 +11,37 @@ android {
         versionName "1.0"
     }
 
-    // 确保声明 flavorDimension & 三个 flavor（包含 smartyoutubetv 需要的 kids）
     flavorDimensions "default"
     productFlavors {
         kids { dimension "default" }
         full { dimension "default" }
         lite { dimension "default" }
     }
-
-    // 保持最小化（空模块用于调试），不添加实现内容
 }
 
-// 任务：在构建开始前确保存在一个最小的 AndroidManifest（单文件调试用）
-task generateEmptyManifest {
+// 相对路径常量（避免在 closure 中隐式捕获脚本对象）
+def manifestRelative = 'src/main/AndroidManifest.xml'
+
+// 使用 tasks.register 并在配置/执行阶段只引用 task 对象，避免捕获 Gradle 脚本对象（兼容 configuration cache）
+tasks.register('generateEmptyManifest') { t ->
+    // 标记输出文件（让 Gradle 能正确处理输入/输出）
+    outputs.file("$projectDir/${manifestRelative}")
+
+    // 执行时使用 task 的 project（t.project），不要直接使用外层 script 的引用
     doLast {
-        def manifestFile = file("src/main/AndroidManifest.xml")
+        def manifestFile = new File(t.project.projectDir, manifestRelative)
         if (!manifestFile.exists()) {
             manifestFile.parentFile.mkdirs()
             manifestFile.text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="szzdtv.browser">
 </manifest>'''
             println "Created empty manifest at ${manifestFile}"
+        } else {
+            println "Manifest already exists at ${manifestFile}"
         }
     }
 }
 
-// 把生成 manifest 的任务挂到预构建阶段，兼容不同 AGP 任务命名
-afterEvaluate {
-    if (project.tasks.findByName("preBuild") != null) {
-        preBuild.dependsOn generateEmptyManifest
-    } else {
-        tasks.matching { it.name.endsWith("PreBuild") }.all { it.dependsOn generateEmptyManifest }
-    }
-}
+// 以 configuration-cache 友好的方式把 generateEmptyManifest 绑定到 preBuild（若存在则加依赖）
+// 使用 matching + configureEach，避免 afterEvaluate 问题
+tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
