@@ -19,17 +19,18 @@ android {
     }
 }
 
-// 相对路径常量（避免在 closure 中隐式捕获脚本对象）
+// 相对路径常量
 def manifestRelative = 'src/main/AndroidManifest.xml'
 
-// 使用 tasks.register 并在配置/执行阶段只引用 task 对象，避免捕获 Gradle 脚本对象（兼容 configuration cache）
-tasks.register('generateEmptyManifest') { t ->
-    // 标记输出文件（让 Gradle 能正确处理输入/输出）
-    outputs.file("$projectDir/${manifestRelative}")
+// 在配置阶段解析项目目录为普通 File，避免在任务执行时访问 task.project
+def projectDirFile = project.layout.projectDirectory.asFile.get()
 
-    // 执行时使用 task 的 project（t.project），不要直接使用外层 script 的引用
+tasks.register('generateEmptyManifest') { t ->
+    // outputs 可使用 configuration-time 已解析的 projectDirFile
+    outputs.file("$projectDirFile/${manifestRelative}")
+
     doLast {
-        def manifestFile = new File(t.project.projectDir, manifestRelative)
+        def manifestFile = new File(projectDirFile, manifestRelative)
         if (!manifestFile.exists()) {
             manifestFile.parentFile.mkdirs()
             manifestFile.text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -43,5 +44,4 @@ tasks.register('generateEmptyManifest') { t ->
 }
 
 // 以 configuration-cache 友好的方式把 generateEmptyManifest 绑定到 preBuild（若存在则加依赖）
-// 使用 matching + configureEach，避免 afterEvaluate 问题
 tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
