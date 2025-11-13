@@ -6,7 +6,6 @@ import java.io.InputStream;
 
 /**
  * Lightweight wrapper for WebResourceResponse to serve as XWalkWebResourceResponse.
- * Adapters can construct this and return to callers expecting XWalkWebResourceResponse.
  */
 public class XWalkWebResourceResponse {
     private final WebResourceResponse mResponse;
@@ -20,11 +19,6 @@ public class XWalkWebResourceResponse {
     }
 
     public WebResourceResponse getWebResourceResponse() {
-        return mResponse;
-    }
-
-    // Convenience accessors if code expects them
-    public Object getData() {
         return mResponse;
     }
 }
