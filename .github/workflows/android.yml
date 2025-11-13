@@ -23,5 +23,13 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      - name: Build (assemble) using Gradle wrapper
-        run: ./gradlew --no-daemon clean assemble
+      - name: Run Gradle build with detailed logs
+        # Capture full output to gradle-build.log (includes --info and --stacktrace)
+        run: |
+          ./gradlew --no-daemon clean assemble --info --stacktrace > gradle-build.log 2>&1 || true
+
+      - name: Upload build log artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: gradle-build.log
