@@ -1,73 +1,43 @@
 apply plugin: 'com.android.library'
 
 android {
-    namespace "com.liskovsoft.exoplayeractivity"
-    compileSdkVersion rootProject.ext.compileSdkVersion
-    buildToolsVersion rootProject.ext.buildToolsVersion
+    namespace 'szzdtv.exoplayeractivity'
+    compileSdk 33
 
     defaultConfig {
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 22
-        versionName "0.7.2"
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        minSdk 21
+        targetSdk 33
+        versionCode 1
+        versionName "1.0"
     }
 
     flavorDimensions "default"
     productFlavors {
-        lite {}
-        full {}
-        kids { matchingFallbacks = ['lite'] }
+        kids { dimension "default" }
+        full { dimension "default" }
+        lite { dimension "default" }
     }
+}
 
-    buildTypes {
-        release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+// 相对路径常量，避免在 closure 中捕获脚本对象
+def manifestRelative = 'src/main/AndroidManifest.xml'
+
+// 使用 tasks.register，doLast 中通过 t.project 访问 projectDir（配置缓存友好）
+tasks.register('generateEmptyManifest') { t ->
+    outputs.file("$projectDir/${manifestRelative}")
+    doLast {
+        def manifestFile = new File(t.project.projectDir, manifestRelative)
+        if (!manifestFile.exists()) {
+            manifestFile.parentFile.mkdirs()
+            manifestFile.text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="szzdtv.exoplayeractivity">
+</manifest>'''
+            println "Created empty manifest at ${manifestFile}"
+        } else {
+            println "Manifest already exists at ${manifestFile}"
         }
     }
-
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
 }
 
-dependencies {
-    // 不再无条件引用 :sharedutils，避免在 CI 或本地缺失模块时配置阶段失败。
-    implementation project(":common")
-    implementation project(":browser")
-
-    implementation fileTree(dir: "libs", include: ["*.jar"])
-    implementation "androidx.appcompat:appcompat:${rootProject.ext.appCompatXLibraryVersion}"
-    implementation "androidx.constraintlayout:constraintlayout:2.1.4"
-    implementation "androidx.collection:collection:1.2.0"
-
-    // Media3 individual versions (use api for transitivity)
-    api "androidx.media3:media3-exoplayer:1.4.0"
-    api "androidx.media3:media3-ui:1.4.0"
-    api "androidx.media3:media3-session:1.4.0"
-    api "androidx.media3:media3-datasource-okhttp:1.4.0"
-
-    // Guard optional sharedutils module so configuration doesn't fail when it's missing
-    if (project.findProject(':sharedutils') != null) {
-        implementation project(':sharedutils')
-    } else {
-        println "Info: project ':sharedutils' not found; skipping project dependency."
-    }
-
-    // 可选：软件 VP9
-    // api "androidx.media3:media3-exoplayer-ffmpeg:1.4.0"
-
-    // PreviewSeekBar (temporarily commented out due to Jitpack issues)
-    // implementation "com.github.rubensousa:previewseekbar:1.1.1.0"
-    // implementation "com.github.rubensousa:previewseekbar-media3:1.1.1.0"
-
-    // glideVersion 可能在 rootProject.ext 中不存在（导致配置阶段崩溃），于是提供一个可选的后备值
-    def glideVer = rootProject.hasProperty('glideVersion') ? rootProject.ext.glideVersion : '4.15.1'
-
-    implementation "com.github.bumptech.glide:glide:${glideVer}"
-    annotationProcessor "com.github.bumptech.glide:compiler:${glideVer}"
-
-    implementation "androidx.multidex:multidex:${rootProject.ext.multiDexVersion}"
-}
+// 以 configuration-cache 友好的方式把任务挂到 preBuild
+tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
