@@ -27,8 +27,18 @@ include ':smartyoutubetv', ':browser', ':exoplayeractivity', ':appupdatechecker'
 // Optional: try to apply SharedModules/core_settings.gradle if present (non-fatal)
 def sharedRoot = new File(settingsDir, '../SharedModules').exists() ? new File(settingsDir, '../SharedModules') : new File(settingsDir, './SharedModules')
 def coreSettingsFile = new File(sharedRoot, 'core_settings.gradle')
-if (coreSettingsFile.exists()) {
-    apply from: coreSettingsFile
-} else {
-    println "Info: SharedModules/core_settings.gradle not present at ${sharedRoot}; continuing without it."
+def includeIfExists = { String projectPath, String physicalDir ->
+    if (file(physicalDir).exists()) {
+        include projectPath
+    } else {
+        println "Info: project directory '${physicalDir}' not found; skipping include of ${projectPath}."
+    }
 }
+
+// 例：当 repo 根目录下存在对应目录时再 include（根据实际目录名调整）
+includeIfExists(':browser', 'browser')
+includeIfExists(':common', 'common')
+includeIfExists(':exoplayeractivity', 'exoplayeractivity')
+includeIfExists(':smartyoutubetv', 'smartyoutubetv')
+// appupdatechecker 有时在 CI/环境中缺失，按需 include
+includeIfExists(':appupdatechecker', 'appupdatechecker')
