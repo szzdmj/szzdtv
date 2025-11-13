@@ -34,7 +34,7 @@ android {
 }
 
 dependencies {
-    implementation project(":sharedutils")
+    // Do not reference :sharedutils directly to avoid configuration failure when the module is absent in CI.
     implementation project(":common")
     implementation project(":browser")
 
@@ -48,7 +48,8 @@ dependencies {
     api "androidx.media3:media3-ui:1.4.0"
     api "androidx.media3:media3-session:1.4.0"
     api "androidx.media3:media3-datasource-okhttp:1.4.0"
-   // Guard optional sharedutils module so configuration doesn't fail when it's missing
+
+    // Guard optional sharedutils module so configuration doesn't fail when it's missing
     if (project.findProject(':sharedutils') != null) {
         implementation project(':sharedutils')
     } else {
