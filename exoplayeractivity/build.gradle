@@ -34,7 +34,7 @@ android {
 }
 
 dependencies {
-    // Do not reference :sharedutils directly to avoid configuration failure when the module is absent in CI.
+    // 不再无条件引用 :sharedutils，避免在 CI 或本地缺失模块时配置阶段失败。
     implementation project(":common")
     implementation project(":browser")
 
@@ -63,8 +63,11 @@ dependencies {
     // implementation "com.github.rubensousa:previewseekbar:1.1.1.0"
     // implementation "com.github.rubensousa:previewseekbar-media3:1.1.1.0"
 
-    implementation "com.github.bumptech.glide:glide:${rootProject.ext.glideVersion}"
-    annotationProcessor "com.github.bumptech.glide:compiler:${rootProject.ext.glideVersion}"
+    // glideVersion 可能在 rootProject.ext 中不存在（导致配置阶段崩溃），于是提供一个可选的后备值
+    def glideVer = rootProject.hasProperty('glideVersion') ? rootProject.ext.glideVersion : '4.15.1'
+
+    implementation "com.github.bumptech.glide:glide:${glideVer}"
+    annotationProcessor "com.github.bumptech.glide:compiler:${glideVer}"
 
     implementation "androidx.multidex:multidex:${rootProject.ext.multiDexVersion}"
 }
