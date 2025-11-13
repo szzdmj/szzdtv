@@ -14,14 +14,16 @@ if (_sharedConstantsFile != null && file(_sharedConstantsFile).exists()) {
 apply plugin: 'com.android.library'
 
 android {
-    // FIX: Default interface methods are only supported starting with Android N (--min-api 24)
+    // REQUIRED for modern AGP: module namespace
+    namespace "com.liskovsoft.browser"
+
+    // Ensure Java 8 compatibility where default interface methods may be used
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
-    // Use compileSdkVersion from root ext to be compatible with older AGP (3.5.0)
-    // root build.gradle defines ext { compileSdkVersion = 28; ... }
+    // Use compileSdkVersion from root ext (defined in root build.gradle)
     compileSdkVersion rootProject.ext.compileSdkVersion
     buildToolsVersion project.properties.buildToolsVersion
 
@@ -46,8 +48,7 @@ android {
     defaultPublishConfig "liteDebug"
     //publishNonDefault true
 
-    // gradle 4.6 migration: disable dimensions mechanism
-    // more: https://proandroiddev.com/advanced-android-flavors-part-4-a-new-version-fc2ad80c01bb
+    // flavor dimension (kept for compatibility with original project)
     flavorDimensions "default"
 
     productFlavors {
@@ -75,7 +76,6 @@ dependencies {
     implementation 'com.squareup:otto:' + ottoVersion
     implementation 'dnsjava:dnsjava:' + dnsjavaVersion
 
-    // Add project dependencies only if the projects actually exist in the multi-project build.
     if (project.findProject(':sharedutils') != null) {
         implementation project(path: ':sharedutils')
     } else {
@@ -88,25 +88,17 @@ dependencies {
         println "Info: project ':common' not found; skipping project dependency."
     }
 
-    // gradle 4.6 migration - optional module
     if (project.findProject(':appupdatechecker') != null) {
         implementation project(path: ':appupdatechecker')
     } else {
         println "Info: project ':appupdatechecker' not found; skipping project dependency."
     }
 
-    // Crosswalk-style dependencies: keep as-is but they require repo and artifacts to exist
-    // If you don't plan to use Crosswalk, these can be removed later.
+    // Crosswalk-style dependencies: keep as-is but they require artifacts to exist in configured repos
     try {
         liteApi 'org.xwalk:xwalk_shared_library:' + xwalkSharedLibraryVersion
         fullApi 'org.xwalk:xwalk_core_library:' + xwalkCoreLibraryVersion
     } catch (Exception e) {
         println "Info: Crosswalk dependencies resolution failed or not required in this environment; continuing without them."
     }
-
-    //liteApi project(':xwalk_shared_library-23.53.589.4')
-    //fullApi project(':xwalk_core_library-23.53.589.4-arm')
-
-    //liteApi(name: 'xwalk_shared_library-23.53.589.4', ext: 'aar')
-    //fullApi(name: 'xwalk_core_library-23.53.589.4-arm', ext: 'aar')
 }
