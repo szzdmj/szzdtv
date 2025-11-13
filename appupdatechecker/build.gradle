@@ -1,3 +1,4 @@
+// 配置举例：把原来在 doLast/执行阶段访问 Task.project 或调用 .get() 的代码改为在配置阶段解析为普通 File
 apply plugin: 'com.android.library'
 
 android {
@@ -21,11 +22,11 @@ android {
 
 def manifestRelative = 'src/main/AndroidManifest.xml'
 
-// configuration-time 解析 projectDir
-def projectDirFile = project.layout.projectDirectory.asFile.get()
+// configuration-time 解析 projectDir 为 File，避免在任务执行时调用 Task.project
+def projectDirFile = project.layout.projectDirectory.asFile
 
 tasks.register('generateEmptyManifest') { t ->
-    outputs.file("$projectDirFile/${manifestRelative}")
+    outputs.file(new File(projectDirFile, manifestRelative))
     doLast {
         def manifestFile = new File(projectDirFile, manifestRelative)
         if (!manifestFile.exists()) {
@@ -40,4 +41,5 @@ tasks.register('generateEmptyManifest') { t ->
     }
 }
 
+// 确保 preBuild（或相当的任务）依赖这个任务（configuration-cache 友好）
 tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
