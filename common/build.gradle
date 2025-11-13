@@ -14,13 +14,16 @@ if (_sharedConstantsFile != null && file(_sharedConstantsFile).exists()) {
 apply plugin: 'com.android.library'
 
 android {
+    // REQUIRED for modern AGP: module namespace
+    namespace "com.liskovsoft.smartyoutubetv.common"
+
     // Ensure Java 8 compatibility where default interface methods may be used
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
-    // Use compileSdkVersion from root ext to remain compatible with older AGP (3.5.0)
+    // Use compileSdkVersion from root ext to remain compatible with project config
     compileSdkVersion rootProject.ext.compileSdkVersion
     buildToolsVersion project.properties.buildToolsVersion
 
