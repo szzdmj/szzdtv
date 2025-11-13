@@ -22,11 +22,13 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = 'szzdtv'
-include ':smartyoutubetv', ':browser', ':exoplayeractivity', ':appupdatechecker', ':common'
 
-// Optional: try to apply SharedModules/core_settings.gradle if present (non-fatal)
+// NOTE: removed unconditional include(...) lines.
+// Use includeIfExists to avoid registering projects whose directories are missing
 def sharedRoot = new File(settingsDir, '../SharedModules').exists() ? new File(settingsDir, '../SharedModules') : new File(settingsDir, './SharedModules')
 def coreSettingsFile = new File(sharedRoot, 'core_settings.gradle')
+
+// helper: include only if the physical directory exists
 def includeIfExists = { String projectPath, String physicalDir ->
     if (file(physicalDir).exists()) {
         include projectPath
@@ -35,10 +37,16 @@ def includeIfExists = { String projectPath, String physicalDir ->
     }
 }
 
-// 例：当 repo 根目录下存在对应目录时再 include（根据实际目录名调整）
+// Include modules only when their directories are present
 includeIfExists(':browser', 'browser')
 includeIfExists(':common', 'common')
 includeIfExists(':exoplayeractivity', 'exoplayeractivity')
 includeIfExists(':smartyoutubetv', 'smartyoutubetv')
-// appupdatechecker 有时在 CI/环境中缺失，按需 include
 includeIfExists(':appupdatechecker', 'appupdatechecker')
+
+// Optional: try to apply SharedModules/core_settings.gradle if present (non-fatal)
+if (coreSettingsFile.exists()) {
+    apply from: coreSettingsFile
+} else {
+    println "Info: SharedModules/core_settings.gradle not found; skipping."
+}
