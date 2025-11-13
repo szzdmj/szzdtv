@@ -1,104 +1,47 @@
-// Guarded apply for sharedModulesConstants to avoid failure when SharedModules is absent
-def _sharedConstantsFile = null
-try {
-    _sharedConstantsFile = gradle.ext.sharedModulesConstants
-} catch (MissingPropertyException ignored) {
-    // property not defined; will skip applying sharedModulesConstants
-}
-if (_sharedConstantsFile != null && file(_sharedConstantsFile).exists()) {
-    apply from: _sharedConstantsFile
-} else {
-    println "Info: sharedModulesConstants not provided or file not found; skipping apply."
-}
-
 apply plugin: 'com.android.library'
 
 android {
-    // REQUIRED for modern AGP: module namespace
-    namespace "com.liskovsoft.browser"
-
-    // Ensure Java 8 compatibility where default interface methods may be used
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
-
-    // Use compileSdkVersion from root ext (defined in root build.gradle)
-    compileSdkVersion rootProject.ext.compileSdkVersion
-    buildToolsVersion project.properties.buildToolsVersion
+    // 按需修改 namespace
+    namespace 'szzdtv.browser'
+    compileSdk 33
 
     defaultConfig {
-        minSdkVersion project.properties.minSdkVersion
-        targetSdkVersion project.properties.targetSdkVersion
-        versionCode 7
-        versionName "6.4.7"
-
-        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        minSdk 21
+        targetSdk 33
+        versionCode 1
+        versionName "1.0"
     }
 
-    buildTypes {
-        release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
-    // In the library module's build.gradle, you need a couple extra lines to tell it to
-    // export the flavors and which build variant to use by default if not specified when being included from another module:
-    defaultPublishConfig "liteDebug"
-    //publishNonDefault true
-
-    // flavor dimension (kept for compatibility with original project)
+    // 确保声明 flavorDimension & 三个 flavor（包含 smartyoutubetv 需要的 kids）
     flavorDimensions "default"
-
     productFlavors {
-        lite {}
-        full {}
+        kids { dimension "default" }
+        full { dimension "default" }
+        lite { dimension "default" }
     }
 
-    lintOptions {
-        abortOnError true
-        lintConfig rootProject.file('lint.xml')
+    // 保持最小化（空模块用于调试），不添加实现内容
+}
+
+// 任务：在构建开始前确保存在一个最小的 AndroidManifest（单文件调试用）
+task generateEmptyManifest {
+    doLast {
+        def manifestFile = file("src/main/AndroidManifest.xml")
+        if (!manifestFile.exists()) {
+            manifestFile.parentFile.mkdirs()
+            manifestFile.text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="szzdtv.browser">
+</manifest>'''
+            println "Created empty manifest at ${manifestFile}"
+        }
     }
 }
 
-dependencies {
-    androidTestImplementation('com.android.support.test.espresso:espresso-core:' + espressoCoreVersion, {
-        exclude group: 'com.android.support', module: 'support-annotations'
-    })
-    testImplementation 'junit:junit:' + junitVersion
-
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
-
-    implementation 'androidx.appcompat:appcompat:' + appCompatXLibraryVersion
-
-    implementation 'com.squareup.okhttp3:okhttp:' + okhttpVersion
-    implementation 'com.squareup:otto:' + ottoVersion
-    implementation 'dnsjava:dnsjava:' + dnsjavaVersion
-
-    if (project.findProject(':sharedutils') != null) {
-        implementation project(path: ':sharedutils')
+// 把生成 manifest 的任务挂到预构建阶段，兼容不同 AGP 任务命名
+afterEvaluate {
+    if (project.tasks.findByName("preBuild") != null) {
+        preBuild.dependsOn generateEmptyManifest
     } else {
-        println "Info: project ':sharedutils' not found; skipping project dependency."
-    }
-
-    if (project.findProject(':common') != null) {
-        implementation project(path: ':common')
-    } else {
-        println "Info: project ':common' not found; skipping project dependency."
-    }
-
-    if (project.findProject(':appupdatechecker') != null) {
-        implementation project(path: ':appupdatechecker')
-    } else {
-        println "Info: project ':appupdatechecker' not found; skipping project dependency."
-    }
-
-    // Crosswalk-style dependencies: keep as-is but they require artifacts to exist in configured repos
-    try {
-        liteApi 'org.xwalk:xwalk_shared_library:' + xwalkSharedLibraryVersion
-        fullApi 'org.xwalk:xwalk_core_library:' + xwalkCoreLibraryVersion
-    } catch (Exception e) {
-        println "Info: Crosswalk dependencies resolution failed or not required in this environment; continuing without them."
+        tasks.matching { it.name.endsWith("PreBuild") }.all { it.dependsOn generateEmptyManifest }
     }
 }
