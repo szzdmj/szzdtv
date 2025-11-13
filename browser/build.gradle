@@ -1,47 +1,31 @@
-apply plugin: 'com.android.library'
-
 android {
-    namespace 'szzdtv.browser'
-    namespace 'com.liskovsoft.browser'
+    namespace 'com.liskovsoft.browser' // 把原来 manifest 的 package 映射过来
     compileSdk 34
+
     defaultConfig {
         minSdk 22
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        // 如果你用 root ext（如 ext.minSdk 等），可以用那边的变量： minSdk ext.minSdk
     }
 
-    flavorDimensions "default"
-    productFlavors {
-        kids { dimension "default" }
-        full { dimension "default" }
-        lite { dimension "default" }
-    }
+    // ... 保留原来的配置（buildTypes, sourceSets 等）
 }
 
-def manifestRelative = 'src/main/AndroidManifest.xml'
+dependencies {
+    // 内部模块（请确认 settings.gradle 中包含 ':common' ':smartyoutubetv' 等）
+    implementation project(':common')
+    implementation project(':smartyoutubetv')
 
-// 使用 project.projectDir（已经是 java.io.File）或 project.layout.projectDirectory.asFile（Provider -> File）
-// 注意不要对 File 再调用 .get()
-def projectDirFile = project.projectDir
+    // AndroidX / 常见运行时库（按需调整版本）
+    implementation 'androidx.core:core-ktx:1.10.1'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.fragment:fragment:1.6.0'
+    implementation 'androidx.viewpager:viewpager:1.0.0' // 如果代码用到 viewpager
+    implementation 'com.squareup:otto:1.3.8' // 如果代码用到 Otto 的 @Subscribe
+    // media3 / ExoPlayer（如果代码用到了 androidx.media3）
+    implementation 'androidx.media3:media3-exoplayer:1.1.1'
+    implementation 'androidx.media3:media3-ui:1.1.1'
 
-tasks.register('generateEmptyManifest') { t ->
-    // outputs 使用一个 File 实例，不要传 Provider.get() 导致错误
-    outputs.file(new File(projectDirFile, manifestRelative))
-
-    doLast {
-        def manifestFile = new File(projectDirFile, manifestRelative)
-        if (!manifestFile.exists()) {
-            manifestFile.parentFile.mkdirs()
-            manifestFile.text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-          package="szzdtv.browser">
-</manifest>'''
-            println "Created empty manifest at ${manifestFile}"
-        } else {
-            println "Manifest already exists at ${manifestFile}"
-        }
-    }
+    // 其它第三方库（根据编译错误逐个补）
+    // implementation 'com.squareup.okhttp3:okhttp:4.10.0'
 }
-
-// 以 configuration-cache 友好的方式把 generateEmptyManifest 绑定到 preBuild（若存在）
-tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
