@@ -48,6 +48,13 @@ dependencies {
     api "androidx.media3:media3-ui:1.4.0"
     api "androidx.media3:media3-session:1.4.0"
     api "androidx.media3:media3-datasource-okhttp:1.4.0"
+   // Guard optional sharedutils module so configuration doesn't fail when it's missing
+    if (project.findProject(':sharedutils') != null) {
+        implementation project(':sharedutils')
+    } else {
+        println "Info: project ':sharedutils' not found; skipping project dependency."
+    }
+
     // 可选：软件 VP9
     // api "androidx.media3:media3-exoplayer-ffmpeg:1.4.0"
 
