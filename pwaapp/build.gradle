@@ -2,26 +2,22 @@ apply plugin: 'com.android.application'
 
 /**
  * Module-level build.gradle for pwaapp.
- * Ensures mavenCentral() is available (module-level fallback) and uses
- * the released nanohttpd-webserver artifact that contains
- * org.nanohttpd.protocols.http and response classes.
+ * - Removed module-level repositories (use root project's repositories).
+ * - Set explicit compileSdkVersion to avoid missing rootProject.ext values during evaluation.
+ * - Uses nanohttpd-webserver 2.3.1 (published on Maven Central).
+ *
+ * Long-term: move compileSdkVersion and common repo declarations to the root build.gradle/settings.gradle.
  */
-
-repositories {
-    // module-level repositories as a fallback if root doesn't include mavenCentral
-    google()
-    mavenCentral()
-    // keep jitpack if project uses JitPack elsewhere
-    maven { url 'https://jitpack.io' }
-}
 
 android {
     namespace "com.example.tvapp"
 
-    compileSdkVersion rootProject.ext.compileSdkVersion
+    // Explicit compileSdkVersion so this module can be configured even if root ext isn't present
+    compileSdkVersion 33
 
     defaultConfig {
         applicationId "com.szzdmj.szzdtv.pwa"
+        // If rootProject.ext.minSdkVersion exists it will be used; otherwise consider setting a concrete value here.
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -55,6 +51,5 @@ dependencies {
     implementation 'androidx.multidex:multidex:2.0.1'
 
     // Use released webserver artifact which contains org.nanohttpd.protocols.http and response classes.
-    // Version 2.3.1 is available on Maven Central (2.3.2 is not published there).
     implementation 'org.nanohttpd:nanohttpd-webserver:2.3.1'
 }
