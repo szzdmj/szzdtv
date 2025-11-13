@@ -1,0 +1,40 @@
+apply plugin: 'com.android.library'
+
+android {
+    // 使用一个简单的 namespace，按需替换
+    namespace 'szzdmj.appupdatechecker'
+    compileSdk 33
+
+    defaultConfig {
+        minSdk 21
+        targetSdk 33
+        versionCode 1
+        versionName "1.0"
+    }
+
+    // 如果你的根项目使用 productFlavors，请确保这里至少有默认 variant（不定义 flavors 即为默认）
+    // 这个模块现在是一个空的 Android library，不包含实现依赖。
+}
+
+// 任务：在构建开始前确保存在一个最小的 AndroidManifest
+task generateEmptyManifest {
+    doLast {
+        def manifestFile = file("src/main/AndroidManifest.xml")
+        if (!manifestFile.exists()) {
+            manifestFile.parentFile.mkdirs()
+            manifestFile.text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="szzdmj.appupdatechecker">
+</manifest>'''
+            println "Created empty manifest at ${manifestFile}"
+        }
+    }
+}
+
+// 在预构建阶段保证生成 manifest（兼容不同 AGP 任务命名）
+afterEvaluate {
+    if (project.tasks.findByName("preBuild") != null) {
+        preBuild.dependsOn generateEmptyManifest
+    } else {
+        tasks.matching { it.name.endsWith("PreBuild") }.all { it.dependsOn generateEmptyManifest }
+    }
+}
