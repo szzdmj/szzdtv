@@ -1,28 +1,36 @@
+// Guarded apply for sharedModulesConstants to avoid failure when SharedModules is absent
+def _sharedConstantsFile = null
+try {
+    _sharedConstantsFile = gradle.ext.sharedModulesConstants
+} catch (MissingPropertyException ignored) {
+    // property not defined; will skip applying sharedModulesConstants
+}
+if (_sharedConstantsFile != null && file(_sharedConstantsFile).exists()) {
+    apply from: _sharedConstantsFile
+} else {
+    println "Info: sharedModulesConstants not provided or file not found; skipping apply."
+}
+
 apply plugin: 'com.android.library'
 
 android {
-    namespace "com.liskovsoft.smartyoutubetv.common"
-
-    compileSdkVersion rootProject.ext.compileSdkVersion
-    buildToolsVersion rootProject.ext.buildToolsVersion
-
-    // 显式开启 BuildConfig 生成功能（修复 AGP 校验失败）
-    buildFeatures {
-        buildConfig = true
+    // Ensure Java 8 compatibility where default interface methods may be used
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
 
-    // 合并为唯一的 defaultConfig
-    defaultConfig {
-        minSdkVersion     rootProject.ext.minSdkVersion
-        targetSdkVersion  rootProject.ext.targetSdkVersion
+    // Use compileSdkVersion from root ext to remain compatible with older AGP (3.5.0)
+    compileSdkVersion rootProject.ext.compileSdkVersion
+    buildToolsVersion project.properties.buildToolsVersion
 
+    defaultConfig {
+        minSdkVersion project.properties.minSdkVersion
+        targetSdkVersion project.properties.targetSdkVersion
         versionCode 1
         versionName "1.0"
 
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-
-        // 动态时间戳（如需稳定配置缓存，可改为 "0L" 或从 rootProject.ext 注入）
-        buildConfigField "long", "TIMESTAMP", "${System.currentTimeMillis()}L"
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -32,43 +40,16 @@ android {
         }
     }
 
-    flavorDimensions "default"
-    productFlavors {
-        full {}
-        lite {}
-        kids {}
-    }
-
-    // AGP 8 推荐使用 lint {}
-    lint {
+    lintOptions {
         abortOnError false
-        lintConfig rootProject.file('lint.xml')
-    }
-
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
     }
 }
 
 dependencies {
-    androidTestImplementation('androidx.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion) {
-        exclude group: 'com.android.support', module: 'support-annotations'
-    }
-    testImplementation 'junit:junit:' + rootProject.ext.junitVersion
-    testImplementation 'org.robolectric:robolectric:' + rootProject.ext.robolectricVersion
+    testImplementation 'junit:junit:' + junitVersion
 
-    // Ensure sharedutils symbols are available at compile time and transitively to consumers.
-    api project(':sharedutils')
     implementation fileTree(dir: 'libs', include: ['*.jar'])
 
-    implementation 'androidx.appcompat:appcompat:' + rootProject.ext.appCompatXLibraryVersion
-
-    implementation 'com.squareup:otto:' + rootProject.ext.ottoVersion
-    implementation 'com.squareup.okhttp3:okhttp:' + rootProject.ext.okhttpVersion
-
-    implementation 'com.google.code.gson:gson:' + rootProject.ext.gsonVersion
-
-    implementation 'androidx.multidex:multidex:' + rootProject.ext.multiDexVersion
-    implementation 'com.jakewharton:disklrucache:' + rootProject.ext.diskLruCacheVersion
+    // Example common dependencies — modules may override via SharedModules/constants.gradle
+    implementation 'com.google.code.gson:gson:' + gsonVersion
 }
