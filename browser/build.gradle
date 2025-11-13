@@ -58,7 +58,9 @@ dependencies {
 
     api project(path: ':sharedutils')
     implementation project(path: ':common')
-
+    // Add these lines inside dependencies { ... } of browser/build.gradle
+    implementation 'androidx.media3:media3-exoplayer:1.4.0'
+    implementation 'androidx.media3:media3-ui:1.4.0'
     // Crosswalk 已移除（如需請自行還原）
     // liteImplementation 'org.xwalk:xwalk_shared_library:' + rootProject.ext.xwalkSharedLibraryVersion
     // fullImplementation 'org.xwalk:xwalk_core_library:' + rootProject.ext.xwalkCoreLibraryVersion
