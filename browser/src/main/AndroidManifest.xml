@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          xmlns:tools="http://schemas.android.com/tools"
+          package="szzdtv.browser">
     <!-- package attribute removed; namespace must be set in module's build.gradle (android { namespace "..."} ) -->
     <uses-sdk android:minSdkVersion="21" />
     <!-- 其余内容保留或合并到此处 -->
@@ -19,3 +21,4 @@
     </application>
 
 </manifest>
+
