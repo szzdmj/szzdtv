@@ -9,7 +9,7 @@ import android.webkit.WebSettings;
  * Minimal compatibility wrapper so code that expects org.xwalk.core.XWalkView
  * can compile and operate on top of android.webkit.WebView.
  *
- * This class delegates to system WebView and exposes an XWalkSettings wrapper.
+ * Delegates rendering to system WebView and exposes an XWalkSettings wrapper.
  */
 public class XWalkView extends WebView {
     private final XWalkSettings mXWalkSettings;
@@ -36,9 +36,9 @@ public class XWalkView extends WebView {
         return mXWalkSettings;
     }
 
-    // Provide method signatures sometimes used by adapters
+    // Compatibility stubs used by adapters
     public void setUIClient(XWalkUIClient client) {
-        // no-op (adapters may set it)
+        // no-op shim
     }
 
     public void load(String url) {
