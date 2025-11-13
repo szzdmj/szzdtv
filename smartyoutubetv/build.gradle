@@ -1,87 +1,41 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "com.liskovsoft.smartyoutubetv"
-
-    compileSdkVersion rootProject.ext.compileSdkVersion
-    buildToolsVersion rootProject.ext.buildToolsVersion
+    namespace 'szzdtv.smartyoutubetv'
+    compileSdk 33
 
     defaultConfig {
-        minSdkVersion     rootProject.ext.minSdkVersion
-        targetSdkVersion  rootProject.ext.targetSdkVersion
-        applicationId "com.liskovsoft.videomanager"
-        versionCode 1319
-        versionName "6.17.739"
+        applicationId "szzdtv.smartyoutubetv"
+        minSdk 21
+        targetSdk 33
+        versionCode 1
+        versionName "1.0"
     }
 
     flavorDimensions "default"
     productFlavors {
+        kids { dimension "default" }
         full { dimension "default" }
         lite { dimension "default" }
-        kids { dimension "default" }
-    }
-
-    lint {
-        abortOnError false
     }
 }
 
-dependencies {
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
+def manifestRelative = 'src/main/AndroidManifest.xml'
 
-    // Guard optional sharedutils so configuration doesn't fail when it's missing
-    if (project.findProject(':sharedutils') != null) {
-        implementation project(':sharedutils')
-    } else {
-        println "Info: project ':sharedutils' not found; skipping project dependency."
+tasks.register('generateEmptyManifest') { t ->
+    outputs.file("$projectDir/${manifestRelative}")
+    doLast {
+        def manifestFile = new File(t.project.projectDir, manifestRelative)
+        if (!manifestFile.exists()) {
+            manifestFile.parentFile.mkdirs()
+            manifestFile.text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="szzdtv.smartyoutubetv">
+</manifest>'''
+            println "Created empty manifest at ${manifestFile}"
+        } else {
+            println "Manifest already exists at ${manifestFile}"
+        }
     }
-
-    implementation project(':common')
-    implementation project(':browser')
-    implementation project(':exoplayeractivity')
-
-    // AppCompat from root ext (with fallback to avoid UnknownPropertyException)
-    def appCompatVer = rootProject.hasProperty('appCompatXLibraryVersion') ? rootProject.ext.appCompatXLibraryVersion : '1.6.1'
-    implementation "androidx.appcompat:appcompat:${appCompatVer}"
-
-    // Use artifact-appropriate versions instead of appCompatXLibraryVersion
-    implementation 'androidx.media:media:1.6.0'
-    implementation 'androidx.recyclerview:recyclerview:1.3.2'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-
-    // gson (guarded)
-    def gsonVer = rootProject.hasProperty('gsonVersion') ? rootProject.ext.gsonVersion : '2.10.1'
-    implementation "com.google.code.gson:gson:${gsonVer}"
-
-    // json-path (guarded)
-    def jsonPathVer = rootProject.hasProperty('jsonPathVersion') ? rootProject.ext.jsonPathVersion : '2.8.0'
-    implementation "com.jayway.jsonpath:json-path:${jsonPathVer}"
-
-    // nanohttpd: explicit version (no nanoHttpdVersion in root ext)
-    implementation 'org.nanohttpd:nanohttpd:2.3.1'
-
-    // okhttp (guarded)
-    def okhttpVer = rootProject.hasProperty('okhttpVersion') ? rootProject.ext.okhttpVersion : '4.11.0'
-    implementation "com.squareup.okhttp3:okhttp:${okhttpVer}"
-
-    // otto (guarded)
-    def ottoVer = rootProject.hasProperty('ottoVersion') ? rootProject.ext.ottoVersion : '1.3.8'
-    implementation "com.squareup:otto:${ottoVer}"
-
-    // disklrucache (guarded)
-    def diskLruCacheVer = rootProject.hasProperty('diskLruCacheVersion') ? rootProject.ext.diskLruCacheVersion : '2.0.2'
-    implementation "com.jakewharton:disklrucache:${diskLruCacheVer}"
-
-    // commons-lang (guarded)
-    def apacheCommonsLangVer = rootProject.hasProperty('apacheCommonsLangVersion') ? rootProject.ext.apacheCommonsLangVersion : '3.12.0'
-    implementation "org.apache.commons:commons-lang3:${apacheCommonsLangVer}"
-
-    // Media3 dependencies for the app
-    implementation "androidx.media3:media3-exoplayer:1.4.0"
-    implementation "androidx.media3:media3-ui:1.4.0"
-    implementation "androidx.media3:media3-session:1.4.0"
-    implementation "androidx.media3:media3-datasource-okhttp:1.4.0"
-
-    // PreviewSeekBar (commented out to avoid 401 error)
-    // implementation "io.github.rubensousa:previewseekbar-media3:2.23.0"
 }
+
+tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
