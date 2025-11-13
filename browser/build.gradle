@@ -1,15 +1,12 @@
-plugins {
-    id 'com.android.application' // 或 'com.android.library'（取决于模块类型）
-    id 'org.jetbrains.kotlin.android' // 如果使用 Kotlin
-}
+apply plugin: 'com.android.library'
 
 android {
-    namespace "com.liskovsoft.browser" // <-- 在这里设置 namespace（替代 manifest 中的 package）
-    compileSdk 34
+    namespace 'szzdtv.browser'
+    compileSdk 33
 
     defaultConfig {
         minSdk 21
-        targetSdk 34
+        targetSdk 33
         versionCode 1
         versionName "1.0"
     }
@@ -48,25 +45,3 @@ tasks.register('generateEmptyManifest') { t ->
 // 以 configuration-cache 友好的方式把 generateEmptyManifest 绑定到 preBuild（若存在则加依赖）
 // 使用 matching + configureEach，避免 afterEvaluate 问题
 tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
-dependencies {
-    // AndroidX 基础库（根据代码需要可添加更多）
-    implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'androidx.fragment:fragment:1.5.7'
-    implementation 'androidx.annotation:annotation:1.6.0'
-    implementation 'androidx.core:core-ktx:1.12.0'
-    // media3 (ExoPlayer) 相关（示例，按需要调整版本）
-    implementation 'androidx.media3:media3-exoplayer:1.2.0'
-    implementation 'androidx.media3:media3-ui:1.2.0'
-
-    // 如果项目中有一个叫 sharedutils 的子模块或项目，请用 project 依赖 (示例)
-    // 如果 sharedutils 是单独的 module，请在 settings.gradle 中 include ':sharedutils'
-    // 然后添加：
-    // implementation project(':sharedutils')
-    //
-    // 如果不是模块而是外部库，请改为正确的 maven 坐标
-    // implementation 'com.liskovsoft:sharedutils:版本号'
-
-    // 其他必要依赖（根据报错补充）
-    implementation 'com.squareup:otto:1.3.8' // 如果使用 Otto
-    // 注：上面依赖仅为示例，版本请根据项目兼容性调整
-}
