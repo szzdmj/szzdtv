@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Keep manifest minimal for a library module.
-         Namespace is defined in build.gradle via `android { namespace 'szzdmj.appupdatechecker' }` -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools"
+          package="com.liskovsoft.browser">
+    <uses-sdk android:minSdkVersion="21" tools:overrideLibrary="some.library.to.override" />
 
-    <!-- package attribute removed; namespace must be set in module's build.gradle (android { namespace "..."} ) -->
-    <uses-sdk android:minSdkVersion="21" />
     <!-- 其余内容保留或合并到此处 -->
     <uses-sdk tools:overrideLibrary="org.xwalk.core"/>
 
@@ -22,5 +21,6 @@
     </application>
 
 </manifest>
+
 
 
