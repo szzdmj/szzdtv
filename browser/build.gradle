@@ -1,4 +1,16 @@
-apply from: gradle.ext.sharedModulesConstants
+// Guarded apply for sharedModulesConstants to avoid failure when SharedModules is absent
+def _sharedConstantsFile = null
+try {
+    _sharedConstantsFile = gradle.ext.sharedModulesConstants
+} catch (MissingPropertyException ignored) {
+    // property not defined; will skip applying sharedModulesConstants
+}
+if (_sharedConstantsFile != null && file(_sharedConstantsFile).exists()) {
+    apply from: _sharedConstantsFile
+} else {
+    println "Info: sharedModulesConstants not provided or file not found; skipping apply."
+}
+
 apply plugin: 'com.android.library'
 
 android {
