@@ -4,7 +4,7 @@ import android.webkit.WebSettings;
 
 /**
  * Minimal wrapper to present an XWalkSettings-like API backed by WebSettings.
- * Only methods used by the project are implemented; extend if you need more.
+ * Implements only the methods needed by the project.
  */
 public class XWalkSettings {
     public enum LayoutAlgorithm {
@@ -21,7 +21,6 @@ public class XWalkSettings {
         mWebSettings = webSettings;
     }
 
-    // Common settings mapping
     public void setJavaScriptEnabled(boolean flag) {
         mWebSettings.setJavaScriptEnabled(flag);
     }
@@ -52,17 +51,15 @@ public class XWalkSettings {
         mWebSettings.setLoadWithOverviewMode(overview);
     }
 
-    // LayoutAlgorithm shim (best-effort; WebSettings doesn't expose exact same enum)
     public LayoutAlgorithm getLayoutAlgorithm() {
         return mLayoutAlgorithm;
     }
 
     public void setLayoutAlgorithm(LayoutAlgorithm alg) {
         mLayoutAlgorithm = alg;
-        // no-op mapping; left as a logical flag for adapters that query it
+        // no-op mapping
     }
 
-    // Expose underlying WebSettings for advanced usage if needed
     public WebSettings getWebSettings() {
         return mWebSettings;
     }
