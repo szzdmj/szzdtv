@@ -7,8 +7,6 @@ import java.util.Map;
 
 /**
  * Lightweight wrapper representing a web resource request in XWalk-style.
- * Where possible this wraps android.webkit.WebResourceRequest to provide
- * a compatible API surface.
  */
 public class XWalkWebResourceRequest {
     private final WebResourceRequest mRequest;
