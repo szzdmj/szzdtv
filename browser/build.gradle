@@ -1,21 +1,25 @@
+apply from: gradle.ext.sharedModulesConstants
 apply plugin: 'com.android.library'
 
 android {
-    namespace "com.liskovsoft.browser"
+    // FIX: Default interface methods are only supported starting with Android N (--min-api 24)
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
+    // Use compileSdkVersion from root ext to be compatible with older AGP (3.5.0)
+    // root build.gradle defines ext { compileSdkVersion = 28; ... }
     compileSdkVersion rootProject.ext.compileSdkVersion
-    buildToolsVersion rootProject.ext.buildToolsVersion
+    buildToolsVersion project.properties.buildToolsVersion
 
     defaultConfig {
-        minSdkVersion     rootProject.ext.minSdkVersion
-        targetSdkVersion  rootProject.ext.targetSdkVersion
+        minSdkVersion project.properties.minSdkVersion
+        targetSdkVersion project.properties.targetSdkVersion
         versionCode 7
         versionName "6.4.7"
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -25,43 +29,54 @@ android {
         }
     }
 
+    // In the library module's build.gradle, you need a couple extra lines to tell it to
+    // export the flavors and which build variant to use by default if not specified when being included from another module:
+    defaultPublishConfig "liteDebug"
+    //publishNonDefault true
+
+    // gradle 4.6 migration: disable dimensions mechanism
+    // more: https://proandroiddev.com/advanced-android-flavors-part-4-a-new-version-fc2ad80c01bb
     flavorDimensions "default"
+
     productFlavors {
         lite {}
         full {}
-        kids {}
     }
 
-    // AGP 8：移除 defaultPublishConfig，必要時改為 publishing { singleVariant("liteDebug") }
-    // publishing {
-    //     singleVariant("liteDebug")
-    // }
-
-    // AGP 8：將 lintOptions 改為 lint 區塊
-    lint {
-        abortOnError false
+    lintOptions {
+        abortOnError true
         lintConfig rootProject.file('lint.xml')
     }
 }
 
 dependencies {
-    androidTestImplementation('androidx.test.espresso:espresso-core:' + rootProject.ext.espressoCoreVersion) {
+    androidTestImplementation('com.android.support.test.espresso:espresso-core:' + espressoCoreVersion, {
         exclude group: 'com.android.support', module: 'support-annotations'
-    }
-    testImplementation 'junit:junit:' + rootProject.ext.junitVersion
+    })
+    testImplementation 'junit:junit:' + junitVersion
 
     implementation fileTree(dir: 'libs', include: ['*.jar'])
-    implementation 'androidx.appcompat:appcompat:' + rootProject.ext.appCompatXLibraryVersion
-    implementation 'com.squareup.okhttp3:okhttp:' + rootProject.ext.okhttpVersion
-    implementation 'com.squareup:otto:' + rootProject.ext.ottoVersion
-    implementation 'dnsjava:dnsjava:' + rootProject.ext.dnsjavaVersion
 
-    api project(path: ':sharedutils')
+    implementation 'androidx.appcompat:appcompat:' + appCompatXLibraryVersion
+
+    implementation 'com.squareup.okhttp3:okhttp:' + okhttpVersion
+    implementation 'com.squareup:otto:' + ottoVersion
+    implementation 'dnsjava:dnsjava:' + dnsjavaVersion
+
+    implementation project(path: ':sharedutils')
+
     implementation project(path: ':common')
-    // Add these lines inside dependencies { ... } of browser/build.gradle
-    implementation 'androidx.media3:media3-exoplayer:1.4.0'
-    implementation 'androidx.media3:media3-ui:1.4.0'
-    // Crosswalk 已移除（如需請自行還原）
-    // liteImplementation 'org.xwalk:xwalk_shared_library:' + rootProject.ext.xwalkSharedLibraryVersion
-    // fullImplementation 'org.xwalk:xwalk_core_library:' + rootProject.ext.xwalkCoreLibraryVersion
+
+    // gradle 4.6 migration
+    implementation project(path: ':appupdatechecker')
+
+    // https://download.01.org/crosswalk/releases/crosswalk/android/stable/latest/
+    liteApi 'org.xwalk:xwalk_shared_library:' + xwalkSharedLibraryVersion
+    fullApi 'org.xwalk:xwalk_core_library:' + xwalkCoreLibraryVersion
+
+    //liteApi project(':xwalk_shared_library-23.53.589.4')
+    //fullApi project(':xwalk_core_library-23.53.589.4-arm')
+
+    //liteApi(name: 'xwalk_shared_library-23.53.589.4', ext: 'aar')
+    //fullApi(name: 'xwalk_core_library-23.53.589.4-arm', ext: 'aar')
 }
