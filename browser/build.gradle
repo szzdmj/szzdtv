@@ -1,31 +1,43 @@
+apply plugin: 'com.android.library'
+apply plugin: 'org.jetbrains.kotlin.android' // 如果你项目用旧 id，也可改成 'kotlin-android'
+
 android {
-    namespace 'com.liskovsoft.browser' // 把原来 manifest 的 package 映射过来
-    compileSdk 34
+    // 把这里的 namespace 改成你模块期望的包名（或与之前 manifest 中的 package 保持一致）
+    namespace 'com.liskovsoft.browser'
+    compileSdk = 34
 
     defaultConfig {
-        minSdk 22
-        targetSdk 34
-        // 如果你用 root ext（如 ext.minSdk 等），可以用那边的变量： minSdk ext.minSdk
+        minSdk = 22
+        targetSdk = 34
+        // 如果使用 root ext/vars，例如 rootProject.ext.minSdk，请替换成相应变量
+        // minSdk = rootProject.ext.minSdk
+        // targetSdk = rootProject.ext.targetSdk
     }
 
-    // ... 保留原来的配置（buildTypes, sourceSets 等）
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    // 如有需要把 consumer proguard 或 buildTypes/sourceSets 放回去
+    // consumerProguardFiles 'consumer-rules.pro'
 }
 
 dependencies {
-    // 内部模块（请确认 settings.gradle 中包含 ':common' ':smartyoutubetv' 等）
+    // 如果这些内部模块名不同，请改成你仓库里对应的 project(':...') 名称
     implementation project(':common')
     implementation project(':smartyoutubetv')
 
-    // AndroidX / 常见运行时库（按需调整版本）
+    // 基础 AndroidX / 常用库（按需要调整版本）
     implementation 'androidx.core:core-ktx:1.10.1'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.fragment:fragment:1.6.0'
-    implementation 'androidx.viewpager:viewpager:1.0.0' // 如果代码用到 viewpager
-    implementation 'com.squareup:otto:1.3.8' // 如果代码用到 Otto 的 @Subscribe
-    // media3 / ExoPlayer（如果代码用到了 androidx.media3）
+    implementation 'com.squareup:otto:1.3.8'
     implementation 'androidx.media3:media3-exoplayer:1.1.1'
     implementation 'androidx.media3:media3-ui:1.1.1'
 
-    // 其它第三方库（根据编译错误逐个补）
-    // implementation 'com.squareup.okhttp3:okhttp:4.10.0'
+    // 根据后续编译错误再逐一补充其它第三方依赖（okhttp, gson, exoplayer extras 等）
 }
