@@ -1,7 +1,7 @@
 apply plugin: 'com.android.library'
 
 android {
-    namespace 'szzdtv.appupdatechecker'
+    namespace 'szzdmj.appupdatechecker'
     compileSdk 33
 
     defaultConfig {
@@ -20,19 +20,19 @@ android {
 }
 
 def manifestRelative = 'src/main/AndroidManifest.xml'
-
-// configuration-time 解析 projectDir 为 File，避免在任务执行时调用 Task.project 或误用 .get()
 def projectDirFile = project.projectDir
 
 tasks.register('generateEmptyManifest') { t ->
     outputs.file(new File(projectDirFile, manifestRelative))
+
     doLast {
         def manifestFile = new File(projectDirFile, manifestRelative)
         if (!manifestFile.exists()) {
             manifestFile.parentFile.mkdirs()
-            manifestFile.text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="szzdmj.appupdatechecker">
-</manifest>'''
+            manifestFile.text = '''<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+</manifest>
+'''
             println "Created empty manifest at ${manifestFile}"
         } else {
             println "Manifest already exists at ${manifestFile}"
