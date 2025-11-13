@@ -9,6 +9,10 @@ android {
     defaultConfig {
         minSdk = 22
         targetSdk = 34
+        // 关键修复：当被依赖的模块（:common、:smartyoutubetv）含 productFlavors 时，
+        // 通过 missingDimensionStrategy 指定要选用的 flavor，避免 Gradle 的 variant ambiguity。
+        // 我这里默认选择 'full'，如需使用 'kids' 或 'lite' 请改成相应值。
+        missingDimensionStrategy 'default', 'full'
         // 如果使用 root ext/vars，例如 rootProject.ext.minSdk，请替换成相应变量
         // minSdk = rootProject.ext.minSdk
         // targetSdk = rootProject.ext.targetSdk
