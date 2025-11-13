@@ -19,22 +19,22 @@ android {
     }
 }
 
-// 相对路径常量
 def manifestRelative = 'src/main/AndroidManifest.xml'
 
-// 在配置阶段解析项目目录为普通 File，避免在任务执行时访问 task.project
-def projectDirFile = project.layout.projectDirectory.asFile.get()
+// 使用 project.projectDir（已经是 java.io.File）或 project.layout.projectDirectory.asFile（Provider -> File）
+// 注意不要对 File 再调用 .get()
+def projectDirFile = project.projectDir
 
 tasks.register('generateEmptyManifest') { t ->
-    // outputs 可使用 configuration-time 已解析的 projectDirFile
-    outputs.file("$projectDirFile/${manifestRelative}")
+    // outputs 使用一个 File 实例，不要传 Provider.get() 导致错误
+    outputs.file(new File(projectDirFile, manifestRelative))
 
     doLast {
         def manifestFile = new File(projectDirFile, manifestRelative)
         if (!manifestFile.exists()) {
             manifestFile.parentFile.mkdirs()
             manifestFile.text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="szzdtv.browser">
+          package="szzdtv.browser">
 </manifest>'''
             println "Created empty manifest at ${manifestFile}"
         } else {
@@ -43,5 +43,5 @@ tasks.register('generateEmptyManifest') { t ->
     }
 }
 
-// 以 configuration-cache 友好的方式把 generateEmptyManifest 绑定到 preBuild（若存在则加依赖）
+// 以 configuration-cache 友好的方式把 generateEmptyManifest 绑定到 preBuild（若存在）
 tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
