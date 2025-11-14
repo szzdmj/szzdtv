@@ -40,13 +40,8 @@ tasks.register('generateEmptyManifest') { t ->
 tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
 
 dependencies {
-    implementation project(':common')
-
-    implementation project(':common') // <- add this line so smartyoutubetv can compile against common
-    implementation 'androidx.appcompat:appcompat:1.6.1'
-
-    // HTTP client used elsewhere (if you added OkHttp earlier keep it)
-    implementation 'com.squareup.okhttp3:okhttp:4.10.0'
+   implementation project(':common')
+   implementation 'androidx.appcompat:appcompat:1.6.1'
 
     // JSON parsing used by JsonInfoParser / JsonNextParser
     implementation 'com.google.code.gson:gson:2.10.1'
