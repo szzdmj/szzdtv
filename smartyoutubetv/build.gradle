@@ -1,3 +1,4 @@
+implementation 'androidx.appcompat:appcompat:1.6.1'
 apply plugin: 'com.android.application'
 
 android {
@@ -39,3 +40,4 @@ tasks.register('generateEmptyManifest') { t ->
 }
 
 tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
+
