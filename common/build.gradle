@@ -1,7 +1,7 @@
 apply plugin: 'com.android.library'
 
 android {
-    // 修复点：把 namespace 改为源码中期望的包名，避免 R/BuildConfig 不匹配
+    // 保持之前修好过的 namespace，确保 BuildConfig/R 的包路径与源码 import 一致
     namespace 'com.liskovsoft.smartyoutubetv.common'
     compileSdk 34
 
@@ -10,6 +10,11 @@ android {
         targetSdk 34
         versionCode 1
         versionName "1.0"
+    }
+
+    // 确保构建时会生成 BuildConfig
+    buildFeatures {
+        buildConfig true
     }
 
     flavorDimensions "default"
@@ -55,10 +60,4 @@ dependencies {
 
     // DiskLruCache (如果代码调用 DiskLruCache.open)
     implementation 'com.jakewharton:disklrucache:2.0.2'
-
-    // 若模块中有 Kotlin 源码，保留 kotlin stdlib（可视项目情况删/替换）
-    // implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.22"
-
-    // 如需引用其它内部模块，可在此补充
-    // implementation project(':some-module')
 }
