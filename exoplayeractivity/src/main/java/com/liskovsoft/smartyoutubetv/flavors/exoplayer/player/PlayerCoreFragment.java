@@ -1,4 +1,10 @@
-package com.liskovsoft.smartyoutubetv.flavors.exoplayer.player;
+// Replace legacy ExoPlayer with AndroidX Media3 artifacts:
+implementation 'androidx.media3:media3-exoplayer:1.1.1'
+implementation 'androidx.media3:media3-ui:1.1.1'
+implementation 'androidx.media3:media3-common:1.1.1'
+implementation 'androidx.media3:media3-exoplayer-dash:1.1.1'       // if using DASH
+implementation 'androidx.media3:media3-datasource-okhttp:1.1.1'    // optional: OkHttp datasource
+// add other media3 modules as needed (hls, flac, flac, etc.)package com.liskovsoft.smartyoutubetv.flavors.exoplayer.player;
 // Example: replace old imports with Media3 equivalents (first-pass). You still may need to adapt API usage below.
 import androidx.media3.exoplayer.RenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
@@ -13,6 +19,25 @@ import androidx.media3.extractor.DefaultExtractorsFactory;
 import androidx.media3.mediacodec.MediaCodecRenderer;
 import androidx.media3.exoplayer.source.BehindLiveWindowException;
 import androidx.media3.exoplayer.source.ConcatenatingMediaSource;
+// 使用 tasks.register，doLast 中通过 t.project 访问 projectDir（配置缓存友好）
+tasks.register('generateEmptyManifest') { t ->
+    outputs.file("$projectDir/${manifestRelative}")
+    doLast {
+        def manifestFile = new File(t.project.projectDir, manifestRelative)
+        if (!manifestFile.exists()) {
+            manifestFile.parentFile.mkdirs()
+            manifestFile.text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="szzdtv.exoplayeractivity">
+</manifest>'''
+            println "Created empty manifest at ${manifestFile}"
+        } else {
+            println "Manifest already exists at ${manifestFile}"
+        }
+    }
+}
+
+// 以 configuration-cache 友好的方式把任务挂到 preBuild
+tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }package com.liskovsoft.smartyoutubetv.flavors.exoplayer.player;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
@@ -28,47 +53,47 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import androidx.annotation.NonNull;
 import androidx.fragment.app.Fragment;
-import androidx.media3.exoplayer.C;
+
+// Media3 imports (correct packages)
+import androidx.media3.common.C;
+import androidx.media3.common.AudioAttributes;
+import androidx.media3.common.util.Util;
+import androidx.media3.datasource.DataSource;
+import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
-import androidx.media3.exoplayer.ExoPlaybackException;
-import androidx.media3.exoplayer.ExoPlayerFactory;
-import androidx.media3.exoplayer.Player;
 import androidx.media3.exoplayer.RenderersFactory;
-import androidx.media3.exoplayer.SimpleExoPlayer;
-import androidx.media3.exoplayer.audio.AudioAttributes;
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
+import androidx.media3.exoplayer.trackselection.MappingTrackSelector;
+import androidx.media3.exoplayer.trackselection.TrackSelectionArray;
+import androidx.media3.exoplayer.mediacodec.MediaCodecRenderer;
+import androidx.media3.exoplayer.ExoPlaybackException;
 import androidx.media3.exoplayer.drm.DefaultDrmSessionManager;
 import androidx.media3.exoplayer.drm.DrmSessionManager;
 import androidx.media3.exoplayer.drm.FrameworkMediaCrypto;
 import androidx.media3.exoplayer.drm.FrameworkMediaDrm;
 import androidx.media3.exoplayer.drm.HttpMediaDrmCallback;
 import androidx.media3.exoplayer.drm.UnsupportedDrmException;
+import androidx.media3.exoplayer.hls.HlsMediaSource;
+import androidx.media3.exoplayer.smoothstreaming.DefaultSsChunkSource;
+import androidx.media3.exoplayer.smoothstreaming.SsMediaSource;
 import androidx.media3.exoplayer.extractor.DefaultExtractorsFactory;
-import androidx.media3.exoplayer.mediacodec.MediaCodecRenderer.DecoderInitializationException;
 import androidx.media3.exoplayer.source.BehindLiveWindowException;
 import androidx.media3.exoplayer.source.ConcatenatingMediaSource;
 import androidx.media3.exoplayer.source.ExtractorMediaSource;
 import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.exoplayer.source.MergingMediaSource;
-import androidx.media3.exoplayer.source.TrackGroupArray;
 import androidx.media3.exoplayer.source.dash.DashMediaSource;
 import androidx.media3.exoplayer.source.dash.DefaultDashChunkSource;
-import androidx.media3.exoplayer.source.dash.manifest.DashManifest;
-import androidx.media3.exoplayer.source.dash.manifest.DashManifestParser;
-import androidx.media3.exoplayer.source.hls.HlsMediaSource;
-import androidx.media3.exoplayer.source.smoothstreaming.DefaultSsChunkSource;
-import androidx.media3.exoplayer.source.smoothstreaming.SsMediaSource;
-import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
-import androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo;
-import androidx.media3.exoplayer.trackselection.TrackSelectionArray;
-import androidx.media3.exoplayer.ui.PlayerControlView;
-import androidx.media3.exoplayer.ui.PlayerView;
-import androidx.media3.exoplayer.upstream.DataSource;
-import androidx.media3.exoplayer.upstream.DefaultAllocator;
-import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
-import androidx.media3.exoplayer.upstream.HttpDataSource;
-import androidx.media3.exoplayer.util.EventLogger;
-import androidx.media3.exoplayer.util.Util;
+import androidx.media3.exoplayer.dash.manifest.DashManifest;
+import androidx.media3.exoplayer.dash.manifest.DashManifestParser;
+import androidx.media3.exoplayer.ui.PlayerControlView; // if you use media3-ui artifact these live under androidx.media3.ui (see note)
+import androidx.media3.ui.PlayerView;
+
+import androidx.media3.common.Player;
+import androidx.media3.common.TrackGroupArray;
+import androidx.media3.common.util.PriorityTaskManager;
+
 import com.liskovsoft.exoplayeractivity.BuildConfig;
 import com.liskovsoft.exoplayeractivity.R;
 import com.liskovsoft.sharedutils.helpers.FileHelpers;
@@ -810,3 +835,4 @@ public abstract class PlayerCoreFragment extends Fragment implements OnClickList
         return mSimpleExoPlayerView;
     }
 }
+
