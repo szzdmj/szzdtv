@@ -41,14 +41,16 @@ tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.name
 
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.jayway.jsonpath:json-path:2.7.0'
-    // HTTP client used by OkHttpHelpers and other code
-    implementation 'com.squareup.okhttp3:okhttp:4.10.0'
-    implementation 'com.squareup.okio:okio:3.4.0'
 
-    // Embedded HTTP server used by MyContentServer
+    // HTTP client used elsewhere (if you added OkHttp earlier keep it)
+    implementation 'com.squareup.okhttp3:okhttp:4.10.0'
+
+    // Embedded HTTP server (if required)
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
 
-    // keep other needed deps here...
-}
+    // JSON parsing used by JsonInfoParser / JsonNextParser
+    implementation 'com.google.code.gson:gson:2.10.1'
+    implementation 'com.jayway.jsonpath:json-path:2.7.0'
 
+    // other dependencies already present — keep them here
+}
