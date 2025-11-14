@@ -51,6 +51,7 @@ dependencies {
     // JSON parsing used by JsonInfoParser / JsonNextParser
     implementation 'com.google.code.gson:gson:2.10.1'
     implementation 'com.jayway.jsonpath:json-path:2.7.0'
-
-    // other dependencies already present — keep them here
+    implementation 'com.squareup.okhttp3:okhttp:4.10.0'
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
 }
+
