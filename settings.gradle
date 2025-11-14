@@ -23,6 +23,14 @@ dependencyResolutionManagement {
 
 rootProject.name = 'szzdtv'
 
+// existing includes...
+include ':smartyoutubetv'
+include ':exoplayeractivity'
+include ':common' // <- ensure common is included
+
+// if common lives at ./common (default), no extra config needed.
+// If different path, add:
+// project(':common').projectDir = file('common')
 // NOTE: removed unconditional include(...) lines.
 // Use includeIfExists to avoid registering projects whose directories are missing
 def sharedRoot = new File(settingsDir, '../SharedModules').exists() ? new File(settingsDir, '../SharedModules') : new File(settingsDir, './SharedModules')
