@@ -1,5 +1,18 @@
 package com.liskovsoft.smartyoutubetv.flavors.exoplayer.player;
-
+// Example: replace old imports with Media3 equivalents (first-pass). You still may need to adapt API usage below.
+import androidx.media3.exoplayer.RenderersFactory;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.common.AudioAttributes;
+import androidx.media3.exoplayer.drm.DefaultDrmSessionManager;
+import androidx.media3.exoplayer.drm.DrmSessionManager;
+import androidx.media3.exoplayer.drm.FrameworkMediaCrypto;
+import androidx.media3.exoplayer.drm.FrameworkMediaDrm;
+import androidx.media3.exoplayer.drm.HttpMediaDrmCallback;
+import androidx.media3.exoplayer.drm.UnsupportedDrmException;
+import androidx.media3.extractor.DefaultExtractorsFactory;
+import androidx.media3.mediacodec.MediaCodecRenderer;
+import androidx.media3.exoplayer.source.BehindLiveWindowException;
+import androidx.media3.exoplayer.source.ConcatenatingMediaSource;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
@@ -797,3 +810,4 @@ public abstract class PlayerCoreFragment extends Fragment implements OnClickList
         return mSimpleExoPlayerView;
     }
 }
+
