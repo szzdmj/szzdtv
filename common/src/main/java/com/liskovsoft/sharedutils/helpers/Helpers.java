@@ -3,10 +3,6 @@ package com.liskovsoft.sharedutils.helpers;
 import android.content.Context;
 import android.net.Uri;
 
-/**
- * Minimal Helpers stub to satisfy references during CI.
- * Expand as real implementation becomes available.
- */
 public final class Helpers {
     private Helpers() {}
 
@@ -19,7 +15,7 @@ public final class Helpers {
     }
 
     public static int inferContentType(Uri uri) {
-        // placeholder, real logic lives elsewhere
+        // Placeholder value; real implementation should detect content type.
         return 0;
     }
 
