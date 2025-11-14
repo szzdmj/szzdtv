@@ -1,27 +1,29 @@
 package com.liskovsoft.sharedutils.mylogger;
 
+import android.util.Log as AndroidLog;
+
 /**
- * Minimal logging wrapper providing LOG_TYPE_SYSTEM constant and simple d/e methods.
- * Uses android.util.Log directly to avoid invalid Java import aliases.
+ * Minimal logger shim to satisfy imports.
+ * Replace with project's real logger implementation if available.
  */
 public final class Log {
-    public static final String LOG_TYPE_SYSTEM = "system";
+    private static final String TAG = "szzd-log";
 
     private Log() {}
 
     public static void d(String tag, String msg) {
-        android.util.Log.d(tag, msg == null ? "" : msg);
+        AndroidLog.d(tag != null ? tag : TAG, msg);
+    }
+
+    public static void i(String tag, String msg) {
+        AndroidLog.i(tag != null ? tag : TAG, msg);
     }
 
     public static void e(String tag, String msg) {
-        android.util.Log.e(tag, msg == null ? "" : msg);
+        AndroidLog.e(tag != null ? tag : TAG, msg);
     }
 
-    public static void e(String tag, Throwable t) {
-        if (t == null) {
-            android.util.Log.e(tag, "");
-        } else {
-            android.util.Log.e(tag, android.util.Log.getStackTraceString(t));
-        }
+    public static void e(String tag, String msg, Throwable t) {
+        AndroidLog.e(tag != null ? tag : TAG, msg, t);
     }
 }
