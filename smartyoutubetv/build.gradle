@@ -19,17 +19,15 @@ android {
         lite { dimension "default" }
     }
 
-    // -----------------------
-    // IMPORTANT: exclude legacy / non‑critical source packages
-    // so CI/local builds only compile the code we care about now
-    // (PlayerActivity, WebView client, lightweight helpers).
-    // Add/remove patterns as needed.
-    // -----------------------
+    // TEMPORARY: exclude large legacy/optional packages so CI compiles only the
+    // minimal surface we need for the PlayerActivity + WebView interception.
+    // Keep excluded list conservative; do NOT exclude:
+    //  - com/liskovsoft/smartyoutubetv/player/**      (our PlayerActivity)
+    //  - com/liskovsoft/smartyoutubetv/web/**         (OpenLinkWebViewClient)
+    // Add more excludes only as CI shows additional legacy packages to skip.
     sourceSets {
         main {
             java {
-                // keep src dir as-is but exclude big legacy packages
-                // patterns are relative to src/main/java
                 exclude 'com/liskovsoft/smartyoutubetv/misc/**'
                 exclude 'com/liskovsoft/smartyoutubetv/bootstrap/**'
                 exclude 'com/liskovsoft/smartyoutubetv/voicesearch/**'
@@ -37,7 +35,11 @@ android {
                 exclude 'com/liskovsoft/smartyoutubetv/fragments/**'
                 exclude 'com/liskovsoft/smartyoutubetv/keytranslator/**'
                 exclude 'com/liskovsoft/smartyoutubetv/dialogtweaks/**'
-                // add other exclusions if CI still hits more legacy packages
+                exclude 'com/liskovsoft/smartyoutubetv/interceptors/**'
+                exclude 'com/liskovsoft/smartyoutubetv/webscripts/**'
+                exclude 'com/liskovsoft/smartyoutubetv/receivers/**'
+                exclude 'com/liskovsoft/smartyoutubetv/flavors/**' // exclude all flavors to avoid exoplayer legacy paths
+                // note: do NOT exclude player/ and web/ packages (they are outside flavors/)
             }
         }
     }
@@ -65,10 +67,13 @@ tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.name
 dependencies {
    implementation project(':common')
    implementation 'androidx.appcompat:appcompat:1.6.1'
+   implementation 'androidx.core:core-ktx:1.10.1'
 
-    // JSON parsing used by JsonInfoParser / JsonNextParser
+    // JSON parsing used by JsonInfoParser / JsonNextParser (kept)
     implementation 'com.google.code.gson:gson:2.10.1'
     implementation 'com.jayway.jsonpath:json-path:2.7.0'
+
+    // Networking used by Player+helpers
     implementation 'com.squareup.okhttp3:okhttp:4.10.0'
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
 
