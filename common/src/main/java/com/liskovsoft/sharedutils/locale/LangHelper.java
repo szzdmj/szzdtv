@@ -4,17 +4,18 @@ import android.content.Context;
 import java.util.Locale;
 
 /**
- * Minimal LangHelper compatibility stub.
- * Replace with canonical implementation from sharedutils if/when available.
+ * Minimal compatibility stub for LangHelper.
+ * Replace with canonical implementation from sharedutils when available.
  */
 public final class LangHelper {
     private LangHelper() {}
 
     public static void forceLocale(Context ctx, String locale) {
-        // Best-effort no-op stub to avoid compilation errors.
+        // best-effort no-op for CI / non-UI contexts
     }
 
     public static String guessLocale(Context ctx) {
+        if (ctx == null) return Locale.getDefault().toString();
         return Locale.getDefault().toString();
     }
 
