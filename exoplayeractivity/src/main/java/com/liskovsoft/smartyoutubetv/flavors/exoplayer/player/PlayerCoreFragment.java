@@ -753,3 +753,4 @@ public abstract class PlayerCoreFragment extends Fragment implements OnClickList
             }
         }
     }
+}
