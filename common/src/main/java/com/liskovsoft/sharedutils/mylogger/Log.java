@@ -1,29 +1,31 @@
 package com.liskovsoft.sharedutils.mylogger;
 
-import android.util.Log as AndroidLog;
-
 /**
  * Minimal logger shim to satisfy imports used in the project.
- * Replace with real logger implementation if available.
+ * Uses android.util.Log by fully qualified name to avoid name clash with this class.
  */
 public final class Log {
-    private static final String TAG = "szzdtv";
+    private static final String DEFAULT_TAG = "szzdtv";
 
     private Log() {}
 
     public static void d(String tag, String msg) {
-        AndroidLog.d(tag != null ? tag : TAG, msg);
+        android.util.Log.d(tag != null ? tag : DEFAULT_TAG, msg);
     }
 
     public static void i(String tag, String msg) {
-        AndroidLog.i(tag != null ? tag : TAG, msg);
+        android.util.Log.i(tag != null ? tag : DEFAULT_TAG, msg);
     }
 
     public static void e(String tag, String msg) {
-        AndroidLog.e(tag != null ? tag : TAG, msg);
+        android.util.Log.e(tag != null ? tag : DEFAULT_TAG, msg);
     }
 
     public static void e(String tag, String msg, Throwable t) {
-        AndroidLog.e(tag != null ? tag : TAG, msg, t);
+        android.util.Log.e(tag != null ? tag : DEFAULT_TAG, msg, t);
+    }
+
+    public static void w(String tag, String msg) {
+        android.util.Log.w(tag != null ? tag : DEFAULT_TAG, msg);
     }
 }
