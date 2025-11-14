@@ -2,7 +2,29 @@ package com.liskovsoft.smartyoutubetv.prefs;
 
 import android.content.Context;
 import com.liskovsoft.sharedutils.mylogger.Log;
+/**
+ * Minimal SmartPreferences stub placed in common to satisfy compile-time references
+ * from exoplayeractivity and other modules. Replace with the real implementation.
+ */
+public final class SmartPreferences {
+    private final Context mCtx;
 
+    private SmartPreferences(Context ctx) {
+        mCtx = ctx != null ? ctx.getApplicationContext() : null;
+    }
+
+    public static SmartPreferences instance(Context ctx) {
+        return new SmartPreferences(ctx);
+    }
+
+    public boolean getFixAspectRatio() { return false; }
+
+    public String getPlayerBufferType() { return "medium"; }
+
+    public boolean getDecreasePlayerUITimeout() { return false; }
+
+    // Add more accessors as needed by compilation
+}
 public final class SmartPreferences extends SmartPreferencesBase {
     private static final String TAG = SmartPreferences.class.getSimpleName();
     private static final String VIDEO_FORMAT_NAME = "videoFormatName"; // e.g. '360p' or '720p'
