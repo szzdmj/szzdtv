@@ -2,12 +2,12 @@ apply plugin: 'com.android.application'
 
 android {
     namespace 'szzdtv.smartyoutubetv'
-    compileSdk 33
+    compileSdk 34
 
     defaultConfig {
         applicationId "szzdtv.smartyoutubetv"
-        minSdk 21
-        targetSdk 33
+        minSdk 22
+        targetSdk 34
         versionCode 1
         versionName "1.0"
     }
@@ -20,25 +20,7 @@ android {
     }
 }
 
-def manifestRelative = 'src/main/AndroidManifest.xml'
-
-tasks.register('generateEmptyManifest') { t ->
-    outputs.file("$projectDir/${manifestRelative}")
-    doLast {
-        def manifestFile = new File(t.project.projectDir, manifestRelative)
-        if (!manifestFile.exists()) {
-            manifestFile.parentFile.mkdirs()
-            manifestFile.text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-</manifest>'''
-            println "Created empty manifest at ${manifestFile}"
-        } else {
-            println "Manifest already exists at ${manifestFile}"
-        }
-    }
-}
-
-tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
-
+// keep generateEmptyManifest, tasks, and dependencies as-is
 dependencies {
    implementation project(':common')
    implementation 'androidx.appcompat:appcompat:1.6.1'
