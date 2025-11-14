@@ -1,3 +1,11 @@
+// Replace legacy ExoPlayer with AndroidX Media3 artifacts:
+implementation 'androidx.media3:media3-exoplayer:1.1.1'
+implementation 'androidx.media3:media3-ui:1.1.1'
+implementation 'androidx.media3:media3-common:1.1.1'
+implementation 'androidx.media3:media3-exoplayer-dash:1.1.1'       // if using DASH
+implementation 'androidx.media3:media3-datasource-okhttp:1.1.1'    // optional: OkHttp datasource
+// add other media3 modules as needed (hls, flac, flac, etc.)
+
 apply plugin: 'com.android.library'
 
 android {
