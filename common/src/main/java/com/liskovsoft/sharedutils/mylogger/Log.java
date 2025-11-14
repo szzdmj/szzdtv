@@ -3,11 +3,11 @@ package com.liskovsoft.sharedutils.mylogger;
 import android.util.Log as AndroidLog;
 
 /**
- * Minimal logger shim to satisfy imports.
- * Replace with project's real logger implementation if available.
+ * Minimal logger shim to satisfy imports used in the project.
+ * Replace with real logger implementation if available.
  */
 public final class Log {
-    private static final String TAG = "szzd-log";
+    private static final String TAG = "szzdtv";
 
     private Log() {}
 
