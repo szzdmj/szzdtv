@@ -1,60 +1,54 @@
-// Modern settings.gradle with pluginManagement first (required by Gradle)
-// Then dependencyResolutionManagement and module includes.
-// Try to apply SharedModules/core_settings.gradle if present (non-fatal).
+apply plugin: 'com.android.application'
 
-pluginManagement {
-    repositories {
-        gradlePluginPortal()
-        google()
-        mavenCentral()
+android {
+    namespace 'szzdtv.smartyoutubetv'
+    compileSdk 33
+
+    defaultConfig {
+        applicationId "szzdtv.smartyoutubetv"
+        minSdk 21
+        targetSdk 33
+        versionCode 1
+        versionName "1.0"
+    }
+
+    flavorDimensions "default"
+    productFlavors {
+        kids { dimension "default" }
+        full { dimension "default" }
+        lite { dimension "default" }
     }
 }
 
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
-    repositories {
-        google()
-        mavenCentral()
-        maven { url 'https://jitpack.io' }
-        // Uncomment if Crosswalk artifacts are needed:
-        // maven { url 'https://download.01.org/crosswalk/releases/crosswalk/android/maven2' }
+def manifestRelative = 'src/main/AndroidManifest.xml'
+
+tasks.register('generateEmptyManifest') { t ->
+    outputs.file("$projectDir/${manifestRelative}")
+    doLast {
+        def manifestFile = new File(t.project.projectDir, manifestRelative)
+        if (!manifestFile.exists()) {
+            manifestFile.parentFile.mkdirs()
+            manifestFile.text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+</manifest>'''
+            println "Created empty manifest at ${manifestFile}"
+        } else {
+            println "Manifest already exists at ${manifestFile}"
+        }
     }
 }
 
-rootProject.name = 'szzdtv'
+tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
 
-// existing includes...
-include ':smartyoutubetv'
-include ':exoplayeractivity'
-include ':common' // <- ensure common is included
+dependencies {
+    implementation project(':common') // <- add this line so smartyoutubetv can compile against common
+    implementation 'androidx.appcompat:appcompat:1.6.1'
 
-// if common lives at ./common (default), no extra config needed.
-// If different path, add:
-// project(':common').projectDir = file('common')
-// NOTE: removed unconditional include(...) lines.
-// Use includeIfExists to avoid registering projects whose directories are missing
-def sharedRoot = new File(settingsDir, '../SharedModules').exists() ? new File(settingsDir, '../SharedModules') : new File(settingsDir, './SharedModules')
-def coreSettingsFile = new File(sharedRoot, 'core_settings.gradle')
+    // HTTP client used elsewhere (if you added OkHttp earlier keep it)
+    implementation 'com.squareup.okhttp3:okhttp:4.10.0'
 
-// helper: include only if the physical directory exists
-def includeIfExists = { String projectPath, String physicalDir ->
-    if (file(physicalDir).exists()) {
-        include projectPath
-    } else {
-        println "Info: project directory '${physicalDir}' not found; skipping include of ${projectPath}."
-    }
-}
-
-// Include modules only when their directories are present
-includeIfExists(':browser', 'browser')
-includeIfExists(':common', 'common')
-includeIfExists(':exoplayeractivity', 'exoplayeractivity')
-includeIfExists(':smartyoutubetv', 'smartyoutubetv')
-includeIfExists(':appupdatechecker', 'appupdatechecker')
-
-// Optional: try to apply SharedModules/core_settings.gradle if present (non-fatal)
-if (coreSettingsFile.exists()) {
-    apply from: coreSettingsFile
-} else {
-    println "Info: SharedModules/core_settings.gradle not found; skipping."
+    // JSON parsing used by JsonInfoParser / JsonNextParser
+    implementation 'com.google.code.gson:gson:2.10.1'
+    implementation 'com.jayway.jsonpath:json-path:2.7.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.10.0'
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
 }
