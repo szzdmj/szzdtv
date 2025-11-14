@@ -7,8 +7,7 @@ import okhttp3.Response;
 import java.io.IOException;
 
 /**
- * Minimal OkHttp helper shim. Uses okhttp3; add okhttp dependency to module build.gradle.
- * Replace with full implementation when available.
+ * Minimal OkHttp helper shim. Replace with full implementation when available.
  */
 public final class OkHttpHelpers {
     private static final OkHttpClient CLIENT = new OkHttpClient();
