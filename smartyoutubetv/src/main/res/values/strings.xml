@@ -1,4 +1,13 @@
 <resources>
+    <!-- 保留已有 strings 内容的同时，增加默认值以免 AAPT 移除 locale-specific 字符串 -->
+    <string name="app_name">SmartyOutuTV</string>
+
+    <!-- 为被警告的语言键提供默认值 -->
+    <string name="czech_lang">Čeština</string>
+    <string name="spanish_lang">Español</string>
+
+    <!-- 如有其它被移除或缺失的默认字符串，也请在这里补齐 -->
+
     <string name="app_name" translatable="false">Smart YouTube TV</string>
     <string name="next_clicked">Next button clicked!</string>
     <string name="prev_clicked">Prev button clicked!</string>
