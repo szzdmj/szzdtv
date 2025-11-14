@@ -2,88 +2,35 @@ package com.liskovsoft.smartyoutubetv;
 
 import android.app.Application;
 import android.content.Context;
-import androidx.core.content.ContextCompat;
-import androidx.multidex.MultiDex;
-import com.jakewharton.disklrucache.DiskLruCache;
-import com.liskovsoft.sharedutils.helpers.Helpers;
-import com.liskovsoft.sharedutils.mylogger.Log;
-import com.liskovsoft.smartyoutubetv.misc.ProxyManager;
 import com.liskovsoft.smartyoutubetv.prefs.SmartPreferences;
-import com.squareup.otto.Bus;
-import com.squareup.otto.ThreadEnforcer;
 
-import java.io.File;
-import java.io.IOException;
-
+/**
+ * Minimal CommonApplication stub to satisfy cross-module references.
+ * Added getPreferences() to return a shared SmartPreferences instance.
+ */
 public class CommonApplication extends Application {
-    private static final String TAG = CommonApplication.class.getSimpleName();
-    private static Bus sBus;
-    private static SmartPreferences sSmartPreferences;
-    private static DiskLruCache sCache;
+    private static CommonApplication sInstance;
 
     @Override
     public void onCreate() {
         super.onCreate();
-
-        sSmartPreferences = SmartPreferences.instance(this);
-        sCache = createDiskLruCache();
-
-        ProxyManager proxyManager = new ProxyManager(this);
-        proxyManager.configureSystemProxy();
+        sInstance = this;
     }
 
-    private DiskLruCache createDiskLruCache() {
-        try {
-            // Don't place lru cache in the app's cache dir.
-            // Because it could be deleted any time by cache cleaner.
-            File dir = new File(getFilesDir(), "DiskLruCache");
-            return DiskLruCache.open(dir, 1, 1, 1_000_000);
-        } catch (IOException e) {
-            Log.e(TAG, e);
-            e.printStackTrace();
-        }
+    public static Context getContext() {
+        return sInstance;
+    }
 
-        return null;
+    public static CommonApplication getInstance() {
+        return sInstance;
     }
 
     /**
-     * Use MultiDexApplication: crashlytics fix on Android 4.4<br/>
-     * Don't extent this class, use initializer instead<br/>
-     * More info: https://developer.android.com/studio/build/multidex#mdex-gradle
-     *
-     * @param base context
+     * Convenience accessor used across the codebase.
+     * Returns the shared SmartPreferences instance for the app context.
      */
-    @Override
-    protected void attachBaseContext(Context base) {
-        super.attachBaseContext(base);
-        MultiDex.install(this);
-    }
-
-    public static Bus getBus() {
-        if (sBus == null) {
-            sBus = new Bus(ThreadEnforcer.ANY);
-        }
-        return sBus;
-    }
-
     public static SmartPreferences getPreferences() {
-        return sSmartPreferences;
+        Context ctx = getContext();
+        return ctx == null ? null : SmartPreferences.instance(ctx);
     }
-
-    public static DiskLruCache getCache() {
-        return sCache;
-    }
-
-    //@Override
-    //public String getPackageName() {
-    //    if (Helpers.checkStackTrace("buildinfo")) {
-    //        return super.getPackageName();
-    //    }
-    //
-    //    if (Helpers.checkStackTrace("webview")) {
-    //        return "com.google.android.youtube.tv";
-    //    }
-    //
-    //    return super.getPackageName();
-    //}
 }
