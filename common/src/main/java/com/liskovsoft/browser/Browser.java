@@ -21,7 +21,7 @@ public final class Browser {
         return mEngine;
     }
 
-    public void loadUrl(String url) { /* no-op */ }
+    public void loadUrl(String url) { /* no-op for CI */ }
 
     public void stop() { /* no-op */ }
 }
