@@ -1,12 +1,11 @@
 package com.liskovsoft.smartyoutubetv.fragments;
 
-import androidx.fragment.app.Fragment;
-
 /**
- * Minimal GenericFragment stub.
+ * Minimal FragmentManager shim in project namespace.
+ * Avoids collision with android.app/fragment manager by package separation.
+ * Add methods as real implementation requires.
  */
-public class GenericFragment extends Fragment {
-    public GenericFragment() {
-        super();
-    }
+public class FragmentManager {
+    public FragmentManager() {}
+    // Add no-op placeholders as needed by callers
 }
