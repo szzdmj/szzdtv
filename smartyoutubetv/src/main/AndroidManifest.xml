@@ -1,11 +1,11 @@
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-          xmlns:tools="http://schemas.android.com/tools"
-          android:installLocation="auto"
-          package="com.liskovsoft.smartyoutubetv">
-
-    <!-- NOTE: ExoApplication: exoplayer specific params -->
-    <application>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Removed package attribute. Namespace must be declared in module's build.gradle (android.namespace). -->
+    <application
+        android:allowBackup="true"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:icon="@mipmap/ic_launcher"
+        android:supportsRtl="true">
+        <!-- ... keep other manifest contents (activities, services, etc.) here ... -->
     </application>
-
 </manifest>
