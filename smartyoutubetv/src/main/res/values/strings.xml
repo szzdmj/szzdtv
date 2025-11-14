@@ -13,7 +13,6 @@
 
     <!-- 如有其它被移除或缺失的默认字符串，也请在这里补齐 -->
 
-    <string name="app_name" translatable="false">Smart YouTube TV</string>
     <string name="next_clicked">Next button clicked!</string>
     <string name="prev_clicked">Prev button clicked!</string>
     <string name="button_webview">Origin</string>
