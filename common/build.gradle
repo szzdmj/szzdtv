@@ -1,7 +1,9 @@
+ url=https://github.com/szzdmj/szzdtv/blob/9738efccb5659838796e2353cee335e53cbde965/common/build.gradle
 apply plugin: 'com.android.library'
 
 android {
-    namespace 'szzdtv.common'
+    // 修复点：把 namespace 改为源码中期望的包名，避免 R/BuildConfig 不匹配
+    namespace 'com.liskovsoft.smartyoutubetv.common'
     compileSdk 34
 
     defaultConfig {
@@ -28,7 +30,7 @@ tasks.register('generateEmptyManifest') { t ->
         if (!manifestFile.exists()) {
             manifestFile.parentFile.mkdirs()
             manifestFile.text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="szzdtv.common">
+    package="com.liskovsoft.smartyoutubetv.common">
 </manifest>'''
             println "Created empty manifest at ${manifestFile}"
         } else {
@@ -39,4 +41,22 @@ tasks.register('generateEmptyManifest') { t ->
 
 tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
 
+dependencies {
+    // AndroidX / Android 注解（@Nullable, @RequiresApi 等）
+    implementation 'androidx.annotation:annotation:1.6.0'
 
+    // 基础 Kotlin/Android 扩展（若模块使用 Kotlin API）
+    implementation 'androidx.core:core-ktx:1.10.1'
+
+    // MultiDex（CommonApplication 中使用）
+    implementation 'androidx.multidex:multidex:2.0.1'
+
+    // Otto event bus (Bus / ThreadEnforcer)
+    implementation 'com.squareup:otto:1.3.8'
+
+    // DiskLruCache (如果代码调用 DiskLruCache.open)
+    implementation 'com.jakewharton:disklrucache:2.0.2'
+
+    // 其余项目内部依赖（如需要，可在此添加 project(':...')）
+    // implementation project(':some-other-module')
+}
