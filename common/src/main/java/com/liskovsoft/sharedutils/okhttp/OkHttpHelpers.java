@@ -1,13 +1,14 @@
 package com.liskovsoft.sharedutils.okhttp;
 
+import java.io.IOException;
+
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 
-import java.io.IOException;
-
 /**
- * Minimal OkHttp helper shim. Replace with full implementation when available.
+ * Minimal OkHttp helper shim. Uses okhttp3.
+ * Replace with full implementation when available.
  */
 public final class OkHttpHelpers {
     private static final OkHttpClient CLIENT = new OkHttpClient();
