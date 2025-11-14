@@ -1,19 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:tools="http://schemas.android.com/tools"
-          package="com.liskovsoft.exoplayeractivity">
-
-    <!-- NOTE: use older sdk -->
-    <uses-sdk tools:overrideLibrary="
-        androidx.media3.common,
-        androidx.media3.exoplayer,
-        androidx.media3.ui,
-        androidx.media3.session,
-        androidx.media3.datasource,
-        androidx.media3.datasource.okhttp,
-        com.github.rubensousa.previewseekbar,
-        io.github.rubensousa.previewseekbar.media3"/>
-
-    <application>
-        <!-- NOTE: exoplayer specific section -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- package attribute removed. Declare android.namespace in module's build.gradle instead. -->
+    <application
+        android:allowBackup="true"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true">
+        <!-- 保留原来的 activities / services / intent-filters 等内容 -->
     </application>
 </manifest>
