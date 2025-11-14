@@ -3,7 +3,8 @@ rootProject.name = 'szzdtv'
 // Project modules
 include ':common'
 include ':smartyoutubetv'
-include ':exoplayeractivity'
+//  include ':exoplayeractivity'
 
 // If a module lives in a non-default path, map it:
 // project(':common').projectDir = file('common')
+
