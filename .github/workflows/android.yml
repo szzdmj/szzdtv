@@ -41,7 +41,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build only smartyoutubetv (assemble FullDebug)
-        run: ./gradlew :smartyoutubetv:assembleFullDebug --no-daemon --stacktrace --info --warning-mode all
+        run: ./gradlew :smartyoutubetv:assembleFullDebug --no-configuration-cache --no-daemon --stacktrace --info --warning-mode all
 
       - name: Upload build artifacts (apk)
         if: success()
