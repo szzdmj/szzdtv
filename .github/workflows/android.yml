@@ -11,7 +11,8 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  build-smartyoutubetv:
+    name: Build smartyoutubetv (fast)
     runs-on: ubuntu-latest
     env:
       GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
@@ -19,45 +20,33 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
-          fetch-depth: 0
+          distribution: temurin
+          java-version: '17'
 
-      - name: Setup Java & Gradle cache
-        uses: gradle/actions/setup-gradle@v4
+      - name: Cache Gradle
+        uses: actions/cache@v4
         with:
-          cache-read-only: false
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-cache-${{ runner.os }}-${{ hashFiles('**/*.gradle*','**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-cache-${{ runner.os }}-
 
-      # Run a quick assemble to expose failures directly in the job log (no tee/upload)
-      - name: Build (refresh - show failures in job log)
-        run: |
-          set -eo pipefail
-          #       ./gradlew --refresh-dependencies assembleDebug --stacktrace --info --warning-mode all
-          # 修改建议：在 build step 里只执行 app module 的 assemble 任务，避免构建 exoplayeractivity 等不需要的模块。
-          # 替换原有的 `./gradlew assemble`（或类似的行）为下面这行：
-           ./gradlew :smartyoutubetv:assembleFullDebug --no-daemon --stacktrace --info --warning-mode all
-      - name: Sync Android SDK (minimal)
-        run: |
-          sdkmanager --version || true
-          echo "Using pre-installed Android SDK components."
+      - name: Grant execute for gradlew
+        run: chmod +x ./gradlew
 
-      - name: Prepare PWA assets
-        run: |
-          set -euo pipefail
-          ASSETS="smartyoutubetv/src/main/assets"
-          mkdir -p "$ASSETS"
-          curl -fsSL --retry 3 -o "$ASSETS/index.html" "https://raw.githubusercontent.com/szzdmj/nanohttpd/master/android-asset-webshell/app/src/main/assets/index.html"
-          curl -fsSL --retry 3 -o "$ASSETS/webjs.js" "https://raw.githubusercontent.com/szmj0/szmj0.github.io/main/webjs.js"
-          curl -fsSL --retry 3 -o "$ASSETS/sw.js" "https://raw.githubusercontent.com/szmj0/szmj0.github.io/main/sw.js"
+      - name: Build only smartyoutubetv (assemble FullDebug)
+        run: ./gradlew :smartyoutubetv:assembleFullDebug --no-daemon --stacktrace --info --warning-mode all
 
-      - name: Build / Test / Lint (single unified step)
-        run: |
-          set -e
-          ./gradlew --version
-          ./gradlew clean assembleDebug testDebugUnitTest lintDebug --stacktrace --info
-        continue-on-error: true
-
-      - name: Build Release (optional)
-        run: |
-          set -e
-          ./gradlew assembleRelease --stacktrace --info
-        continue-on-error: true
+      - name: Upload build artifacts (apk)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartyoutubetv-apks
+          path: |
+            smartyoutubetv/build/outputs/**/*.apk
