@@ -2,7 +2,7 @@ package com.liskovsoft.browser;
 
 /**
  * Minimal Browser stub used by project references.
- * Expand this with real behavior as needed.
+ * Replace with the real implementation when available.
  */
 public final class Browser {
     public enum EngineType {
@@ -21,7 +21,7 @@ public final class Browser {
         return mEngine;
     }
 
-    // minimal placeholder methods used by callers
-    public void loadUrl(String url) { /* no-op for CI */ }
+    public void loadUrl(String url) { /* no-op */ }
+
     public void stop() { /* no-op */ }
 }
