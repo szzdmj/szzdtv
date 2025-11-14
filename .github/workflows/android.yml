@@ -31,8 +31,10 @@ jobs:
       - name: Build (refresh - show failures in job log)
         run: |
           set -eo pipefail
-          ./gradlew --refresh-dependencies assembleDebug --stacktrace --info --warning-mode all
-
+          #       ./gradlew --refresh-dependencies assembleDebug --stacktrace --info --warning-mode all
+          # 修改建议：在 build step 里只执行 app module 的 assemble 任务，避免构建 exoplayeractivity 等不需要的模块。
+          # 替换原有的 `./gradlew assemble`（或类似的行）为下面这行：
+           ./gradlew :smartyoutubetv:assembleFullDebug --no-daemon --stacktrace --info --warning-mode all
       - name: Sync Android SDK (minimal)
         run: |
           sdkmanager --version || true
