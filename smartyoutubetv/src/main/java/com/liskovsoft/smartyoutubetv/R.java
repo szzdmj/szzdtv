@@ -2,7 +2,7 @@ package com.liskovsoft.smartyoutubetv;
 
 /**
  * Temporary compile-time R stub for smartyoutubetv.
- * - Expanded to include ids/layouts/dimens/styleable entries referenced by current compile errors.
+ * - Expanded to add activity_player (code expects R.layout.activity_player).
  * - This is a short-term compile helper only. Remove this file once real resources are present
  *   and the Android build system generates the real R class.
  */
@@ -32,11 +32,13 @@ public final class R {
     }
 
     public static final class layout {
-        public static final int bootstrap_check_button = 0x7f020001;
-        public static final int bootstrap_large_button = 0x7f020002;
-        public static final int player_activity = 0x7f020003;
+        // Keep both names: player_activity (older stub name) and activity_player (what code expects)
+        public static final int player_activity = 0x7f020001;
+        public static final int activity_player = player_activity; // alias to satisfy code
+        public static final int bootstrap_check_button = 0x7f020002;
+        public static final int bootstrap_large_button = 0x7f020003;
 
-        // keep placeholders for other commonly referenced layouts if needed
+        // placeholder
         public static final int bootstrap_text_button = 0x7f020004;
     }
 
@@ -48,7 +50,6 @@ public final class R {
 
     public static final class styleable {
         // Minimal placeholders for styleable arrays referenced in code.
-        // Indices are arbitrary but must exist for compile-time access.
         public static final int[] BootstrapCheckButton = { 0x01010000, 0x01010001 };
         public static final int BootstrapCheckButton_titleText = 0;
         public static final int BootstrapCheckButton_onCheckedChanged = 1;
@@ -61,7 +62,7 @@ public final class R {
         public static final int[] BootstrapButtonBase = { 0x01010004 };
         public static final int BootstrapButtonBase_tipText = 0;
 
-        // Keep a general placeholder array for other custom widgets
+        // General placeholder array for other custom widgets
         public static final int[] BootstrapTextButton = { 0x01010005, 0x01010006 };
         public static final int BootstrapTextButton_titleText = 0;
         public static final int BootstrapTextButton_onClick = 1;
