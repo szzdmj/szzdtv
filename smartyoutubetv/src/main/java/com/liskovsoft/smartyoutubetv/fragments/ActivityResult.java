@@ -1,13 +1,10 @@
 package com.liskovsoft.smartyoutubetv.fragments;
 
-/**
- * Minimal POJO to satisfy imports.
- * Extend with real fields if code expects them.
- */
+import android.content.Intent;
+
+/** Minimal POJO for activity results (stub). */
 public class ActivityResult {
     public int requestCode;
     public int resultCode;
-    public android.content.Intent data;
-
-    public ActivityResult() {}
+    public Intent data;
 }
