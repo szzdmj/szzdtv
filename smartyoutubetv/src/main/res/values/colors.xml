@@ -6,4 +6,8 @@
     <!--<color name="colorPrimary">#3F51B5</color>-->
     <!--<color name="colorPrimaryDark">#303F9F</color>-->
     <!--<color name="colorAccent">#FF4081</color>-->
+        <!-- 填补缺失颜色，供 values.xml 引用。按需调整色值 -->
+    <color name="youtube_background">#000000</color>
+    <color name="youtube_background_high_contrast">#000000</color>
 </resources>
+
