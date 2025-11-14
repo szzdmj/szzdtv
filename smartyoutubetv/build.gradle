@@ -19,15 +19,12 @@ android {
         lite { dimension "default" }
     }
 
-    // TEMPORARY: exclude large legacy/optional packages so CI compiles only the
-    // minimal surface we need for the PlayerActivity + WebView interception.
-    // Keep excluded list conservative; do NOT exclude:
-    //  - com/liskovsoft/smartyoutubetv/player/**      (our PlayerActivity)
-    //  - com/liskovsoft/smartyoutubetv/web/**         (OpenLinkWebViewClient)
-    // Add more excludes only as CI shows additional legacy packages to skip.
+    // TEMP: exclude legacy / non-critical source packages so CI compiles only
+    // the minimal surface needed for PlayerActivity + OpenLinkWebViewClient.
     sourceSets {
         main {
             java {
+                // previously excluded; keep them
                 exclude 'com/liskovsoft/smartyoutubetv/misc/**'
                 exclude 'com/liskovsoft/smartyoutubetv/bootstrap/**'
                 exclude 'com/liskovsoft/smartyoutubetv/voicesearch/**'
@@ -38,8 +35,12 @@ android {
                 exclude 'com/liskovsoft/smartyoutubetv/interceptors/**'
                 exclude 'com/liskovsoft/smartyoutubetv/webscripts/**'
                 exclude 'com/liskovsoft/smartyoutubetv/receivers/**'
-                exclude 'com/liskovsoft/smartyoutubetv/flavors/**' // exclude all flavors to avoid exoplayer legacy paths
-                // note: do NOT exclude player/ and web/ packages (they are outside flavors/)
+                // Add the new excludes causing failures:
+                exclude 'com/liskovsoft/smartyoutubetv/events/**'
+                exclude 'com/liskovsoft/smartyoutubetv/injectors/**'
+                // Exclude flavors where legacy ExoPlayer code lives:
+                exclude 'com/liskovsoft/smartyoutubetv/flavors/**'
+                // If CI shows other failing paths, add them here (one per line).
             }
         }
     }
@@ -69,15 +70,13 @@ dependencies {
    implementation 'androidx.appcompat:appcompat:1.6.1'
    implementation 'androidx.core:core-ktx:1.10.1'
 
-    // JSON parsing used by JsonInfoParser / JsonNextParser (kept)
+    // Keep libs needed by the lightweight player + helpers
     implementation 'com.google.code.gson:gson:2.10.1'
     implementation 'com.jayway.jsonpath:json-path:2.7.0'
-
-    // Networking used by Player+helpers
     implementation 'com.squareup.okhttp3:okhttp:4.10.0'
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
 
-    // media3 for the lightweight PlayerActivity
+    // Media3 for the PlayerActivity
     implementation 'androidx.media3:media3-exoplayer:1.1.1'
     implementation 'androidx.media3:media3-ui:1.1.1'
     implementation 'androidx.media3:media3-common:1.1.1'
