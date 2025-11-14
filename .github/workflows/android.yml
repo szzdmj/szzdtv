@@ -2,34 +2,60 @@ name: Android CI - szzdtv
 
 on:
   push:
-    branches: [ main-branch ]
+    branches: [main, master, main-branch]
   pull_request:
-    branches: [ main-branch ]
+    branches: [main, master, main-branch]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set up JDK 17 (Temurin)
-        uses: actions/setup-java@v3
         with:
-          distribution: 'temurin'
-          java-version: '17'
-          cache: 'gradle'
+          fetch-depth: 0
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x ./gradlew
+      - name: Setup Java & Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
 
-      - name: Run Gradle build with detailed logs
-        # Capture full output to gradle-build.log (includes --info and --stacktrace)
+      # Run a quick assemble to expose failures directly in the job log (no tee/upload)
+      - name: Build (refresh - show failures in job log)
         run: |
-          ./gradlew --no-daemon clean assemble --info --stacktrace > gradle-build.log 2>&1 || true
+          set -eo pipefail
+          ./gradlew --refresh-dependencies assembleDebug --stacktrace --info --warning-mode all
 
-      - name: Upload build log artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: gradle-build-log
-          path: gradle-build.log
+      - name: Sync Android SDK (minimal)
+        run: |
+          sdkmanager --version || true
+          echo "Using pre-installed Android SDK components."
+
+      - name: Prepare PWA assets
+        run: |
+          set -euo pipefail
+          ASSETS="smartyoutubetv/src/main/assets"
+          mkdir -p "$ASSETS"
+          curl -fsSL --retry 3 -o "$ASSETS/index.html" "https://raw.githubusercontent.com/szzdmj/nanohttpd/master/android-asset-webshell/app/src/main/assets/index.html"
+          curl -fsSL --retry 3 -o "$ASSETS/webjs.js" "https://raw.githubusercontent.com/szmj0/szmj0.github.io/main/webjs.js"
+          curl -fsSL --retry 3 -o "$ASSETS/sw.js" "https://raw.githubusercontent.com/szmj0/szmj0.github.io/main/sw.js"
+
+      - name: Build / Test / Lint (single unified step)
+        run: |
+          set -e
+          ./gradlew --version
+          ./gradlew clean assembleDebug testDebugUnitTest lintDebug --stacktrace --info
+        continue-on-error: true
+
+      - name: Build Release (optional)
+        run: |
+          set -e
+          ./gradlew assembleRelease --stacktrace --info
+        continue-on-error: true
