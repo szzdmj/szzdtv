@@ -28,7 +28,6 @@ tasks.register('generateEmptyManifest') { t ->
         def manifestFile = new File(t.project.projectDir, manifestRelative)
         if (!manifestFile.exists()) {
             manifestFile.parentFile.mkdirs()
-            // package attribute removed to let AGP use android.namespace
             manifestFile.text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 </manifest>'''
             println "Created empty manifest at ${manifestFile}"
@@ -42,5 +41,13 @@ tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.name
 
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    // 如果还有其它依赖，按需加在这里
+
+    // HTTP client used by OkHttpHelpers and other code
+    implementation 'com.squareup.okhttp3:okhttp:4.10.0'
+    implementation 'com.squareup.okio:okio:3.4.0'
+
+    // Embedded HTTP server used by MyContentServer
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
+
+    // keep other needed deps here...
 }
