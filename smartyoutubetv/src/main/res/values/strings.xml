@@ -3,16 +3,154 @@
     <!-- App name: keep ONLY one definition -->
     <string name="app_name">SmartyYouTubeTV</string>
 
-    <!-- Default/localized language labels (provide defaults to avoid AAPT removal warnings) -->
+    <!-- 为被警告的语言键提供默认值 -->
     <string name="czech_lang">Čeština</string>
     <string name="spanish_lang">Español</string>
-
     <!-- Common strings used by the app; add other needed keys here -->
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
     <string name="settings">Settings</string>
 
-    <!-- If you have other app_name definitions in flavor-specific or values-xx files,
-         remove or rename them to avoid collisions (e.g. values-fr/strings.xml should not
-         re-declare app_name if it's already declared here). -->
+    <!-- 如有其它被移除或缺失的默认字符串，也请在这里补齐 -->
+
+    <string name="app_name" translatable="false">Smart YouTube TV</string>
+    <string name="next_clicked">Next button clicked!</string>
+    <string name="prev_clicked">Prev button clicked!</string>
+    <string name="button_webview">Origin</string>
+    <string name="button_xwalk">Alt</string>
+    <string name="button_exo">4K</string>
+    <string name="bootstrap_main_title">Please, select YouTube launcher</string>
+    <string name="webview_desc">1080 Main</string>
+    <string name="xwalk_desc">1080 Alt</string>
+    <string name="exo_desc">4K Main</string>
+    <string name="exo_desc2">4K Alt</string>
+    <string name="bootstrap_bottom_title">Launchers are differed by the stability of work on a concrete device</string>
+    <string name="app_name_720">1080 Main</string>
+    <string name="app_name_1080">1080 Alt</string>
+    <string name="app_name_4k">4K Main</string>
+    <string name="app_name_4k_alt">4K Alt</string>
+    <string name="view_count">views</string>
+    <string name="published">Published</string>
+    <string name="starting_popup">Starting from the main launcher</string>
+    <string name="save_selection">Remember</string>
+    <string name="starting_popup_fmt">Starting the %s launcher&#8230;</string>
+    <string name="language">Language</string>
+    <string name="language_dialog_title">Select language</string>
+    <string name="english_lang">English</string>
+    <string name="ukrainian_lang">Українська</string>
+    <string name="russian_lang">Русский</string>
+    <string name="chinese_lang">中文</string>
+    <string name="nederlands_lang">Nederlands</string>
+    <string name="autoframerate">Autoframerate</string>
+    <string name="german_lang">Deutsch</string>
+    <string name="returning_to_the_video">Returning to the opened video</string>
+    <string name="send_crash_report">Crash Report</string>
+    <string name="sending_crash_report">Sending Crash Report&#8230;</string>
+    <string name="update_check">Update Check</string>
+    <string name="preferred_codec">Restrict</string>
+    <string name="select_preferred_codec">Restrict codec and resolution</string>
+    <string name="old_ui">Old UI</string>
+    <string name="endcards">End Cards</string>
+    <string name="tip_save_selection">Don\'t show this screen next time</string>
+    <string name="tip_endcards">Enable tips before the end of the video (1080 only)</string>
+    <string name="tip_language">Change language</string>
+    <string name="tip_update_check">Check for the updates</string>
+    <string name="webview_tip">Limited number of formats. Regular.</string>
+    <string name="xwalk_tip">Limited number of formats. With fixes.</string>
+    <string name="exo_tip">Vast number of formats. Regular.</string>
+    <string name="exo_alt_tip">Vast number of formats. With fixes.</string>
+    <string name="exit_msg">Press back again to exit from the app</string>
+    <string name="error_host_lookup">No internet connection: %s</string>
+    <string name="error_unknown">Connection error: %s</string>
+    <string name="codec_selector_title">Select codec</string>
+    <string name="restart_app_msg">You need to restart app in order the changes to apply</string>
+    <string name="tip_show_main_screen">Press BACK if you want to choose launcher</string>
+    <string name="tip_solve_problem">Problems? Try to select another Launcher</string>
+    <string name="tip_disable_updates">To disable Updates press BACK right here</string>
+    <string name="large_btn_title_main">Main</string>
+    <string name="large_btn_title_alt">Alt</string>
+    <string name="title_exo_main">PRO Main</string>
+    <string name="title_exo_alt">PRO Alt</string>
+    <string name="title_webview">LITE Main</string>
+    <string name="title_xwalk">LITE Alt</string>
+    <string name="tweaks">Settings</string>
+    <string name="tip_tweaks">Additional settings</string>
+    <string name="tweak_remember_launcher">Remember selected launcher</string>
+    <string name="tweak_press_ok_to_pause">OK pauses video immediately</string>
+    <string name="tweak_update_check">Check for the updates</string>
+    <string name="tweak_beta_update_check">Check for the BETA updates</string>
+    <string name="tweak_end_cards">Show end video captions</string>
+    <string name="tweak_log_to_file">Save log to file</string>
+    <string name="tweak_unplayable_video_fix">Unplayable video fix</string>
+    <string name="tweak_lock_last_launcher">Lock %s launcher</string>
+    <string name="tweak_open_music">Boot strict to the Music page</string>
+    <string name="tweak_open_history">Boot strict to the History page</string>
+    <string name="tweak_open_subscriptions">Boot to subscriptions</string>
+    <string name="tweak_global_afx_fix">Global afr fix on Pro</string>
+    <string name="toast_remove_old_package">Package name has been changed. Please remove old app versions.</string>
+    <string name="tweak_history_fix">Enable history fix</string>
+    <string name="tweak_open_watch_later">Boot strict to Watch Later</string>
+    <string name="tweak_open_externally">PRO: Open video with external player</string>
+    <string name="message_install_vlc_player">You need to install VLC player</string>
+    <string name="tweak_fix_aspect">Enable aspect ratio and zoom fix</string>
+    <string name="tweak_animated_previews">Animated previews (impact performance)</string>
+    <string name="close_msg">App closed!</string>
+    <string name="global_afr_fix_warning">This may cause autoplay to work incorrectly</string>
+    <string name="tweak_back_press_exit">Hold back key to exit</string>
+    <string name="force_all_codecs_lite_only">LITE: Unlock all codecs (4K) (impact performance)</string>
+    <string name="force_avc_lite_only">LITE: Force AVC codec (1080p)</string>
+    <string name="force_vp9_lite_only">LITE: Force VP9 codec (4K) (impact performance)</string>
+    <string name="fix_clock_msg">Time on your device doesn\'t set correctly</string>
+    <string name="do_restore_data_msg">Restore previously saved data?\nApp will be restarted.</string>
+    <string name="restoring_data_msg">Restoring data...</string>
+    <string name="alt_player_mapping">Remote: alt media-keys mapping</string>
+    <string name="tip_hash_in_subscriptions">Empty subscriptions? Remove channels beginning hash #</string>
+    <string name="tip_show_main_screen_2">Press BACK to open app settings</string>
+    <string name="do_install_bridge_apk">Do you want to enable global voice search?\nIt may need to install additional apk.
+    </string>
+    <string name="do_reinstall_bridge_apk">Do you want to enable global voice search?\nIt may need to remove original YouTube\nAnd then install additional apk.
+    </string>
+    <string name="app_crashed">App crashed.\nCheck for the newer version?</string>
+    <string name="tweak_use_new_ui">Use new UI</string>
+    <string name="tweak_ugoos_afr_fix">PRO: UGOOS 50HZ fix</string>
+    <string name="tweak_hide_boot_tips">Hide boot tips</string>
+    <string name="tweak_auto_show_player_ui">Auto show player UI on media keys</string>
+    <string name="tweak_open_externally_lq">PRO: Open video with external player (SD)</string>
+    <string name="message_install_player">Please install MXPlayer or VLC</string>
+    <string name="message_enable_web_server">Please enable Web Server in Kodi settings</string>
+    <string name="message_install_kodi">Seems that Kodi wasn\'t installed</string>
+    <string name="enable_ad_block">Ads block (impact performance)</string>
+    <string name="ad_blocking_permissions">This app can filter ads and other content to improve user experience.\nDo you agree to do that?</string>
+    <string name="player_ui_show_timeout">Pro: Decrease player ui show timeout</string>
+    <string name="channels_close_app">Android TV Channels: close app on back</string>
+    <string name="lower_player_buffer">PRO: Lower player buffer</string>
+    <string name="tweak_publish_history_playlist">ATV: Publish History playlist to Recommendations</string>
+    <string name="tweak_publish_recommended_playlist">ATV: Publish Recommended playlist to Recommendations</string>
+    <string name="tweak_publish_subscriptions_playlist">ATV: Publish Subscriptions playlist to Recommendations</string>
+    <string name="high_player_buffer">Pro: Max player buffer</string>
+    <string name="medium_player_buffer">Pro: Medium player buffer</string>
+    <string name="low_player_buffer">PRO: Min player buffer</string>
+    <string name="open_links_in_simple_view">Open links in simple player</string>
+    <string name="tweak_high_contrast_mode">Enable high contrast mode</string>
+    <string name="tweak_hold_ok_video_menu">Hold OK for video menu (impact performance)</string>
+    <string name="tweak_animated_ui">Animated UI (impact performance)</string>
+    <string name="tweak_ok_pause_without_ui">OK pauses video immediately (without UI)</string>
+    <string name="proxy_port_hint">Proxy Port</string>
+    <string name="proxy_host_hint">Proxy hostname or IP</string>
+    <string name="proxy_type">Proxy Type</string>
+    <string name="proxy_type_http" translatable="false">HTTP</string>
+    <string name="proxy_type_socks" translatable="false">SOCKS</string>
+    <string name="enable_web_proxy">Use Web Proxy</string>
+    <string name="proxy_not_supported">Use Web Proxy (Needs Android 4.4+)</string>
+    <string name="proxy_test_btn">Test</string>
+    <string name="proxy_settings_title">Proxy Server Settings</string>
+    <string name="proxy_test_urls">https://www.youtube.com\nhttps://www.google.com</string>
+    <string name="proxy_test_cancelled">Test#%d: cancelled.</string>
+    <string name="proxy_type_invalid">Proxy type not set.</string>
+    <string name="proxy_host_invalid">Proxy host not set.</string>
+    <string name="proxy_port_invalid">Invalid proxy port, must &gt; 0.</string>
+    <string name="proxy_test_aborted">Test aborted, please fix proxy settings first.</string>
+    <string name="proxy_test_start">Test#%d: %s ...</string>
+    <string name="proxy_test_error">Error#%d: %s</string>
+    <string name="proxy_test_status">Status#%d: %s %d %s</string>
 </resources>
