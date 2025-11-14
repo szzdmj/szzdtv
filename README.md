@@ -73,14 +73,3 @@
 - CI 已调整为仅构建 :smartyoutubetv（workflow 文件位于 .github/workflows/android.yml）。若需恢复整仓构建，请把 workflow 恢复为原先的 assemble 行并移除临时 excludes。
 - 若 CI 报 “Configuration cache problems”，在 CI 命令中临时加入 --no-configuration-cache 可快速绕过（长期请调整 build.gradle 使其兼容 configuration cache）。
 
-## 我可以为你继续做的事情
-- 把上面的 README.md 修改提交到仓库（我可以生成 patch、或直接开 PR — 需要你的授权推送）。
-- 继续收尾工作：把临时占位替换、恢复资源、完善 PlayerActivity（暂停/seek/headers）、增加集成测试脚本以及整理 CI 恢复方案。
-- 协助执行并记录功能测试步骤与结果，按需准备 PR 列表与 issue 跟踪待办。
-
----
-
-如果同意，我会把这个 README 的变更做成一个 commit/PR（或把 patch 发给你），然后继续把 PlayerActivity 的小缺陷与测试清单逐条处理。你希望我现在（选一）：
-1) 生成并贴出 git-format-patch 文本供你本地 apply，还是  
-2) 为你在仓库创建一个 branch + PR（我需要权限或你接受 PR），还是  
-3) 你先 review README 内容并指定修改点？
