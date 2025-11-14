@@ -46,6 +46,13 @@ tasks.register('generateEmptyManifest') { t ->
 tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
 
 dependencies {
+    // OkHttp is required by common/src/main/java/com/liskovsoft/sharedutils/okhttp/OkHttpHelpers.java
+    implementation 'com.squareup.okhttp3:okhttp:4.10.0'
+    implementation 'com.squareup.okio:okio:3.4.0' // optional helper for okhttp
+
+    // If common uses gson/jsonpath directly, add them here as well (otherwise keep in app module)
+    // implementation 'com.google.code.gson:gson:2.10.1'
+    // implementation 'com.jayway.jsonpath:json-path:2.7.0'
     // 注解（@Nullable, @RequiresApi 等）
     implementation 'androidx.annotation:annotation:1.6.0'
 
