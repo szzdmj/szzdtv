@@ -1,10 +1,9 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.liskovsoft.smartyoutubetv">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher">
-        <!-- 如果你的主 Activity 不是 PlayerActivity，请替换成正确的类名 -->
+        <!-- 启动 Activity：请确保类名正确 -->
         <activity
             android:name="com.liskovsoft.smartyoutubetv.player.PlayerActivity"
             android:exported="true">
