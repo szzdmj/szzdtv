@@ -70,6 +70,8 @@ jobs:
           SZR: ${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}
         shell: bash
         run: |
+          chmod +x ./scripts/fetch-pwa-assets.sh
+          ./scripts/fetch-pwa-assets.sh
           set -euo pipefail
           # primary target module assets used by app
           TARGET_A="smartyoutubetv/src/main/assets"
