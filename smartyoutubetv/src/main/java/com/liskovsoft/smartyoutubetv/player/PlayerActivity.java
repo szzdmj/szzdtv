@@ -130,7 +130,70 @@ public class PlayerActivity extends AppCompatActivity {
             Toast.makeText(this, "Can't change brightness: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
+// 替换现有 onCreate 的 try/catch 部分为下面内容
+@Override
+protected void onCreate(@Nullable Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
 
+    try {
+        setContentView(com.liskovsoft.smartyoutubetv.R.layout.activity_player);
+
+        playerView = findViewById(com.liskovsoft.smartyoutubetv.R.id.player_view);
+        fileNameTv = findViewById(com.liskovsoft.smartyoutubetv.R.id.tv_filename);
+        volUpBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_vol_up);
+        volDownBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_vol_down);
+        brightUpBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_bright_up);
+        brightDownBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_bright_down);
+
+        audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+
+        if (volUpBtn != null) volUpBtn.setOnClickListener(v -> adjustVolume(true));
+        if (volDownBtn != null) volDownBtn.setOnClickListener(v -> adjustVolume(false));
+        if (brightUpBtn != null) brightUpBtn.setOnClickListener(v -> adjustBrightness(true));
+        if (brightDownBtn != null) brightDownBtn.setOnClickListener(v -> adjustBrightness(false));
+
+        // Handle Intent (ACTION_VIEW)
+        Intent intent = getIntent();
+        if (intent != null && Intent.ACTION_VIEW.equals(intent.getAction())) {
+            Uri data = intent.getData();
+            if (data != null) {
+                if (fileNameTv != null) fileNameTv.setText(extractDisplayName(data));
+                initPlayerWithUri(data);
+            } else {
+                Toast.makeText(this, "No media uri provided", Toast.LENGTH_SHORT).show();
+            }
+        } else {
+            Toast.makeText(this, "No Intent.ACTION_VIEW - call with a media Uri", Toast.LENGTH_SHORT).show();
+        }
+    } catch (Throwable t) {
+        Log.e(TAG, "onCreate failed", t);
+        // 写到文件，方便没有 adb 的情况下抓取堆栈
+        String path = writeCrashLog(t);
+        try {
+            Toast.makeText(this, "启动失败: " + t.getClass().getSimpleName() + (path != null ? "\nlog: " + path : ""), Toast.LENGTH_LONG).show();
+        } catch (Throwable ignored) {}
+        finish();
+    }
+}
+
+// 新增方法：将异常写入文件并返回文件路径（外部应用目录）
+private String writeCrashLog(Throwable t) {
+    try {
+        java.io.File dir = getExternalFilesDir("logs");
+        if (dir == null) return null;
+        if (!dir.exists()) dir.mkdirs();
+        String name = "crash-" + System.currentTimeMillis() + ".log";
+        java.io.File f = new java.io.File(dir, name);
+        java.io.PrintWriter pw = new java.io.PrintWriter(new java.io.FileWriter(f));
+        t.printStackTrace(pw);
+        pw.flush();
+        pw.close();
+        return f.getAbsolutePath();
+    } catch (Exception e) {
+        Log.e(TAG, "Failed to write crash log", e);
+        return null;
+    }
+}
     @Override
     protected void onStart() {
         super.onStart();
