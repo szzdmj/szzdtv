@@ -25,7 +25,19 @@
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
         </activity>
+// --- 追加到 smartyoutubetv/build.gradle 文件的底部（Groovy DSL） ---
+def pwaAssetsDir = rootProject.file('pwaapp/src/main/assets')
+def destAssetsDir = file('src/main/assets')
 
+tasks.register('copyPwaAssets', Copy) {
+    from pwaAssetsDir
+    into destAssetsDir
+    // 可按需 exclude('**/node_modules/**')
+}
+
+preBuild.dependsOn tasks.named('copyPwaAssets')
+// --- 结束片段 ---
         <!-- 其它 Activity / meta-data -->
     </application>
 </manifest>
+
