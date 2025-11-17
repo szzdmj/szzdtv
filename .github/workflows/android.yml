@@ -1,110 +1,56 @@
-# Replace or update the existing workflow with this adjusted snippet:
-name: Android CI - szzdtv (updated for Gradle 8.7 / AGP 8.5 / JDK17)
+name: Android CI - szzdtv
 
 on:
   push:
-    branches: [ "main", "master", "main-branch" ]
+    branches: [ main-branch ]
   pull_request:
-    branches: [ "main", "master", "main-branch" ]
-  workflow_dispatch:
-    inputs:
-      nano_branch:
-        description: 'Branch/commit of szzdmj/nanohttpd to fetch index.html from'
-        required: false
-        default: 'master'
-      sz_ref:
-        description: 'Branch/commit of szmj0/szmj0.github.io to fetch webjs.js & sw.js from'
-        required: false
-        default: 'b6977c914a9a1aabafb5bddd6817eea85a2a8738'
-
-permissions:
-  contents: write
+    branches: [ main-branch ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      GRADLE_OPTS: -Dorg.gradle.jvmargs='-Xmx3g -Dfile.encoding=UTF-8'
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Set up JDK 17 (for build and Gradle)
-        uses: actions/setup-java@v4
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@v3
         with:
-          distribution: temurin
+          distribution: 'temurin'
           java-version: '17'
-          cache: gradle
+          cache: 'gradle'
 
-      - name: Install isolated Android SDK (API 28 only) and accept licenses
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      - name: Run Gradle build with detailed logs
+        # Capture full output to gradle-build.log (includes --info and --stacktrace)
+        run: |
+          ./gradlew --no-daemon clean assemble --info --stacktrace > gradle-build.log 2>&1 || true
+
+      - name: Show build outputs (for debugging)
+        if: always()
         shell: bash
         run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="$RUNNER_TEMP/android-sdk"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
-          echo "ANDROID_HOME=${ANDROID_HOME}" >> "$GITHUB_ENV"
-          mkdir -p "${ANDROID_SDK_ROOT}/cmdline-tools"
-          pushd "${ANDROID_SDK_ROOT}/cmdline-tools" >/dev/null
-          CTL_ZIP="commandlinetools-linux-11076708_latest.zip"
-          URL_BASE="https://dl.google.com/android/repository"
-          if ! curl -fsSL --retry 3 -o cmdline-tools.zip "${URL_BASE}/${CTL_ZIP}"; then
-            curl -fsSL --retry 3 -o cmdline-tools.zip "${URL_BASE}/commandlinetools-linux-9477386_latest.zip"
-          fi
-          unzip -q cmdline-tools.zip
-          rm -f cmdline-tools.zip
-          if [ -d "cmdline-tools" ]; then
-            mv cmdline-tools latest
-          fi
-          popd >/dev/null
-          SDKM="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
-          yes | "${SDKM}" --sdk_root="${ANDROID_SDK_ROOT}" --licenses >/dev/null 2>&1 || true
-          "${SDKM}" --sdk_root="${ANDROID_SDK_ROOT}" "platform-tools" "build-tools;34.0.0" "platforms;android-34"
+          echo "=== List project build outputs (smartyoutubetv) ==="
+          ls -R smartyoutubetv/build/outputs || true
+          echo "=== Find any APKs under smartyoutubetv/build ==="
+          find smartyoutubetv/build -type f -name '*.apk' -print || true
+          echo "=== Find any APKs under workspace ==="
+          find . -type f -name '*.apk' -print || true
 
-      - name: Prepare PWA assets (index.html, webjs.js, sw.js)
-        env:
-          NBR: ${{ github.event.inputs.nano_branch || 'master' }}
-          SZR: ${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          A="smartyoutubetv/src/main/assets"
-          mkdir -p "$A"
-          echo "Fetching index.html from szzdmj/nanohttpd@${NBR}"
-          base_nano="https://raw.githubusercontent.com/szzdmj/nanohttpd/${NBR}/android-asset-webshell/app/src/main/assets"
-          curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/index.html" "${base_nano}/index.html" || echo "Warning: index.html fetch failed"
-          echo "Fetching webjs.js & sw.js from szmj0/szmj0.github.io@${SZR}"
-          base_sz="https://raw.githubusercontent.com/szmj0/szmj0.github.io/${SZR}"
-          curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/webjs.js" "${base_sz}/webjs.js" || echo "Warning: webjs.js fetch failed"
-          curl -fsSL --retry 3 --connect-timeout 15 -o "${A}/sw.js"     "${base_sz}/sw.js" || echo "Warning: sw.js fetch failed"
-          echo "Assets present in ${A}:"
-          ls -l "${A}" || true
-          echo "index.html head:"
-          sed -n '1,40p' "${A}/index.html" || true
+      - name: Upload build log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: gradle-build.log
 
-      - name: Use Gradle 8.7 wrapper (ensure wrapper exists or generate)
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Ensure gradlew exists and wrapper uses 8.7. If missing, bootstrap wrapper using installed gradle action.
-          if [ ! -f "./gradlew" ]; then
-            echo "No gradlew found - generating wrapper with gradle 8.7"
-            ./gradlew wrapper --gradle-version 8.7 || true
-          fi
-          ./gradlew -v
-
-      - name: Make gradlew executable
-        shell: bash
-        run: chmod +x gradlew
-
-      - name: Build Debug (:smartyoutubetv) and save logs
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./gradlew :smartyoutubetv:assembleDebug --stacktrace --info --no-daemon > build_log_debug.txt 2>&1 || true
-          echo "Debug build finished (possibly with errors), log saved."
-
-      # ... rest unchanged: tests, lint, release assemble, logging artifacts, etc.
+      - name: Upload built APK(s)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: szzdtv-apks
+          path: |
+            smartyoutubetv/build/outputs/apk/**/*.apk
+            **/build/outputs/apk/**/*.apk
