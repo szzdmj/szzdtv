@@ -3,7 +3,8 @@
 
     <application
         android:label="SmartyYouTubeTV"
-        android:icon="@android:drawable/ic_menu_gallery">
+        android:icon="@android:drawable/ic_menu_gallery"
+        android:theme="@style/AppTheme">
         <!-- 启动 Activity：请确保类名正确 -->
         <activity
             android:name="com.liskovsoft.smartyoutubetv.player.PlayerActivity"
