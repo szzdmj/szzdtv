@@ -5,13 +5,24 @@
         android:label="SmartyYouTubeTV"
         android:icon="@android:drawable/ic_menu_gallery"
         android:theme="@style/AppTheme">
-        <!-- 启动 Activity：请确保类名正确 -->
+
+        <!-- 启动入口：WebView 加载 assets/index.html -->
         <activity
-            android:name="com.liskovsoft.smartyoutubetv.player.PlayerActivity"
+            android:name="com.liskovsoft.smartyoutubetv.LauncherActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <!-- 播放器 Activity（由 Launcher/WebView 或外部 Intent 调用） -->
+        <activity
+            android:name="com.liskovsoft.smartyoutubetv.player.PlayerActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
         </activity>
 
