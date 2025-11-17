@@ -38,6 +38,22 @@ jobs:
             gradle-cache-${{ runner.os }}-
       - name: Grant execute for gradlew
         run: chmod +x ./gradlew
+
+      - name: Clean workspace (remove untracked files) and module build outputs
+        # git clean -fdx removes untracked files (including previously fetched assets),
+        # then run Gradle clean for the module to ensure no stale build outputs remain.
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Git cleaning workspace (remove untracked files)..."
+          git clean -fdx || true
+          echo "Gradle clean :smartyoutubetv ..."
+          ./gradlew :smartyoutubetv:clean --no-daemon || true
+          echo "Ensure assets directories exist:"
+          mkdir -p smartyoutubetv/src/main/assets pwaapp/src/main/assets
+          ls -la smartyoutubetv/src/main/assets || true
+          ls -la pwaapp/src/main/assets || true
+
       - name: Prepare PWA assets (index.html, webjs.js, sw.js)
         env:
           NBR: ${{ github.event.inputs.nano_branch || 'master' }}
@@ -70,6 +86,7 @@ jobs:
           ls -l "${A}" || true
           echo "index.html head:"
           sed -n '1,40p' "${A}/index.html" || true
+
       - name: Build only smartyoutubetv (assemble FullDebug)
         run: ./gradlew :smartyoutubetv:assembleFullDebug --no-configuration-cache --no-daemon --stacktrace --info --warning-mode all
 
