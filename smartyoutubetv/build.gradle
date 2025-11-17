@@ -79,20 +79,31 @@ tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.name
 
 // keep generateEmptyManifest dependency on preBuild
 tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
-// Ensure remote fetch is run before preBuild (calls our script)
-tasks.register('fetchRemotePwaAssets') {
-    doLast {
-        def script = "${rootProject.projectDir}/scripts/fetch-pwa-assets.sh"
-        if (!file(script).exists()) {
-            throw new GradleException("fetch-pwa-assets script not found at ${script}")
-        }
-        exec {
-            commandLine 'bash', script
-            environment 'NBR', System.getenv('NBR') ?: 'master'
-            environment 'SZR', System.getenv('SZR') ?: 'b6977c914a9a1aabafb5bddd6817eea85a2a8738'
-        }
+
+// --- fetch remote PWA assets: configuration-cache friendly Exec task ---
+// Replaced previous doLast/exec closure (which referenced script objects and broke configuration cache)
+// This uses layout + providers so the closure does not capture non-serializable script objects.
+tasks.register('fetchRemotePwaAssets', Exec) { Exec t ->
+    // Use layout to obtain path without capturing project in a non-serializable closure
+    def scriptFile = layout.projectDirectory.file('scripts/fetch-pwa-assets.sh')
+    // fail early if script missing (keeps behavior explicit)
+    if (!scriptFile.asFile.exists()) {
+        throw new GradleException("fetch-pwa-assets script not found at ${scriptFile.asFile}")
     }
+
+    // Command line points to the script path resolved at configuration time (safe)
+    commandLine 'bash', scriptFile.asFile.absolutePath
+
+    // Use providers.environmentVariable to avoid capturing System.getenv in closure
+    environment 'NBR', providers.environmentVariable('NBR').orElse('master')
+    environment 'SZR', providers.environmentVariable('SZR').orElse('b6977c914a9a1aabafb5bddd6817eea85a2a8738')
+
+    // Declare that this task produces files in the destination assets directory so up-to-date checks are meaningful.
+    // Using outputs.dir might reference file objects; to be conservative we disable up-to-date check (safe for CI).
+    outputs.upToDateWhen { false }
 }
+
+// Ensure fetchRemotePwaAssets runs before preBuild
 tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('fetchRemotePwaAssets') }
 
 dependencies {
@@ -111,4 +122,3 @@ dependencies {
     implementation 'androidx.media3:media3-ui:1.1.1'
     implementation 'androidx.media3:media3-common:1.1.1'
 }
-
