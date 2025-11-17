@@ -61,7 +61,9 @@ tasks.register('generateEmptyManifest') { t ->
             println "Manifest already exists at ${manifestFile}"
         }
     }
-// --- 追加到 smartyoutubetv/build.gradle 文件的底部（Groovy DSL） ---
+}
+
+// --- copy PWA assets: register at top-level (NOT inside another task) ---
 def pwaAssetsDir = rootProject.file('pwaapp/src/main/assets')
 def destAssetsDir = file('src/main/assets')
 
@@ -71,10 +73,11 @@ tasks.register('copyPwaAssets', Copy) {
     // 可按需 exclude('**/node_modules/**')
 }
 
-preBuild.dependsOn tasks.named('copyPwaAssets')
-// --- 结束片段 ---
-}
+// ensure preBuild depends on copyPwaAssets (use tasks.named to avoid eager realization)
+tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('copyPwaAssets') }
+// --- end copy PWA assets ---
 
+// keep generateEmptyManifest dependency on preBuild
 tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
 
 dependencies {
@@ -93,5 +96,3 @@ dependencies {
     implementation 'androidx.media3:media3-ui:1.1.1'
     implementation 'androidx.media3:media3-common:1.1.1'
 }
-
-
