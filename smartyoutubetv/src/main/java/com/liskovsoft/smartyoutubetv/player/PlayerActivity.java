@@ -7,7 +7,9 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.util.Log;
+import android.view.View;
 import android.view.WindowManager;
+import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -21,6 +23,13 @@ import androidx.media3.ui.PlayerView;
 
 import java.io.File;
 
+/**
+ * PlayerActivity with defensive layout inflation fallback.
+ *
+ * Replaces direct setContentView(...) with try/catch around inflation. If inflation fails
+ * (InflateException) we write the stack to external log and create a minimal programmatic
+ * fallback layout containing a PlayerView so the activity can continue for debugging.
+ */
 public class PlayerActivity extends AppCompatActivity {
     public static final String TAG = "PlayerActivity";
 
@@ -46,24 +55,35 @@ public class PlayerActivity extends AppCompatActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // Defensive inflation: try normal layout inflation, on InflateException fall back to
+        // a programmatic minimal layout to allow continued execution and capture diagnostics.
         try {
             setContentView(com.liskovsoft.smartyoutubetv.R.layout.activity_player);
 
+            // bind views (may be null if fallback branch is used)
             playerView = findViewById(com.liskovsoft.smartyoutubetv.R.id.player_view);
             fileNameTv = findViewById(com.liskovsoft.smartyoutubetv.R.id.tv_filename);
             volUpBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_vol_up);
             volDownBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_vol_down);
             brightUpBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_bright_up);
             brightDownBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_bright_down);
+        } catch (android.view.InflateException ie) {
+            // Log, persist and recover with fallback layout
+            Log.e(TAG, "setContentView failed", ie);
+            writeCrashLog(ie);
+            createFallbackLayout();
+        }
 
-            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        // Initialize audio manager and listeners defensively (null-checks)
+        audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 
-            if (volUpBtn != null) volUpBtn.setOnClickListener(v -> adjustVolume(true));
-            if (volDownBtn != null) volDownBtn.setOnClickListener(v -> adjustVolume(false));
-            if (brightUpBtn != null) brightUpBtn.setOnClickListener(v -> adjustBrightness(true));
-            if (brightDownBtn != null) brightDownBtn.setOnClickListener(v -> adjustBrightness(false));
+        if (volUpBtn != null) volUpBtn.setOnClickListener(v -> adjustVolume(true));
+        if (volDownBtn != null) volDownBtn.setOnClickListener(v -> adjustVolume(false));
+        if (brightUpBtn != null) brightUpBtn.setOnClickListener(v -> adjustBrightness(true));
+        if (brightDownBtn != null) brightDownBtn.setOnClickListener(v -> adjustBrightness(false));
 
-            // Handle Intent (ACTION_VIEW)
+        // Handle Intent (ACTION_VIEW)
+        try {
             Intent intent = getIntent();
             if (intent != null && Intent.ACTION_VIEW.equals(intent.getAction())) {
                 Uri data = intent.getData();
@@ -77,11 +97,49 @@ public class PlayerActivity extends AppCompatActivity {
                 Toast.makeText(this, "No Intent.ACTION_VIEW - call with a media Uri", Toast.LENGTH_SHORT).show();
             }
         } catch (Throwable t) {
-            Log.e(TAG, "onCreate failed", t);
-            // 写到文件，方便没有 adb 的情况下抓取堆栈
-            String path = writeCrashLog(t);
+            // Catch any unexpected runtime exceptions after fallback and log them
+            Log.e(TAG, "onCreate post-inflate handling failed", t);
+            writeCrashLog(t);
+            Toast.makeText(this, "启动失败: " + t.getClass().getSimpleName(), Toast.LENGTH_LONG).show();
+            finish();
+        }
+    }
+
+    /**
+     * Create a minimal programmatic fallback layout that contains a PlayerView.
+     * This is used only when normal XML inflation fails (to allow running on-device without crashing).
+     */
+    private void createFallbackLayout() {
+        try {
+            FrameLayout root = new FrameLayout(this);
+            FrameLayout.LayoutParams rootLp = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+            root.setLayoutParams(rootLp);
+
+            PlayerView pv = new PlayerView(this);
+            // generate an id to allow later findViewById if needed
+            pv.setId(View.generateViewId());
+            FrameLayout.LayoutParams pvLp = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+            pv.setLayoutParams(pvLp);
+
+            root.addView(pv);
+
+            setContentView(root);
+            playerView = pv;
+
+            // create minimal overlays as null - callers should guard against null views
+            fileNameTv = null;
+            volUpBtn = null;
+            volDownBtn = null;
+            brightUpBtn = null;
+            brightDownBtn = null;
+        } catch (Throwable t) {
+            // If even fallback fails, write log and finish
+            Log.e(TAG, "createFallbackLayout failed", t);
+            writeCrashLog(t);
             try {
-                Toast.makeText(this, "启动失败: " + t.getClass().getSimpleName() + (path != null ? "\nlog: " + path : ""), Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "布局加载失败", Toast.LENGTH_LONG).show();
             } catch (Throwable ignored) {}
             finish();
         }
