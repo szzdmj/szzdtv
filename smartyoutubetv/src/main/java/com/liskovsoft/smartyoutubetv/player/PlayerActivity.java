@@ -6,7 +6,7 @@ import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.view.View;
+import android.util.Log;
 import android.view.WindowManager;
 import android.widget.ImageButton;
 import android.widget.TextView;
@@ -46,34 +46,44 @@ public class PlayerActivity extends AppCompatActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        setContentView(com.liskovsoft.smartyoutubetv.R.layout.activity_player);
+        try {
+            setContentView(com.liskovsoft.smartyoutubetv.R.layout.activity_player);
 
-        playerView = findViewById(com.liskovsoft.smartyoutubetv.R.id.player_view);
-        fileNameTv = findViewById(com.liskovsoft.smartyoutubetv.R.id.tv_filename);
-        volUpBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_vol_up);
-        volDownBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_vol_down);
-        brightUpBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_bright_up);
-        brightDownBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_bright_down);
+            playerView = findViewById(com.liskovsoft.smartyoutubetv.R.id.player_view);
+            fileNameTv = findViewById(com.liskovsoft.smartyoutubetv.R.id.tv_filename);
+            volUpBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_vol_up);
+            volDownBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_vol_down);
+            brightUpBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_bright_up);
+            brightDownBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_bright_down);
 
-        audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 
-        volUpBtn.setOnClickListener(v -> adjustVolume(true));
-        volDownBtn.setOnClickListener(v -> adjustVolume(false));
-        brightUpBtn.setOnClickListener(v -> adjustBrightness(true));
-        brightDownBtn.setOnClickListener(v -> adjustBrightness(false));
+            if (volUpBtn != null) volUpBtn.setOnClickListener(v -> adjustVolume(true));
+            if (volDownBtn != null) volDownBtn.setOnClickListener(v -> adjustVolume(false));
+            if (brightUpBtn != null) brightUpBtn.setOnClickListener(v -> adjustBrightness(true));
+            if (brightDownBtn != null) brightDownBtn.setOnClickListener(v -> adjustBrightness(false));
 
-        // Handle Intent (ACTION_VIEW)
-        Intent intent = getIntent();
-        if (intent != null && Intent.ACTION_VIEW.equals(intent.getAction())) {
-            Uri data = intent.getData();
-            if (data != null) {
-                fileNameTv.setText(extractDisplayName(data));
-                initPlayerWithUri(data);
+            // Handle Intent (ACTION_VIEW)
+            Intent intent = getIntent();
+            if (intent != null && Intent.ACTION_VIEW.equals(intent.getAction())) {
+                Uri data = intent.getData();
+                if (data != null) {
+                    if (fileNameTv != null) fileNameTv.setText(extractDisplayName(data));
+                    initPlayerWithUri(data);
+                } else {
+                    Toast.makeText(this, "No media uri provided", Toast.LENGTH_SHORT).show();
+                }
             } else {
-                Toast.makeText(this, "No media uri provided", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "No Intent.ACTION_VIEW - call with a media Uri", Toast.LENGTH_SHORT).show();
             }
-        } else {
-            Toast.makeText(this, "No Intent.ACTION_VIEW - call with a media Uri", Toast.LENGTH_SHORT).show();
+        } catch (Throwable t) {
+            Log.e(TAG, "onCreate failed", t);
+            // 写到文件，方便没有 adb 的情况下抓取堆栈
+            String path = writeCrashLog(t);
+            try {
+                Toast.makeText(this, "启动失败: " + t.getClass().getSimpleName() + (path != null ? "\nlog: " + path : ""), Toast.LENGTH_LONG).show();
+            } catch (Throwable ignored) {}
+            finish();
         }
     }
 
@@ -81,7 +91,7 @@ public class PlayerActivity extends AppCompatActivity {
         // build player on demand
         if (player == null) {
             player = new ExoPlayer.Builder(this).build();
-            playerView.setPlayer(player);
+            if (playerView != null) playerView.setPlayer(player);
         }
         MediaItem mediaItem = MediaItem.fromUri(uri);
         player.setMediaItem(mediaItem);
@@ -130,70 +140,26 @@ public class PlayerActivity extends AppCompatActivity {
             Toast.makeText(this, "Can't change brightness: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
-// 替换现有 onCreate 的 try/catch 部分为下面内容
-@Override
-protected void onCreate(@Nullable Bundle savedInstanceState) {
-    super.onCreate(savedInstanceState);
 
-    try {
-        setContentView(com.liskovsoft.smartyoutubetv.R.layout.activity_player);
-
-        playerView = findViewById(com.liskovsoft.smartyoutubetv.R.id.player_view);
-        fileNameTv = findViewById(com.liskovsoft.smartyoutubetv.R.id.tv_filename);
-        volUpBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_vol_up);
-        volDownBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_vol_down);
-        brightUpBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_bright_up);
-        brightDownBtn = findViewById(com.liskovsoft.smartyoutubetv.R.id.btn_bright_down);
-
-        audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-
-        if (volUpBtn != null) volUpBtn.setOnClickListener(v -> adjustVolume(true));
-        if (volDownBtn != null) volDownBtn.setOnClickListener(v -> adjustVolume(false));
-        if (brightUpBtn != null) brightUpBtn.setOnClickListener(v -> adjustBrightness(true));
-        if (brightDownBtn != null) brightDownBtn.setOnClickListener(v -> adjustBrightness(false));
-
-        // Handle Intent (ACTION_VIEW)
-        Intent intent = getIntent();
-        if (intent != null && Intent.ACTION_VIEW.equals(intent.getAction())) {
-            Uri data = intent.getData();
-            if (data != null) {
-                if (fileNameTv != null) fileNameTv.setText(extractDisplayName(data));
-                initPlayerWithUri(data);
-            } else {
-                Toast.makeText(this, "No media uri provided", Toast.LENGTH_SHORT).show();
-            }
-        } else {
-            Toast.makeText(this, "No Intent.ACTION_VIEW - call with a media Uri", Toast.LENGTH_SHORT).show();
-        }
-    } catch (Throwable t) {
-        Log.e(TAG, "onCreate failed", t);
-        // 写到文件，方便没有 adb 的情况下抓取堆栈
-        String path = writeCrashLog(t);
+    // 将异常写入外部文件，返回路径（便于在无 adb 时用文件管理器取出）
+    private String writeCrashLog(Throwable t) {
         try {
-            Toast.makeText(this, "启动失败: " + t.getClass().getSimpleName() + (path != null ? "\nlog: " + path : ""), Toast.LENGTH_LONG).show();
-        } catch (Throwable ignored) {}
-        finish();
+            java.io.File dir = getExternalFilesDir("logs");
+            if (dir == null) return null;
+            if (!dir.exists()) dir.mkdirs();
+            String name = "crash-" + System.currentTimeMillis() + ".log";
+            java.io.File f = new java.io.File(dir, name);
+            java.io.PrintWriter pw = new java.io.PrintWriter(new java.io.FileWriter(f));
+            t.printStackTrace(pw);
+            pw.flush();
+            pw.close();
+            return f.getAbsolutePath();
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to write crash log", e);
+            return null;
+        }
     }
-}
 
-// 新增方法：将异常写入文件并返回文件路径（外部应用目录）
-private String writeCrashLog(Throwable t) {
-    try {
-        java.io.File dir = getExternalFilesDir("logs");
-        if (dir == null) return null;
-        if (!dir.exists()) dir.mkdirs();
-        String name = "crash-" + System.currentTimeMillis() + ".log";
-        java.io.File f = new java.io.File(dir, name);
-        java.io.PrintWriter pw = new java.io.PrintWriter(new java.io.FileWriter(f));
-        t.printStackTrace(pw);
-        pw.flush();
-        pw.close();
-        return f.getAbsolutePath();
-    } catch (Exception e) {
-        Log.e(TAG, "Failed to write crash log", e);
-        return null;
-    }
-}
     @Override
     protected void onStart() {
         super.onStart();
@@ -208,7 +174,7 @@ private String writeCrashLog(Throwable t) {
 
     private void releasePlayer() {
         if (player != null) {
-            playerView.setPlayer(null);
+            if (playerView != null) playerView.setPlayer(null);
             player.release();
             player = null;
         }
