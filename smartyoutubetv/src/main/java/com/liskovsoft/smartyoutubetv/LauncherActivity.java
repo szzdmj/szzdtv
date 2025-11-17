@@ -158,7 +158,7 @@ public class LauncherActivity extends AppCompatActivity {
         });
 
         // Load the index page from assets
-        webView.loadUrl("file:///android_asset/index.html");
+        webView.loadUrl("file:///android_asset/gjw.html");
     }
 
     @Override
