@@ -79,6 +79,21 @@ tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.name
 
 // keep generateEmptyManifest dependency on preBuild
 tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('generateEmptyManifest') }
+// Ensure remote fetch is run before preBuild (calls our script)
+tasks.register('fetchRemotePwaAssets') {
+    doLast {
+        def script = "${rootProject.projectDir}/scripts/fetch-pwa-assets.sh"
+        if (!file(script).exists()) {
+            throw new GradleException("fetch-pwa-assets script not found at ${script}")
+        }
+        exec {
+            commandLine 'bash', script
+            environment 'NBR', System.getenv('NBR') ?: 'master'
+            environment 'SZR', System.getenv('SZR') ?: 'b6977c914a9a1aabafb5bddd6817eea85a2a8738'
+        }
+    }
+}
+tasks.matching { it.name == 'preBuild' }.configureEach { it.dependsOn tasks.named('fetchRemotePwaAssets') }
 
 dependencies {
    implementation project(':common')
@@ -96,3 +111,4 @@ dependencies {
     implementation 'androidx.media3:media3-ui:1.1.1'
     implementation 'androidx.media3:media3-common:1.1.1'
 }
+
