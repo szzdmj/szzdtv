@@ -1,50 +1,162 @@
-name: Android CI - szzdtv
+name: Android CI - szzdtv (fetch PWA assets + produce APKs + upload artifacts)
 
 on:
   push:
     branches: [ main-branch ]
   pull_request:
     branches: [ main-branch ]
+  workflow_dispatch:
+    inputs:
+      nano_branch:
+        description: 'Branch/commit of szzdmj/nanohttpd to fetch index.html from'
+        required: false
+        default: 'master'
+      sz_ref:
+        description: 'Branch/commit of szmj0/szmj0.github.io to fetch webjs.js, sw.js, gjw.html from'
+        required: false
+        default: 'b6977c914a9a1aabafb5bddd6817eea85a2a8738'
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # give Gradle a bit more memory for the build in CI
+      GRADLE_OPTS: -Dorg.gradle.jvmargs='-Xmx3g -Dfile.encoding=UTF-8'
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 17 (Temurin)
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
-          cache: 'gradle'
+          cache: gradle
+
+      - name: Install isolated Android SDK (platforms 34)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="$RUNNER_TEMP/android-sdk"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=${ANDROID_HOME}" >> "$GITHUB_ENV"
+          mkdir -p "${ANDROID_SDK_ROOT}/cmdline-tools"
+          pushd "${ANDROID_SDK_ROOT}/cmdline-tools" >/dev/null
+          CTL_ZIP="commandlinetools-linux-11076708_latest.zip"
+          URL_BASE="https://dl.google.com/android/repository"
+          if ! curl -fsSL --retry 3 -o cmdline-tools.zip "${URL_BASE}/${CTL_ZIP}"; then
+            curl -fsSL --retry 3 -o cmdline-tools.zip "${URL_BASE}/commandlinetools-linux-9477386_latest.zip"
+          fi
+          unzip -q cmdline-tools.zip
+          rm -f cmdline-tools.zip
+          if [ -d "cmdline-tools" ]; then
+            mv cmdline-tools latest
+          fi
+          popd >/dev/null
+          SDKM="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "${SDKM}" --sdk_root="${ANDROID_SDK_ROOT}" --licenses >/dev/null 2>&1 || true
+          "${SDKM}" --sdk_root="${ANDROID_SDK_ROOT}" "platform-tools" "build-tools;34.0.0" "platforms;android-34"
+
+      - name: Prepare PWA assets (index.html, webjs.js, sw.js, gjw.html)
+        env:
+          NBR: ${{ github.event.inputs.nano_branch || 'master' }}
+          SZR: ${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # primary target module assets used by app
+          TARGET_A="smartyoutubetv/src/main/assets"
+          # also keep pwaapp module assets updated (if present)
+          PWA_A="pwaapp/src/main/assets"
+
+          mkdir -p "$TARGET_A"
+          mkdir -p "$PWA_A"
+
+          echo "Fetching index.html from szzdmj/nanohttpd@${NBR} (if available)"
+          base_nano="https://raw.githubusercontent.com/szzdmj/nanohttpd/${NBR}/android-asset-webshell/app/src/main/assets"
+          if curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET_A}/index.html" "${base_nano}/index.html"; then
+            echo "Fetched index.html to ${TARGET_A}/index.html"
+            cp -f "${TARGET_A}/index.html" "${PWA_A}/index.html" || true
+          else
+            echo "Warning: failed to fetch index.html from ${base_nano}/index.html (continuing if local asset exists)"
+          fi
+
+          echo "Fetching webjs.js, sw.js, gjw.html from szmj0/szmj0.github.io@${SZR}"
+          base_sz="https://raw.githubusercontent.com/szmj0/szmj0.github.io/${SZR}"
+          for f in webjs.js sw.js gjw.html; do
+            out1="${TARGET_A}/${f}"
+            out2="${PWA_A}/${f}"
+            if curl -fsSL --retry 3 --connect-timeout 15 -o "${out1}" "${base_sz}/${f}"; then
+              echo "Fetched ${f} -> ${out1}"
+              cp -f "${out1}" "${out2}" || true
+            else
+              echo "Warning: failed to fetch ${f} from ${base_sz}/${f} (will try to use existing assets if any)"
+            fi
+          done
+
+          echo "Assets present in ${TARGET_A}:"
+          ls -l "${TARGET_A}" || true
+          echo "Assets present in ${PWA_A}:"
+          ls -l "${PWA_A}" || true
+          echo "index.html head (if exists):"
+          sed -n '1,80p' "${TARGET_A}/index.html" || true
+
+      - name: Ensure Gradle wrapper is present (generate wrapper 8.7 if missing)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # If no gradlew, bootstrap wrapper (this is safe; if repo already has wrapper it won't be overridden)
+          if [ ! -f "./gradlew" ]; then
+            echo "No gradlew found; generating wrapper using Gradle (if installed)"
+            # try to use preinstalled gradle if available
+            if command -v gradle >/dev/null 2>&1; then
+              gradle wrapper --gradle-version 8.7 || true
+            else
+              echo "gradle not found; attempting to download minimal wrapper via gradle/gradle-build-action in other jobs"
+              # If wrapper generation fails, build may still try to use installed gradle on runner
+            fi
+          fi
+          # Print wrapper version info if present
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew || true
+            ./gradlew -v || true
+          fi
 
       - name: Grant execute permission for gradlew
-        run: chmod +x ./gradlew
+        run: chmod +x ./gradlew || true
 
-      - name: Run Gradle build with detailed logs
-        # Capture full output to gradle-build.log (includes --info and --stacktrace)
+      - name: Run Gradle build for :smartyoutubetv (assembleDebug) and capture logs
+        shell: bash
         run: |
-          ./gradlew --no-daemon clean assemble --info --stacktrace > gradle-build.log 2>&1 || true
+          set -euo pipefail
+          # Run the module assembly explicitly; keep the build from failing the job so we can upload logs/artifacts.
+          ./gradlew :smartyoutubetv:clean :smartyoutubetv:assembleDebug --stacktrace --info --no-daemon > build_log_debug.txt 2>&1 || true
+          echo "Gradle build finished, log saved to build_log_debug.txt"
 
       - name: Show build outputs (for debugging)
         if: always()
         shell: bash
         run: |
-          echo "=== List project build outputs (smartyoutubetv) ==="
+          echo "=== List smartyoutubetv build outputs ==="
           ls -R smartyoutubetv/build/outputs || true
           echo "=== Find any APKs under smartyoutubetv/build ==="
           find smartyoutubetv/build -type f -name '*.apk' -print || true
-          echo "=== Find any APKs under workspace ==="
+          echo "=== Find any APKs in workspace ==="
           find . -type f -name '*.apk' -print || true
 
       - name: Upload build log artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gradle-build-log
-          path: gradle-build.log
+          name: gradle-build-debug-log
+          path: build_log_debug.txt
 
       - name: Upload built APK(s)
         if: always()
