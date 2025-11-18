@@ -1,4 +1,3 @@
-// 文件完整内容：将此文件覆盖仓库中同路径文件
 package com.liskovsoft.smartyoutubetv;
 
 import android.annotation.SuppressLint;
@@ -11,7 +10,6 @@ import android.util.Base64;
 import android.util.Log;
 import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
-import android.webkit.MimeTypeMap;
 import android.webkit.SslErrorHandler;
 import android.net.http.SslError;
 import android.webkit.WebChromeClient;
@@ -30,6 +28,7 @@ import com.szzdmj.nanohttpd.CrashLogger;
 import fi.iki.elonen.NanoHTTPD;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -42,7 +41,6 @@ import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -67,103 +65,7 @@ public class LauncherActivity extends AppCompatActivity {
     private volatile String lastLaunchedUrl = null;
     private volatile long lastLaunchTs = 0;
     private static final long LAUNCH_DEBOUNCE_MS = 1500;
-// Insert into LocalAssetsServer.serve(...) near the top, before trying assets.open(path)
-// Handles requests like: /_proxy?u=<url>
-if (path.startsWith("_proxy")) {
-    // parse query param 'u' (encoded URL)
-    Map<String, String> params = session.getParms();
-    String encoded = params.get("u");
-    if (encoded == null || encoded.length() == 0) {
-        return newFixedLengthResponse(Response.Status.BAD_REQUEST, "text/plain", "Missing u parameter");
-    }
-    String remoteUrl;
-    try {
-        remoteUrl = java.net.URLDecoder.decode(encoded, "UTF-8");
-    } catch (Exception e) {
-        remoteUrl = encoded;
-    }
-    CrashLogger.i("Proxying remote URL: " + remoteUrl);
-    // Fetch remote with permissive handling helper (will try strict first, then permissive if allowed)
-    ProxyFetchResult pf = fetchRemoteForProxy(remoteUrl);
-    if (pf == null || pf.stream == null) {
-        return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found: " + remoteUrl);
-    }
-    // Build response using returned content-type, add CORS header
-    Response r = newChunkedResponse(Response.Status.OK, pf.contentType, pf.stream);
-    r.addHeader("Access-Control-Allow-Origin", "*");
-    r.addHeader("Cache-Control", "no-cache");
-    return r;
-}
 
-// Helper class for proxy fetch result (add inside LocalAssetsServer class)
-private static class ProxyFetchResult {
-    InputStream stream;
-    String contentType;
-    ProxyFetchResult(InputStream s, String ct) { stream = s; contentType = ct; }
-}
-
-// Helper method: fetch remote URL with strict then permissive fallback (add inside LocalAssetsServer class)
-private ProxyFetchResult fetchRemoteForProxy(String remoteUrl) {
-    java.net.HttpURLConnection conn = null;
-    try {
-        java.net.URL u = new java.net.URL(remoteUrl);
-        conn = (java.net.HttpURLConnection) u.openConnection();
-        conn.setConnectTimeout(4000);
-        conn.setReadTimeout(6000);
-        conn.setInstanceFollowRedirects(true);
-        int code = conn.getResponseCode();
-        if (code >= 200 && code < 300) {
-            String ct = conn.getContentType();
-            if (ct == null) ct = "application/octet-stream";
-            InputStream is = conn.getInputStream();
-            return new ProxyFetchResult(is, ct);
-        } else {
-            CrashLogger.i("Proxy strict fetch returned non-2xx: " + code + " for " + remoteUrl);
-        }
-    } catch (Throwable strictEx) {
-        CrashLogger.w("Proxy strict fetch failed for " + remoteUrl + ": " + strictEx, strictEx);
-    } finally {
-        // Do not disconnect here if we already obtained stream (we return stream)
-        // but if conn is still non-null and not streaming, disconnect to free resources.
-    }
-
-    // permissive fallback (trust-all) — USE WITH CAUTION; we follow your INSECURE_HTTPS_FALLBACK decision
-    try {
-        // Only attempt permissive if configured to allow (keeps parity with LauncherActivity flags)
-        boolean tryInsecure = INSECURE_HTTPS_FALLBACK;
-        if (!tryInsecure) return null;
-
-        javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
-        javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[] {
-            new javax.net.ssl.X509TrustManager() {
-                public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
-                public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
-                public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
-            }
-        };
-        sc.init(null, trustAllCerts, new java.security.SecureRandom());
-
-        javax.net.ssl.HttpsURLConnection httpsConn = (javax.net.ssl.HttpsURLConnection) new java.net.URL(remoteUrl).openConnection();
-        httpsConn.setSSLSocketFactory(sc.getSocketFactory());
-        httpsConn.setHostnameVerifier((hostname, session) -> true);
-        httpsConn.setConnectTimeout(4000);
-        httpsConn.setReadTimeout(6000);
-        httpsConn.setInstanceFollowRedirects(true);
-        int code2 = httpsConn.getResponseCode();
-        if (code2 >= 200 && code2 < 300) {
-            String ct2 = httpsConn.getContentType();
-            if (ct2 == null) ct2 = "application/octet-stream";
-            InputStream is2 = httpsConn.getInputStream();
-            CrashLogger.i("Proxy permissive fetch success for " + remoteUrl);
-            return new ProxyFetchResult(is2, ct2);
-        } else {
-            CrashLogger.i("Proxy permissive returned non-2xx: " + code2 + " for " + remoteUrl);
-        }
-    } catch (Throwable insecureEx) {
-        CrashLogger.w("Proxy permissive fetch failed for " + remoteUrl, insecureEx);
-    }
-    return null;
-}
     // HTTPS fallback settings (KEEP unchanged per your note)
     private static final boolean INSECURE_HTTPS_FALLBACK = true; // set false for production
     private static final String[] HTTPS_WHITELIST_SUFFIXES = new String[] {
@@ -431,7 +333,7 @@ private ProxyFetchResult fetchRemoteForProxy(String remoteUrl) {
         try (ServerSocket socket = new ServerSocket(0,0,loopback)) { socket.setReuseAddress(true); return socket.getLocalPort(); }
     }
 
-    // LocalAssetsServer (内置) — returns assets without LOG_BRIDGE_SNIPPET injection
+    // LocalAssetsServer (内置) — returns assets and proxy remote URLs
     public static class LocalAssetsServer extends NanoHTTPD {
         private static final String TAG2 = "LocalAssetsServer";
         private final AssetManager assets;
@@ -455,6 +357,31 @@ private ProxyFetchResult fetchRemoteForProxy(String remoteUrl) {
                 try { CrashLogger.w("Forbidden path traversal: " + path, null); } catch (Throwable ignored) {}
                 return newFixedLengthResponse(Response.Status.FORBIDDEN, "text/plain", "Forbidden");
             }
+
+            // --- Proxy endpoint: /_proxy?u=<encodedURL> ---
+            if (path.startsWith("_proxy")) {
+                Map<String, String> params = session.getParms();
+                String encoded = params.get("u");
+                if (encoded == null || encoded.length() == 0) {
+                    return newFixedLengthResponse(Response.Status.BAD_REQUEST, "text/plain", "Missing u parameter");
+                }
+                String remoteUrl;
+                try {
+                    remoteUrl = java.net.URLDecoder.decode(encoded, "UTF-8");
+                } catch (Exception e) {
+                    remoteUrl = encoded;
+                }
+                try { CrashLogger.i("Proxying remote URL: " + remoteUrl); } catch (Throwable ignored) {}
+                ProxyFetchResult pf = fetchRemoteForProxy(remoteUrl);
+                if (pf == null || pf.stream == null) {
+                    return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found: " + remoteUrl);
+                }
+                Response r = newChunkedResponse(Response.Status.OK, pf.contentType, pf.stream);
+                r.addHeader("Access-Control-Allow-Origin", "*");
+                r.addHeader("Cache-Control", "no-cache");
+                return r;
+            }
+            // --- end proxy ---
 
             try {
                 // shim path (id-shim injection for index.html retained if needed)
@@ -514,6 +441,74 @@ private ProxyFetchResult fetchRemoteForProxy(String remoteUrl) {
             }
         }
 
+        // --- Proxy helper types / methods inside LocalAssetsServer ---
+        private static class ProxyFetchResult {
+            final InputStream stream;
+            final String contentType;
+            ProxyFetchResult(InputStream s, String ct) { stream = s; contentType = ct; }
+        }
+
+        private ProxyFetchResult fetchRemoteForProxy(String remoteUrl) {
+            java.net.HttpURLConnection conn = null;
+            try {
+                java.net.URL u = new java.net.URL(remoteUrl);
+                conn = (java.net.HttpURLConnection) u.openConnection();
+                conn.setConnectTimeout(4000);
+                conn.setReadTimeout(6000);
+                conn.setInstanceFollowRedirects(true);
+                int code = conn.getResponseCode();
+                if (code >= 200 && code < 300) {
+                    String ct = conn.getContentType();
+                    if (ct == null) ct = "application/octet-stream";
+                    InputStream is = conn.getInputStream();
+                    return new ProxyFetchResult(is, ct);
+                } else {
+                    CrashLogger.i("Proxy strict fetch returned non-2xx: " + code + " for " + remoteUrl);
+                }
+            } catch (Throwable strictEx) {
+                CrashLogger.w("Proxy strict fetch failed for " + remoteUrl + ": " + strictEx, strictEx);
+            } finally {
+                // do not disconnect here if we returned a stream
+            }
+
+            // permissive fallback if allowed
+            try {
+                boolean tryInsecure = INSECURE_HTTPS_FALLBACK;
+                if (!tryInsecure) return null;
+
+                javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
+                javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[] {
+                    new javax.net.ssl.X509TrustManager() {
+                        public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+                        public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
+                        public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
+                    }
+                };
+                sc.init(null, trustAllCerts, new java.security.SecureRandom());
+
+                javax.net.ssl.HttpsURLConnection httpsConn = (javax.net.ssl.HttpsURLConnection) new java.net.URL(remoteUrl).openConnection();
+                httpsConn.setSSLSocketFactory(sc.getSocketFactory());
+                httpsConn.setHostnameVerifier((hostname, session) -> true);
+                httpsConn.setConnectTimeout(4000);
+                httpsConn.setReadTimeout(6000);
+                httpsConn.setInstanceFollowRedirects(true);
+                int code2 = httpsConn.getResponseCode();
+                if (code2 >= 200 && code2 < 300) {
+                    String ct2 = httpsConn.getContentType();
+                    if (ct2 == null) ct2 = "application/octet-stream";
+                    InputStream is2 = httpsConn.getInputStream();
+                    CrashLogger.i("Proxy permissive fetch success for " + remoteUrl);
+                    return new ProxyFetchResult(is2, ct2);
+                } else {
+                    CrashLogger.i("Proxy permissive returned non-2xx: " + code2 + " for " + remoteUrl);
+                }
+            } catch (Throwable insecureEx) {
+                CrashLogger.w("Proxy permissive fetch failed for " + remoteUrl, insecureEx);
+            }
+            return null;
+        }
+
+        // utility: guess mime type
         private static String guessMime(String path) {
             String lower = path.toLowerCase(Locale.ROOT);
             if (lower.endsWith(".html") || lower.endsWith(".htm")) return "text/html; charset=utf-8";
@@ -529,13 +524,13 @@ private ProxyFetchResult fetchRemoteForProxy(String remoteUrl) {
         }
 
         private static String readAll(InputStream in, String enc) throws IOException {
-            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
             byte[] buf = new byte[8192];
             int n;
             while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
             return bos.toString(enc);
         }
-    }
+    } // end LocalAssetsServer
 
     /**
      * Try fetching https:// version of a given http:// URL.
@@ -590,7 +585,7 @@ private ProxyFetchResult fetchRemoteForProxy(String remoteUrl) {
                 SSLContext sc = SSLContext.getInstance("TLS");
                 TrustManager[] trustAllCerts = new TrustManager[]{
                         new X509TrustManager() {
-                            public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+                            public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
                             public void checkClientTrusted(X509Certificate[] certs, String authType) {}
                             public void checkServerTrusted(X509Certificate[] certs, String authType) {}
                         }
