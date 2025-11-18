@@ -11,7 +11,10 @@ import android.util.Log;
 import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
 import android.webkit.MimeTypeMap;
+import android.webkit.SslErrorHandler;
+import android.net.http.SslError;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -37,7 +40,7 @@ import java.util.Locale;
  * - Starts a small local HTTP server that serves assets (NanoHTTPD)
  * - Logs important events to CrashLogger (internal + external file)
  * - Loads http://127.0.0.1:PORT/ when server available; falls back to file:///android_asset/gjw.html
- * - Keeps existing WebView interception for .js assets from APK assets
+ * - Logs WebView console and network errors into CrashLogger for later retrieval
  */
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
@@ -84,6 +87,7 @@ public class LauncherActivity extends AppCompatActivity {
             }
         }, "Android");
 
+        // WebChromeClient -> JS console logging
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
@@ -98,6 +102,7 @@ public class LauncherActivity extends AppCompatActivity {
             }
         });
 
+        // WebViewClient -> intercept and detailed error logging
         webView.setWebViewClient(new WebViewClient() {
             @Override
             @SuppressWarnings("deprecation")
@@ -126,14 +131,17 @@ public class LauncherActivity extends AppCompatActivity {
                 }
             }
 
+            // Resource interception (keep existing behavior)
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
+                try { CrashLogger.i("shouldInterceptRequest: " + url); } catch (Throwable ignored) {}
                 return tryServeAssetForUrl(url);
             }
 
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, String url) {
+                try { CrashLogger.i("shouldInterceptRequest: " + url); } catch (Throwable ignored) {}
                 return tryServeAssetForUrl(url);
             }
 
@@ -166,6 +174,68 @@ public class LauncherActivity extends AppCompatActivity {
                     try { CrashLogger.w("tryServeAssetForUrl failed for " + url, t); } catch (Throwable ignored) {}
                 }
                 return null;
+            }
+
+            // Old API error callback (deprecated but still useful)
+            @Override
+            @SuppressWarnings("deprecation")
+            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+                String s = "onReceivedError (old API): code=" + errorCode + " desc=" + description + " url=" + failingUrl;
+                Log.w(TAG, s);
+                try { CrashLogger.w(s, null); } catch (Throwable ignored) {}
+            }
+
+            // New API error callback (API >= 23)
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                try {
+                    String url = request != null ? request.getUrl().toString() : "(unknown)";
+                    String s = "onReceivedError: url=" + url + " code=" + error.getErrorCode() + " desc=" + error.getDescription();
+                    Log.w(TAG, s);
+                    try { CrashLogger.w(s, null); } catch (Throwable ignored) {}
+                } catch (Throwable t) {
+                    Log.w(TAG, "Exception in onReceivedError", t);
+                    try { CrashLogger.w("Exception in onReceivedError", t); } catch (Throwable ignored) {}
+                }
+            }
+
+            // HTTP errors (4xx/5xx). Called for main frame and subresources on API >= 23
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
+                try {
+                    String url = request != null ? request.getUrl().toString() : "(unknown)";
+                    int status = errorResponse != null ? errorResponse.getStatusCode() : -1;
+                    String reason = errorResponse != null ? errorResponse.getReasonPhrase() : "(no reason)";
+                    String s = "onReceivedHttpError: url=" + url + " status=" + status + " reason=" + reason;
+                    Log.w(TAG, s);
+                    try { CrashLogger.w(s, null); } catch (Throwable ignored) {}
+                } catch (Throwable t) {
+                    Log.w(TAG, "Exception in onReceivedHttpError", t);
+                    try { CrashLogger.w("Exception in onReceivedHttpError", t); } catch (Throwable ignored) {}
+                }
+            }
+
+            // SSL errors: log details. Do NOT proceed by default.
+            @Override
+            public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+                try {
+                    String s = "onReceivedSslError: primaryError=" + error.getPrimaryError()
+                            + " url=" + (view != null ? view.getUrl() : "(unknown)")
+                            + " certificates=" + (error.getCertificate() != null ? "present" : "null");
+                    Log.w(TAG, s);
+                    try { CrashLogger.w(s, null); } catch (Throwable ignored) {}
+                } catch (Throwable t) {
+                    Log.w(TAG, "Exception in onReceivedSslError", t);
+                    try { CrashLogger.w("Exception in onReceivedSslError", t); } catch (Throwable ignored) {}
+                }
+
+                // NOTE: For quick local testing only you can allow localhost by:
+                // if (view.getUrl() != null && (view.getUrl().contains("127.0.0.1") || view.getUrl().contains("localhost"))) {
+                //     handler.proceed(); // insecure: only for debugging!
+                // } else {
+                //     handler.cancel();
+                // }
+                handler.cancel(); // default: cancel for security
             }
         });
 
@@ -262,16 +332,12 @@ public class LauncherActivity extends AppCompatActivity {
 
                 // handle favicon specially to avoid 404 user-visible errors
                 if ("favicon.ico".equalsIgnoreCase(path) || "favicon.png".equalsIgnoreCase(path)) {
-                    // try to serve actual asset if present
                     try {
                         InputStream inFav = assets.open(path);
                         CrashLogger.i("Serving favicon from assets: " + path);
                         return newChunkedResponse(Response.Status.OK, guessMime(path), inFav);
                     } catch (IOException ignored) {
-                        // fallback: return a 1x1 transparent PNG to avoid "Not Found" UI
-                        try {
-                            CrashLogger.i("favicon not found in assets; returning inline transparent PNG");
-                        } catch (Throwable ignored2) {}
+                        try { CrashLogger.i("favicon not found in assets; returning inline transparent PNG"); } catch (Throwable ignored2) {}
                         final String ONE_PX_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAAWgmWQ0AAAAASUVORK5CYII=";
                         byte[] bytes = Base64.decode(ONE_PX_PNG_BASE64, Base64.DEFAULT);
                         InputStream is = new ByteArrayInputStream(bytes);
