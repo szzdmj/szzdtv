@@ -1,4 +1,3 @@
-// 完整文件（只展示替换后的内容供复制）
 package com.liskovsoft.smartyoutubetv;
 
 import android.annotation.SuppressLint;
@@ -32,31 +31,25 @@ import fi.iki.elonen.NanoHTTPD;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.net.ServerSocket;
+import java.net.URL;
 import java.util.Locale;
 
 /**
- * LauncherActivity（已增强：注入 JS 日志桥）
+ * LauncherActivity
+ *
+ * - Starts a small local HTTP server that serves assets (NanoHTTPD)
+ * - Logs important events to CrashLogger
+ * - Loads http://localhost:PORT/ when server available; falls back to file:///android_asset/gjw.html
+ * - Removes HTML log-bridge injection (LOG_BRIDGE_SNIPPET cancelled)
+ * - When external resources are requested via http://, attempts https:// fallback and returns that response if available
  */
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
     private WebView webView;
     private LocalAssetsServer server;
     private int serverPort = -1;
-
-    // 注入到 HTML 页面的 JS：将 console.* 转发到 Android.log，并监听 SW 消息
-    private static final String LOG_BRIDGE_SNIPPET =
-        "<script>" +
-        "(function(){" +
-        "  function send(type,args){ try{ if(window.Android && Android.log){ Android.log(type+': '+Array.prototype.slice.call(args).map(function(a){try{return JSON.stringify(a);}catch(e){return String(a);} }).join(' ')); } }catch(e){} }" +
-        "  ['log','info','warn','error','debug'].forEach(function(k){ var old = console[k] || function(){}; console[k] = function(){ send(k,arguments); try{ old.apply(console,arguments);}catch(e){} }; });" +
-        "  window.addEventListener('error', function(ev){ try{ var msg = ev.message + ' at ' + ev.filename + ':' + ev.lineno; send('error',[msg]); }catch(e){} });" +
-        "  // forward messages from service worker to Android.log" +
-        "  if (navigator && navigator.serviceWorker) {" +
-        "    try{ navigator.serviceWorker.addEventListener('message', function(e){ try{ if(window.Android && Android.log) Android.log('SW: '+ (typeof e.data === 'string' ? e.data : JSON.stringify(e.data))); }catch(ex){} }); }catch(e){}" +
-        "  }" +
-        "})();" +
-        "</script>";
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -81,7 +74,7 @@ public class LauncherActivity extends AppCompatActivity {
         ws.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         webView.setWebContentsDebuggingEnabled(true);
 
-        // JS -> Android bridge (已有)
+        // JS -> Android bridge
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
             public void log(String msg) {
@@ -141,17 +134,45 @@ public class LauncherActivity extends AppCompatActivity {
                 try{
                     if (url == null) return null;
                     String lower = url.toLowerCase(Locale.ROOT);
-                    if (lower.endsWith(".js")){
+
+                    // If requesting a JS filename (common: webjs.js), try to return it from assets if present.
+                    if (lower.endsWith(".js")) {
                         int idx = url.lastIndexOf('/');
-                        String filename = idx >= 0 ? url.substring(idx+1) : url;
+                        String filename = idx >= 0 ? url.substring(idx + 1) : url;
                         String assetPath = filename;
-                        Log.d(TAG,"Intercept JS: "+url+" -> "+assetPath);
-                        try{ CrashLogger.i("Intercept request for JS: "+url+" -> "+assetPath);}catch(Throwable ignored){}
-                        InputStream is=null;
-                        try{ is = getAssets().open(assetPath); }catch(IOException ignored){
-                            try{ is = getAssets().open("js/"+assetPath);}catch(IOException ignored2){ is=null;}
+                        Log.d(TAG, "Intercept request for JS: " + url + " -> " + assetPath);
+                        try { CrashLogger.i("Intercept request for JS: " + url + " -> " + assetPath); } catch (Throwable ignored) {}
+                        InputStream is = null;
+                        try {
+                            is = getAssets().open(assetPath);
+                        } catch (IOException ignored) {
+                            try {
+                                is = getAssets().open("js/" + assetPath);
+                            } catch (IOException ignored2) {
+                                is = null;
+                            }
                         }
-                        if (is!=null) return new WebResourceResponse("application/javascript","UTF-8",is);
+                        if (is != null) {
+                            return new WebResourceResponse("application/javascript", "UTF-8", is);
+                        }
+                    }
+
+                    // If it's a local asset path (http(s) pointing to localhost), let LocalAssetsServer handle it (no change here)
+                    if (lower.startsWith("http://localhost:") || lower.startsWith("http://127.0.0.1:") ||
+                        lower.startsWith("https://localhost:") || lower.startsWith("https://127.0.0.1:")) {
+                        // do not fallback; let network / local server serve normally
+                        return null;
+                    }
+
+                    // For other http:// third-party resources, try https fallback if original is http
+                    if (lower.startsWith("http://")) {
+                        WebResourceResponse httpsResp = tryFetchHttpsFallback(url);
+                        if (httpsResp != null) {
+                            try { CrashLogger.i("HTTPS fallback succeeded for " + url); } catch (Throwable ignored) {}
+                            return httpsResp;
+                        } else {
+                            try { CrashLogger.i("HTTPS fallback failed for " + url); } catch (Throwable ignored) {}
+                        }
                     }
                 }catch(Throwable t){
                     Log.w(TAG,"tryServeAssetForUrl failed for "+url,t);
@@ -201,10 +222,10 @@ public class LauncherActivity extends AppCompatActivity {
             server = new LocalAssetsServer(serverPort, getAssets());
             server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
             String started = "LocalAssetsServer started at http://127.0.0.1:" + serverPort + " serving assets/";
-                Log.i(TAG, started);
-                try { CrashLogger.i(started); } catch (Throwable ignored) {}
-                // load root (/) when server available — use hostname 'localhost' to match network_security_config
-                webView.loadUrl("http://localhost:" + serverPort + "/");
+            Log.i(TAG, started);
+            try { CrashLogger.i(started); } catch (Throwable ignored) {}
+            // use hostname 'localhost' to match network_security_config
+            webView.loadUrl("http://localhost:" + serverPort + "/");
         } catch (IOException e) {
             String warn = "Failed to start LocalAssetsServer (fallback to file://): " + e.getMessage();
             Log.w(TAG,warn,e); try{ CrashLogger.w(warn,e);}catch(Throwable ignored){}
@@ -234,7 +255,7 @@ public class LauncherActivity extends AppCompatActivity {
         try (ServerSocket socket = new ServerSocket(0,0,loopback)) { socket.setReuseAddress(true); return socket.getLocalPort(); }
     }
 
-    // LocalAssetsServer (内置) —— 在返回 HTML 时注入 LOG_BRIDGE_SNIPPET
+    // LocalAssetsServer (内置) — returns assets without LOG_BRIDGE_SNIPPET injection
     public static class LocalAssetsServer extends NanoHTTPD {
         private static final String TAG2 = "LocalAssetsServer";
         private final AssetManager assets;
@@ -260,14 +281,14 @@ public class LauncherActivity extends AppCompatActivity {
             }
 
             try {
-                // shim path
+                // shim path (id-shim injection for index.html retained if needed)
                 if ("/__shim__/id-shim.js".equals("/" + path)) {
                     InputStream in = assets.open("id-shim.js");
                     CrashLogger.i("Serving id-shim.js");
                     return newChunkedResponse(Response.Status.OK, "application/javascript", in);
                 }
 
-                // favicon handling (保持之前逻辑)
+                // favicon handling
                 if ("favicon.ico".equalsIgnoreCase(path) || "favicon.png".equalsIgnoreCase(path)) {
                     try {
                         InputStream inFav = assets.open(path);
@@ -284,34 +305,22 @@ public class LauncherActivity extends AppCompatActivity {
 
                 InputStream is = assets.open(path);
 
-                // HTML 注入位置：对 gjw.html / index.html / *.html 注入日志桥
-                if (path.endsWith(".html") || path.endsWith(".htm")) {
+                // index.html shim injection preserved (only the id-shim injection)
+                if (path.endsWith("index.html")) {
                     String html = readAll(is, "UTF-8");
-                    // 在 </head> 前插入日志桥，如果没有 head 则放到开头
-                    if (html.contains("</head>")) {
-                        html = html.replaceFirst("(?i)</head>", LOG_BRIDGE_SNIPPET + "</head>");
-                    } else if (html.contains("<body")) {
-                        html = html.replaceFirst("(?i)<body", LOG_BRIDGE_SNIPPET + "<body");
-                    } else {
-                        html = LOG_BRIDGE_SNIPPET + html;
-                    }
-                    // 还保留对 index.html 的 shim 注入（不冲突）
-                    if (path.endsWith("index.html")) {
-                        html = html.replace(
-                                "<script type=\"text/javascript\" src=\"webjs.js\"></script>",
-                                "<script type=\"text/javascript\" src=\"/__shim__/id-shim.js\"></script>\n" +
-                                        "<script type=\"text/javascript\" src=\"webjs.js\"></script>"
-                        );
-                        CrashLogger.i("Serving modified index.html (shim injected)");
-                    } else {
-                        CrashLogger.i("Serving modified HTML (log bridge injected) for: " + path);
-                    }
+                    html = html.replace(
+                            "<script type=\"text/javascript\" src=\"webjs.js\"></script>",
+                            "<script type=\"text/javascript\" src=\"/__shim__/id-shim.js\"></script>\n" +
+                                    "<script type=\"text/javascript\" src=\"webjs.js\"></script>"
+                    );
+                    CrashLogger.i("Serving modified index.html (shim injected)");
                     Response r = newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", html);
                     r.addHeader("Access-Control-Allow-Origin", "*");
                     r.addHeader("Cache-Control", "no-cache");
                     return r;
                 }
 
+                // serve other assets unmodified (no LOG_BRIDGE_SNIPPET injection)
                 String mime = guessMime(path);
                 CrashLogger.i("Serving asset: " + path + " as " + mime);
                 Response res = newChunkedResponse(Response.Status.OK, mime, is);
@@ -350,5 +359,37 @@ public class LauncherActivity extends AppCompatActivity {
             while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
             return bos.toString(enc);
         }
+    }
+
+    /**
+     * Try fetching https:// version of a given http:// URL.
+     * Returns a WebResourceResponse if successful (HTTP 2xx), otherwise null.
+     */
+    private WebResourceResponse tryFetchHttpsFallback(String url) {
+        if (url == null || !url.startsWith("http://")) return null;
+        String httpsUrl = "https://" + url.substring(7);
+        HttpURLConnection conn = null;
+        try {
+            URL u = new URL(httpsUrl);
+            conn = (HttpURLConnection) u.openConnection();
+            conn.setConnectTimeout(4000);
+            conn.setReadTimeout(6000);
+            conn.setInstanceFollowRedirects(true);
+            int code = conn.getResponseCode();
+            if (code >= 200 && code < 300) {
+                String contentType = conn.getContentType();
+                if (contentType == null) contentType = "application/octet-stream";
+                InputStream is = conn.getInputStream();
+                // Note: we don't disconnect the connection here because the stream will be read by WebView
+                return new WebResourceResponse(contentType, "UTF-8", is);
+            } else {
+                try { CrashLogger.i("HTTPS fallback returned non-2xx for " + httpsUrl + " code=" + code); } catch (Throwable ignored) {}
+            }
+        } catch (Throwable t) {
+            try { CrashLogger.w("HTTPS fallback failed for " + httpsUrl, t); } catch (Throwable ignored) {}
+        }
+        // if failed, ensure connection closed
+        if (conn != null) conn.disconnect();
+        return null;
     }
 }
