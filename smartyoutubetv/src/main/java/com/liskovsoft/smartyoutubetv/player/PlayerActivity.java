@@ -52,7 +52,7 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
     @Override
-    protected void onCreate(@Nullable Bundle savedInstanceState) {
+protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         // Defensive inflation: try normal layout inflation, on InflateException fall back to
@@ -85,98 +85,35 @@ public class PlayerActivity extends AppCompatActivity {
         // Handle Intent (ACTION_VIEW)
         try {
             Intent intent = getIntent();
-            if (intent != null && Intent.ACTION_VIEW.equals(intent.getAction())) {
-                Uri data = intent.getData();
-                if (data != null) {
-                    if (fileNameTv != null) fileNameTv.setText(extractDisplayName(data));
-                    initPlayerWithUri(data);
-                } else {
-                    Toast.makeText(this, "No media uri provided", Toast.LENGTH_SHORT).show();
-                }
-            } else {
-                Toast.makeText(this, "No Intent.ACTION_VIEW - call with a media Uri", Toast.LENGTH_SHORT).show();
-            }
-        } catch (Throwable t) {
-            // Catch any unexpected runtime exceptions after fallback and log them
-            Log.e(TAG, "onCreate post-inflate handling failed", t);
-            writeCrashLog(t);
-            Toast.makeText(this, "启动失败: " + t.getClass().getSimpleName(), Toast.LENGTH_LONG).show();
-            finish();
-        }
-    }
-
-    /**
-     * Create a minimal programmatic fallback layout that contains a PlayerView.
-     * This is used only when normal XML inflation fails (to allow running on-device without crashing).
-     */
-    private void createFallbackLayout() {
+    if (intent != null) {
+        boolean autoFs = intent.getBooleanExtra("auto_fullscreen", false);
+        boolean autoPlay = intent.getBooleanExtra("auto_play", false);
+        Uri videoUri = intent.getData(); // 也可能是 intent.getStringExtra("video_url")
+        if (autoFs) {
+            // 进入沉浸式、横屏模式
         try {
-            FrameLayout root = new FrameLayout(this);
-            FrameLayout.LayoutParams rootLp = new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
-            root.setLayoutParams(rootLp);
-
-            PlayerView pv = new PlayerView(this);
-            // generate an id to allow later findViewById if needed
-            pv.setId(View.generateViewId());
-            FrameLayout.LayoutParams pvLp = new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
-            pv.setLayoutParams(pvLp);
-
-            root.addView(pv);
-
-            setContentView(root);
-            playerView = pv;
-
-            // create minimal overlays as null - callers should guard against null views
-            fileNameTv = null;
-            volUpBtn = null;
-            volDownBtn = null;
-            brightUpBtn = null;
-            brightDownBtn = null;
-        } catch (Throwable t) {
-            // If even fallback fails, write log and finish
-            Log.e(TAG, "createFallbackLayout failed", t);
-            writeCrashLog(t);
-            try {
-                Toast.makeText(this, "布局加载失败", Toast.LENGTH_LONG).show();
+                // 强制横屏（如果你希望）
+                setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
             } catch (Throwable ignored) {}
-            finish();
+            // 隐藏系统 UI（沉浸式）
+            decorViewHideSystemUI();
+        }
+        // 如果传了 URL 且 autoPlay 为 true，开始播放
+        if (videoUri != null && autoPlay) {
+            // 假设播放器有 play(Uri) 方法，调用开始播放
+            startPlayback(videoUri.toString());
+    }
         }
     }
 
-    private void initPlayerWithUri(Uri uri) {
-        // build player on demand
-        if (player == null) {
-            player = new ExoPlayer.Builder(this).build();
-            if (playerView != null) playerView.setPlayer(player);
-        }
-        MediaItem mediaItem = MediaItem.fromUri(uri);
-        player.setMediaItem(mediaItem);
-        player.prepare();
-        player.setPlayWhenReady(true);
-    }
-
-    private String extractDisplayName(Uri uri) {
-        String last = uri.getLastPathSegment();
-        if (last != null && !last.isEmpty()) {
-            return last;
-        }
-        // try file name if file scheme
-        if ("file".equals(uri.getScheme())) {
-            try {
-                File f = new File(uri.getPath());
-                return f.getName();
-            } catch (Exception ignored) {}
-        }
-        return uri.toString();
-    }
-
-    private void adjustVolume(boolean up) {
-        if (audioManager == null) return;
-        int flags = AudioManager.FLAG_PLAY_SOUND | AudioManager.FLAG_SHOW_UI;
-        audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC,
-                up ? AudioManager.ADJUST_RAISE : AudioManager.ADJUST_LOWER, flags);
+private void decorViewHideSystemUI() {
+    final android.view.View decorView = getWindow().getDecorView();
+    int flags = android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+            | android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+            | android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+            | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
+    decorView.setSystemUiVisibility(flags);
     }
 
     private void adjustBrightness(boolean increase) {
