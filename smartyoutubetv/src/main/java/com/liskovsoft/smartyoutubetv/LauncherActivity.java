@@ -456,4 +456,4 @@ private WebResourceResponse tryFetchHttpsFallback(String url) {
         if (conn != null) conn.disconnect();
     }
     return null;
-}
+}}
