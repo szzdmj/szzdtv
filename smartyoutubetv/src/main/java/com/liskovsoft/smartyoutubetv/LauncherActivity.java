@@ -68,6 +68,12 @@ import javax.net.ssl.X509TrustManager;
  * - Loads http://localhost:PORT/ when server available; falls back to file:///android_asset/gjw.html
  * - Intercepts http(s) requests and prefers secure fetch with support for custom CA bundles in assets/certs/
  * - Adds retry, caching and ensures proxy uses combined CA when possible.
+ *
+ * Fixes applied:
+ * - Fixed caching bug that consumed the original InputStream returned to WebView (causing ERR_FAILED).
+ * - Added conservative permissive fallback allowlist (isPermissiveAllowedForUrl).
+ * - Chose encoding per MIME (text => UTF-8, binary => null) to avoid misinterpretation.
+ * - Improved logging around fetch results for easier debugging.
  */
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
@@ -83,6 +89,7 @@ public class LauncherActivity extends AppCompatActivity {
     // HTTPS fallback settings (keep per your note)
     private static final boolean INSECURE_HTTPS_FALLBACK = true; // set false for production
     private static final String[] HTTPS_WHITELIST_SUFFIXES = new String[] {
+        // add permitted permissive-host suffixes here, e.g. "s3.amazonaws.com"
     };
 
     // Tracking missing assets (optional helper)
@@ -299,21 +306,21 @@ public class LauncherActivity extends AppCompatActivity {
 
     // ---------- helpers: retry + cache + candidate hosts ----------
     private WebResourceResponse fetchWithRetriesAndCache(String origUrl, Map<String,String> requestHeaders) {
-        // 1) try cache
+        // 1) try cache (small textual cached files)
         try {
             File cacheDir = new File(getFilesDir(), REMOTE_CACHE_DIR);
             if (!cacheDir.exists()) cacheDir.mkdirs();
             String cacheName = cacheFileNameForUrl(origUrl);
             File f = new File(cacheDir, cacheName);
             if (f.exists() && f.length() > 0) {
-                try (FileInputStream fis = new FileInputStream(f)) {
-                    String mime = guessMimeFromUrl(origUrl);
-                    Map<String,String> headers = Collections.singletonMap("Access-Control-Allow-Origin","*");
-                    if (Build.VERSION.SDK_INT >= 21) {
-                        return new WebResourceResponse(mime, "UTF-8", 200, "OK", headers, fis);
-                    } else {
-                        return new WebResourceResponse(mime, "UTF-8", fis);
-                    }
+                FileInputStream fis = new FileInputStream(f);
+                String mime = guessMimeFromUrl(origUrl);
+                Map<String,String> headers = Collections.singletonMap("Access-Control-Allow-Origin","*");
+                String encoding = (mime.startsWith("text/") || mime.contains("json") || mime.contains("javascript")) ? "UTF-8" : null;
+                if (Build.VERSION.SDK_INT >= 21) {
+                    return new WebResourceResponse(mime, encoding, 200, "OK", headers, fis);
+                } else {
+                    return new WebResourceResponse(mime, encoding, fis);
                 }
             }
         } catch (Throwable ignored) {}
@@ -321,42 +328,42 @@ public class LauncherActivity extends AppCompatActivity {
         // 2) build candidate URLs (try https for http origins first and fallbacks for known patterns)
         List<String> candidates = new ArrayList<>();
         boolean origWasHttp = origUrl.startsWith("http://");
-        if (origWasHttp) {
-            candidates.add("https://" + origUrl.substring(7));
-        } else {
-            candidates.add(origUrl);
-        }
-        // Add common S3 fallback host for region issues
+        if (origWasHttp) candidates.add("https://" + origUrl.substring(7)); else candidates.add(origUrl);
         if (origUrl.contains("s3-us-east-1.amazonaws.com") || origUrl.contains("s3.us-east-1.amazonaws.com")) {
             String alt = origUrl.replaceFirst("s3[.-]us-east-1\\.amazonaws\\.com", "s3.amazonaws.com");
             if (!candidates.contains(alt)) candidates.add(alt);
         }
 
-        // 3) attempts: for each candidate try strict -> combined CA -> permissive (if enabled); retry per candidate
+        // 3) attempts: for each candidate try strict -> combined CA -> permissive (if allowed); retry per candidate
         int attemptsPerCandidate = 2;
         for (String tryUrl : candidates) {
             for (int attempt = 0; attempt < attemptsPerCandidate; attempt++) {
                 // strict
                 WebResourceResponse r = fetchUrlStrict(tryUrl, requestHeaders);
                 if (r != null) {
-                    // cache if reasonable (small non-streamed resources like JSON or small files)
-                    tryCacheResponseIfApplicable(r, origUrl);
+                    WebResourceResponse safe = prepareCacheableResponseAndMaybeCache(r, origUrl);
+                    if (safe != null) return safe;
                     return r;
                 }
+
                 // combined CA
                 WebResourceResponse r2 = fetchUrlWithCombinedCAs(tryUrl, requestHeaders);
                 if (r2 != null) {
-                    tryCacheResponseIfApplicable(r2, origUrl);
+                    WebResourceResponse safe2 = prepareCacheableResponseAndMaybeCache(r2, origUrl);
+                    if (safe2 != null) return safe2;
                     return r2;
                 }
-                // permissive trust-all fallback
-                if (INSECURE_HTTPS_FALLBACK) {
+
+                // permissive trust-all fallback only if allowed for this host
+                if (INSECURE_HTTPS_FALLBACK && isPermissiveAllowedForUrl(tryUrl)) {
                     WebResourceResponse r3 = fetchUrlPermissiveTrustAll(tryUrl, requestHeaders);
                     if (r3 != null) {
-                        tryCacheResponseIfApplicable(r3, origUrl);
+                        WebResourceResponse safe3 = prepareCacheableResponseAndMaybeCache(r3, origUrl);
+                        if (safe3 != null) return safe3;
                         return r3;
                     }
                 }
+
                 // small backoff
                 try { Thread.sleep(200L * (attempt + 1)); } catch (InterruptedException ignored) {}
             }
@@ -364,32 +371,56 @@ public class LauncherActivity extends AppCompatActivity {
         return null;
     }
 
+    // Helper: if response is cacheable (small textual), read it fully, write cache and return a new response with fresh stream.
+    private WebResourceResponse prepareCacheableResponseAndMaybeCache(WebResourceResponse resp, String origUrl) {
+        try {
+            if (resp == null) return null;
+            String mime = resp.getMimeType() != null ? resp.getMimeType() : guessMimeFromUrl(origUrl);
+            boolean isTextual = mime.startsWith("application/json") || mime.startsWith("application/javascript") || mime.startsWith("text/");
+            String encoding = chooseEncodingForMime(mime);
+            if (!isTextual) {
+                // Non-textual -> do not cache; just return resp as-is.
+                return resp;
+            }
+            // Read fully into memory (these are expected to be small)
+            InputStream in = resp.getData();
+            if (in == null) return null;
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+            byte[] data = bos.toByteArray();
+
+            // Write cache file (best-effort)
+            try {
+                File cacheDir = new File(getFilesDir(), REMOTE_CACHE_DIR);
+                if (!cacheDir.exists()) cacheDir.mkdirs();
+                File out = new File(cacheDir, cacheFileNameForUrl(origUrl));
+                try (FileOutputStream fos = new FileOutputStream(out)) { fos.write(data); fos.flush(); }
+            } catch (Throwable ce) {
+                try { CrashLogger.w("Cache write failed: " + ce, ce); } catch (Throwable ignored) {}
+            }
+
+            // Build headers for returned response
+            Map<String,String> headers = new HashMap<>();
+            headers.put("Access-Control-Allow-Origin", "*");
+
+            ByteArrayInputStream bis = new ByteArrayInputStream(data);
+            if (Build.VERSION.SDK_INT >= 21) {
+                return new WebResourceResponse(mime, encoding, 200, "OK", headers, bis);
+            } else {
+                return new WebResourceResponse(mime, encoding, bis);
+            }
+        } catch (Throwable t) {
+            try { CrashLogger.w("prepareCacheableResponseAndMaybeCache failed: " + t, t); } catch (Throwable ignored) {}
+            return null;
+        }
+    }
+
     private String cacheFileNameForUrl(String url) {
         byte[] b = url.getBytes(StandardCharsets.UTF_8);
         String enc = Base64.encodeToString(b, Base64.URL_SAFE | Base64.NO_PADDING | Base64.NO_WRAP);
         return "cache_" + enc;
-    }
-
-    private void tryCacheResponseIfApplicable(WebResourceResponse resp, String origUrl) {
-        // Only cache small JSON / JS / text content to avoid storing big media files
-        try {
-            String mime = resp.getMimeType() != null ? resp.getMimeType() : guessMimeFromUrl(origUrl);
-            if (mime.startsWith("application/json") || mime.startsWith("application/javascript") || mime.startsWith("text/")) {
-                // copy stream into file
-                File cacheDir = new File(getFilesDir(), REMOTE_CACHE_DIR);
-                if (!cacheDir.exists()) cacheDir.mkdirs();
-                File f = new File(cacheDir, cacheFileNameForUrl(origUrl));
-                try (InputStream in = resp.getData();
-                     FileOutputStream fos = new FileOutputStream(f)) {
-                    byte[] buf = new byte[8192];
-                    int n;
-                    while ((n = in.read(buf)) > 0) fos.write(buf, 0, n);
-                    fos.flush();
-                }
-            }
-        } catch (Throwable t) {
-            try { CrashLogger.w("Cache write failed: " + t, t); } catch (Throwable ignored) {}
-        }
     }
 
     private String guessMimeFromUrl(String url) {
@@ -401,6 +432,36 @@ public class LauncherActivity extends AppCompatActivity {
         } catch (Exception e) {
             return "application/octet-stream";
         }
+    }
+
+    // decide encoding: return "UTF-8" for textual mime types, null for binary
+    private String chooseEncodingForMime(String mime) {
+        if (mime == null) return null;
+        String m = mime.toLowerCase(Locale.ROOT);
+        if (m.startsWith("text/") || m.contains("json") || m.contains("javascript") || m.contains("xml")) return "UTF-8";
+        return null;
+    }
+
+    // Permissive fallback allowlist — conservative defaults; extend HTTPS_WHITELIST_SUFFIXES if needed.
+    private boolean isPermissiveAllowedForUrl(String url) {
+        if (!INSECURE_HTTPS_FALLBACK) return false;
+        try {
+            URL u = new URL(url);
+            String host = u.getHost();
+            if (host == null) return false;
+            // If whitelist suffixes are provided, require host to match one
+            if (HTTPS_WHITELIST_SUFFIXES != null && HTTPS_WHITELIST_SUFFIXES.length > 0) {
+                for (String suf : HTTPS_WHITELIST_SUFFIXES) {
+                    if (suf != null && !suf.isEmpty() && host.endsWith(suf)) return true;
+                }
+                return false;
+            }
+            // Default conservative allowlist for dev/known hosts — adjust to your needs
+            if (host.endsWith(".local") || host.endsWith(".test") || host.contains("localhost") || host.contains("127.0.0.1")) return true;
+            // allow some known S3 fallback domains if project requires (comment/uncomment as needed)
+            if (host.endsWith("s3.amazonaws.com") || host.endsWith("cloudfront.net")) return true;
+        } catch (Throwable ignored) {}
+        return false;
     }
 
     // ---------- helpers: strict/combined/permissive fetch implemented earlier but used via fetchWithRetriesAndCache ----------
@@ -416,6 +477,7 @@ public class LauncherActivity extends AppCompatActivity {
                     String v = e.getValue();
                     if (k == null || v == null) continue;
                     // avoid altering host / connection
+                    if ("host".equalsIgnoreCase(k) || "connection".equalsIgnoreCase(k)) continue;
                     conn.setRequestProperty(k, v);
                 }
             }
@@ -438,16 +500,16 @@ public class LauncherActivity extends AppCompatActivity {
             }
             if (!respHeaders.containsKey("Access-Control-Allow-Origin")) respHeaders.put("Access-Control-Allow-Origin", "*");
 
+            String encoding = chooseEncodingForMime(contentType);
+            try { CrashLogger.i("Strict fetch returned for " + urlStr + " code=" + code + " type=" + contentType); } catch (Throwable ignored) {}
             if (Build.VERSION.SDK_INT >= 21) {
                 String reason = conn.getResponseMessage() != null ? conn.getResponseMessage() : "OK";
-                return new WebResourceResponse(contentType, "UTF-8", code, reason, respHeaders, is);
+                return new WebResourceResponse(contentType, encoding, code, reason, respHeaders, is);
             } else {
-                return new WebResourceResponse(contentType, "UTF-8", is);
+                return new WebResourceResponse(contentType, encoding, is);
             }
         } catch (Throwable t) {
             try { CrashLogger.w("Strict fetch failed for " + urlStr + ": " + t, t); } catch (Throwable ignored) {}
-        } finally {
-            // Do not disconnect here if we returned a stream; otherwise free
         }
         return null;
     }
@@ -469,6 +531,7 @@ public class LauncherActivity extends AppCompatActivity {
                     String k = e.getKey();
                     String v = e.getValue();
                     if (k == null || v == null) continue;
+                    if ("host".equalsIgnoreCase(k) || "connection".equalsIgnoreCase(k)) continue;
                     httpsConn.setRequestProperty(k, v);
                 }
             }
@@ -490,10 +553,13 @@ public class LauncherActivity extends AppCompatActivity {
                 headers.put(hk, String.join(", ", vals));
             }
             if (!headers.containsKey("Access-Control-Allow-Origin")) headers.put("Access-Control-Allow-Origin", "*");
+
+            String encoding = chooseEncodingForMime(ct2);
+            try { CrashLogger.i("Combined-CA fetch returned for " + urlStr + " code=" + code2 + " type=" + ct2); } catch (Throwable ignored) {}
             if (Build.VERSION.SDK_INT >= 21) {
-                return new WebResourceResponse(ct2, "UTF-8", code2, httpsConn.getResponseMessage(), headers, is2);
+                return new WebResourceResponse(ct2, encoding, code2, httpsConn.getResponseMessage(), headers, is2);
             } else {
-                return new WebResourceResponse(ct2, "UTF-8", is2);
+                return new WebResourceResponse(ct2, encoding, is2);
             }
         } catch (Throwable t) {
             try { CrashLogger.w("Combined CA fetch failed for " + urlStr + ": " + t, t); } catch (Throwable ignored) {}
@@ -523,6 +589,7 @@ public class LauncherActivity extends AppCompatActivity {
                     String k = e.getKey();
                     String v = e.getValue();
                     if (k == null || v == null) continue;
+                    if ("host".equalsIgnoreCase(k) || "connection".equalsIgnoreCase(k)) continue;
                     httpsConn.setRequestProperty(k, v);
                 }
             }
@@ -544,10 +611,13 @@ public class LauncherActivity extends AppCompatActivity {
                 headers.put(hk, String.join(", ", vals));
             }
             if (!headers.containsKey("Access-Control-Allow-Origin")) headers.put("Access-Control-Allow-Origin", "*");
+
+            String encoding = chooseEncodingForMime(ct2);
+            try { CrashLogger.i("Permissive fetch returned for " + urlStr + " code=" + code2 + " type=" + ct2); } catch (Throwable ignored) {}
             if (Build.VERSION.SDK_INT >= 21) {
-                return new WebResourceResponse(ct2, "UTF-8", code2, httpsConn.getResponseMessage(), headers, is2);
+                return new WebResourceResponse(ct2, encoding, code2, httpsConn.getResponseMessage(), headers, is2);
             } else {
-                return new WebResourceResponse(ct2, "UTF-8", is2);
+                return new WebResourceResponse(ct2, encoding, is2);
             }
         } catch (Throwable insecureEx) {
             try { CrashLogger.w("Permissive trust-all fetch failed for " + urlStr, insecureEx); } catch (Throwable ignored) {}
