@@ -27,6 +27,7 @@ import com.liskovsoft.smartyoutubetv.player.PlayerActivity;
 import com.szzdmj.nanohttpd.CrashLogger;
 import fi.iki.elonen.NanoHTTPD;
 
+import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -34,16 +35,25 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.ServerSocket;
 import java.net.URL;
+import java.security.KeyStore;
 import java.security.SecureRandom;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
 
 /**
@@ -52,8 +62,7 @@ import javax.net.ssl.X509TrustManager;
  * - Starts a small local HTTP server that serves assets (NanoHTTPD)
  * - Logs important events to CrashLogger
  * - Loads http://localhost:PORT/ when server available; falls back to file:///android_asset/gjw.html
- * - Intercepts http:// requests and forces HTTPS fetch (returns HTTPS content to WebView).
- * - If HTTPS fetch fails, returns a safe empty/no-content response to prevent WebView from issuing cleartext HTTP.
+ * - Intercepts http(s) requests and prefers secure fetch with support for custom CA bundles in assets/certs/
  */
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
@@ -61,12 +70,12 @@ public class LauncherActivity extends AppCompatActivity {
     private LocalAssetsServer server;
     private int serverPort = -1;
 
-    // 去抖：上次启动的 URL 与时间（避免短时间内重复打开播放器）
+    // debounce for launching player
     private volatile String lastLaunchedUrl = null;
     private volatile long lastLaunchTs = 0;
     private static final long LAUNCH_DEBOUNCE_MS = 1500;
 
-    // HTTPS fallback settings (KEEP unchanged per your note)
+    // HTTPS fallback settings (keep per your note)
     private static final boolean INSECURE_HTTPS_FALLBACK = true; // set false for production
     private static final String[] HTTPS_WHITELIST_SUFFIXES = new String[] {
     };
@@ -153,67 +162,66 @@ public class LauncherActivity extends AppCompatActivity {
                 return tryServeAssetForUrl(url);
             }
 
+            /**
+             * Try to serve local asset (js), otherwise let app fetch and return secure content to WebView.
+             * This avoids WebView issuing cleartext requests and handles custom CA validation.
+             */
             private WebResourceResponse tryServeAssetForUrl(String url){
                 try{
                     if (url == null) return null;
                     String lower = url.toLowerCase(Locale.ROOT);
-
-                    // strip query and fragment so filenames like a.js?v=123 don't fail asset lookup
                     String urlNoQuery = url.split("\\?")[0].split("#")[0];
 
-                    // If requesting a JS filename (common: webjs.js), try to return it from assets if present.
+                    // If JS requested, check assets first
                     if (lower.endsWith(".js")) {
                         int idx = urlNoQuery.lastIndexOf('/');
                         String filename = idx >= 0 ? urlNoQuery.substring(idx + 1) : urlNoQuery;
-                        String assetPath = filename;
-                        Log.d(TAG, "Intercept request for JS: " + url + " -> " + assetPath);
-                        try { CrashLogger.i("Intercept request for JS: " + url + " -> " + assetPath); } catch (Throwable ignored) {}
+                        Log.d(TAG, "Intercept request for JS: " + url + " -> " + filename);
+                        try { CrashLogger.i("Intercept request for JS: " + url + " -> " + filename); } catch (Throwable ignored) {}
                         InputStream is = null;
                         try {
-                            is = getAssets().open(assetPath);
+                            is = getAssets().open(filename);
                         } catch (IOException ignored) {
                             try {
-                                is = getAssets().open("js/" + assetPath);
+                                is = getAssets().open("js/" + filename);
                             } catch (IOException ignored2) {
                                 is = null;
                             }
                         }
                         if (is != null) {
-                            Log.i(TAG, "Serving JS from assets: " + assetPath);
+                            Log.i(TAG, "Serving JS from assets: " + filename);
                             return new WebResourceResponse("application/javascript", "UTF-8", is);
                         } else {
-                            // record missing asset for later debugging
-                            missingAssets.add(assetPath);
-                            Log.d(TAG, "Asset not found for " + assetPath + ", will attempt HTTPS-only network fetch");
+                            missingAssets.add(filename);
+                            Log.d(TAG, "Asset not found for " + filename);
                         }
                     }
 
-                    // If it's a local asset path (http(s) pointing to localhost), let LocalAssetsServer handle it
+                    // Let LocalAssetsServer handle localhost
                     if (lower.startsWith("http://localhost:") || lower.startsWith("http://127.0.0.1:") ||
                         lower.startsWith("https://localhost:") || lower.startsWith("https://127.0.0.1:")) {
                         return null;
                     }
 
-                    // For ANY http:// external requests — DO NOT let WebView attempt cleartext.
-                    // Instead, attempt HTTPS fetch and return that content. If HTTPS fails, return a safe 204/NoContent
-                    if (lower.startsWith("http://")) {
-                        WebResourceResponse httpsResp = tryFetchHttpsFallback(url);
-                        if (httpsResp != null) {
-                            try { CrashLogger.i("HTTPS fallback succeeded for " + url); } catch (Throwable ignored) {}
-                            return httpsResp;
+                    // For external http/https: app will fetch and return resource stream to WebView
+                    if (lower.startsWith("http://") || lower.startsWith("https://")) {
+                        WebResourceResponse resp = fetchRemoteAsWebResource(url);
+                        if (resp != null) {
+                            try { CrashLogger.i("Served remote resource via app-fetch: " + url); } catch (Throwable ignored) {}
+                            return resp;
                         } else {
-                            try { CrashLogger.i("HTTPS fallback failed for " + url + " — blocking cleartext request"); } catch (Throwable ignored) {}
-                            // Prevent WebView from trying plain http (which would be blocked by policy).
-                            // Return a 204 No Content (API21+) or an empty response for older devices.
-                            if (Build.VERSION.SDK_INT >= 21) {
-                                Map<String, String> headers = Collections.singletonMap("Content-Type", "text/plain");
-                                return new WebResourceResponse("text/plain", "UTF-8", 204, "No Content", headers, new ByteArrayInputStream(new byte[0]));
-                            } else {
-                                return new WebResourceResponse("text/plain", "UTF-8", new ByteArrayInputStream(new byte[0]));
+                            // If it's http and we couldn't fetch https, block cleartext retry
+                            if (lower.startsWith("http://")) {
+                                try { CrashLogger.i("Blocking cleartext request for " + url); } catch (Throwable ignored) {}
+                                if (Build.VERSION.SDK_INT >= 21) {
+                                    Map<String,String> headers = Collections.singletonMap("Content-Type","text/plain");
+                                    return new WebResourceResponse("text/plain","UTF-8",204,"No Content",headers,new ByteArrayInputStream(new byte[0]));
+                                } else {
+                                    return new WebResourceResponse("text/plain","UTF-8", new ByteArrayInputStream(new byte[0]));
+                                }
                             }
                         }
                     }
-
                 }catch(Throwable t){
                     Log.w(TAG,"tryServeAssetForUrl failed for "+url,t);
                     try{ CrashLogger.w("tryServeAssetForUrl failed for "+url,t);}catch(Throwable ignored){}
@@ -221,6 +229,7 @@ public class LauncherActivity extends AppCompatActivity {
                 return null;
             }
 
+            // error handlers unchanged...
             @Override @SuppressWarnings("deprecation")
             public void onReceivedError(WebView view, int errorCode, String description, String failingUrl){
                 String s = "onReceivedError (old): code="+errorCode+" desc="+description+" url="+failingUrl;
@@ -264,7 +273,6 @@ public class LauncherActivity extends AppCompatActivity {
             String started = "LocalAssetsServer started at http://127.0.0.1:" + serverPort + " serving assets/";
             Log.i(TAG, started);
             try { CrashLogger.i(started); } catch (Throwable ignored) {}
-            // use hostname 'localhost' to match network_security_config
             webView.loadUrl("http://localhost:" + serverPort + "/");
         } catch (IOException e) {
             String warn = "Failed to start LocalAssetsServer (fallback to file://): " + e.getMessage();
@@ -279,10 +287,9 @@ public class LauncherActivity extends AppCompatActivity {
         }
     } // end onCreate
 
-    // ---------- Class-level helper: launch internal player if media URL detected ----------
+    // ---------- helpers ----------
     private void tryLaunchPlayerIfMedia(final String url) {
         if (url == null) return;
-        // 基础匹配（文件后缀/扩展名），你可以根据需要扩展正则
         String lower = url.toLowerCase(Locale.ROOT);
         boolean looksLikeMedia = lower.endsWith(".m3u8") || lower.endsWith(".mp4") || lower.endsWith(".webm") ||
                 lower.endsWith(".m4a") || lower.endsWith(".aac");
@@ -290,22 +297,17 @@ public class LauncherActivity extends AppCompatActivity {
 
         final long now = System.currentTimeMillis();
         if (url.equals(lastLaunchedUrl) && (now - lastLaunchTs) < LAUNCH_DEBOUNCE_MS) {
-            // 已经在短时间内启动过同一 URL，忽略
             return;
         }
         lastLaunchedUrl = url;
         lastLaunchTs = now;
 
-        // 启动 PlayerActivity 必须在 UI 线程
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                try {
-                    CrashLogger.i("Launching player for " + url);
-                } catch (Throwable ignored) {}
+                try { CrashLogger.i("Launching player for " + url); } catch (Throwable ignored) {}
                 try {
                     Intent i = PlayerActivity.createIntent(LauncherActivity.this, Uri.parse(url));
-                    // 约定 extra：自动全屏并立即播放
                     i.putExtra("auto_fullscreen", true);
                     i.putExtra("auto_play", true);
                     startActivity(i);
@@ -333,7 +335,7 @@ public class LauncherActivity extends AppCompatActivity {
         try (ServerSocket socket = new ServerSocket(0,0,loopback)) { socket.setReuseAddress(true); return socket.getLocalPort(); }
     }
 
-    // LocalAssetsServer (内置) — returns assets and proxy remote URLs
+    // LocalAssetsServer (keeps asset serving and optional proxy endpoint)
     public static class LocalAssetsServer extends NanoHTTPD {
         private static final String TAG2 = "LocalAssetsServer";
         private final AssetManager assets;
@@ -358,7 +360,7 @@ public class LauncherActivity extends AppCompatActivity {
                 return newFixedLengthResponse(Response.Status.FORBIDDEN, "text/plain", "Forbidden");
             }
 
-            // --- Proxy endpoint: /_proxy?u=<encodedURL> ---
+            // optional proxy endpoint (kept for compatibility)
             if (path.startsWith("_proxy")) {
                 Map<String, String> params = session.getParms();
                 String encoded = params.get("u");
@@ -381,17 +383,14 @@ public class LauncherActivity extends AppCompatActivity {
                 r.addHeader("Cache-Control", "no-cache");
                 return r;
             }
-            // --- end proxy ---
 
             try {
-                // shim path (id-shim injection for index.html retained if needed)
                 if ("/__shim__/id-shim.js".equals("/" + path)) {
                     InputStream in = assets.open("id-shim.js");
                     CrashLogger.i("Serving id-shim.js");
                     return newChunkedResponse(Response.Status.OK, "application/javascript", in);
                 }
 
-                // favicon handling
                 if ("favicon.ico".equalsIgnoreCase(path) || "favicon.png".equalsIgnoreCase(path)) {
                     try {
                         InputStream inFav = assets.open(path);
@@ -408,7 +407,6 @@ public class LauncherActivity extends AppCompatActivity {
 
                 InputStream is = assets.open(path);
 
-                // index.html shim injection preserved (only the id-shim injection)
                 if (path.endsWith("index.html")) {
                     String html = readAll(is, "UTF-8");
                     html = html.replace(
@@ -423,7 +421,6 @@ public class LauncherActivity extends AppCompatActivity {
                     return r;
                 }
 
-                // serve other assets unmodified (no LOG_BRIDGE_SNIPPET injection)
                 String mime = guessMime(path);
                 CrashLogger.i("Serving asset: " + path + " as " + mime);
                 Response res = newChunkedResponse(Response.Status.OK, mime, is);
@@ -441,7 +438,7 @@ public class LauncherActivity extends AppCompatActivity {
             }
         }
 
-        // --- Proxy helper types / methods inside LocalAssetsServer ---
+        // Proxy helpers
         private static class ProxyFetchResult {
             final InputStream stream;
             final String contentType;
@@ -476,6 +473,9 @@ public class LauncherActivity extends AppCompatActivity {
                 boolean tryInsecure = INSECURE_HTTPS_FALLBACK;
                 if (!tryInsecure) return null;
 
+                // try combined trust manager from assets (this method belongs to outer class; cannot call here static)
+                // For simplicity, in proxy fallback we use trust-all as before (kept minimal). If you prefer combined CA here too,
+                // move combined-trust creation logic into a shared util accessible from static context or pass required params.
                 javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
                 javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[] {
                     new javax.net.ssl.X509TrustManager() {
@@ -508,7 +508,6 @@ public class LauncherActivity extends AppCompatActivity {
             return null;
         }
 
-        // utility: guess mime type
         private static String guessMime(String path) {
             String lower = path.toLowerCase(Locale.ROOT);
             if (lower.endsWith(".html") || lower.endsWith(".htm")) return "text/html; charset=utf-8";
@@ -533,91 +532,259 @@ public class LauncherActivity extends AppCompatActivity {
     } // end LocalAssetsServer
 
     /**
-     * Try fetching https:// version of a given http:// URL.
-     * Returns a WebResourceResponse if successful (HTTP 2xx), otherwise null.
-     *
-     * Enhanced behavior:
-     * - Try default strict HTTPS first.
-     * - If that fails with certificate errors and INSECURE_HTTPS_FALLBACK is enabled,
-     *   and host matches whitelist, do a permissive TLS connection (trust-all) as a last resort.
+     * Fetch remote URL and return a WebResourceResponse (used in shouldInterceptRequest).
+     * Strategy:
+     *  - If original is http://, try https:// first (strict), then attempt permissive/combined CA fallback.
+     *  - If original is https://, try strict then permissive/combined CA fallback.
      */
-    private WebResourceResponse tryFetchHttpsFallback(String url) {
-        if (url == null || !url.startsWith("http://")) return null;
-        String httpsUrl = "https://" + url.substring(7);
+    private WebResourceResponse fetchRemoteAsWebResource(String origUrl) {
+        if (origUrl == null) return null;
+        try {
+            String tryUrl = origUrl;
+            boolean wasHttp = false;
+            if (origUrl.startsWith("http://")) {
+                tryUrl = "https://" + origUrl.substring(7);
+                wasHttp = true;
+            }
+
+            // 1) Strict attempt
+            WebResourceResponse strict = fetchUrlStrict(tryUrl);
+            if (strict != null) return strict;
+
+            // 2) Combined CA permissive attempt (system + assets/certs)
+            WebResourceResponse combined = fetchUrlWithCombinedCAs(tryUrl);
+            if (combined != null) return combined;
+
+            // 3) Legacy permissive trust-all (last resort, controlled by INSECURE_HTTPS_FALLBACK)
+            if (INSECURE_HTTPS_FALLBACK) {
+                WebResourceResponse permissive = fetchUrlPermissiveTrustAll(tryUrl);
+                if (permissive != null) return permissive;
+            }
+
+            // If original was http and none of the https attempts succeeded, do not return http content (block cleartext)
+            // Returning null causes WebView to proceed with its default behavior which will be blocked; earlier logic returns 204 to block.
+        } catch (Throwable t) {
+            Log.w(TAG, "fetchRemoteAsWebResource failed for " + origUrl, t);
+            try { CrashLogger.w("fetchRemoteAsWebResource failed for " + origUrl, t); } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    private WebResourceResponse fetchUrlStrict(String urlStr) {
         HttpURLConnection conn = null;
         try {
-            // Strict attempt using system trust store
-            URL u = new URL(httpsUrl);
+            URL u = new URL(urlStr);
             conn = (HttpURLConnection) u.openConnection();
             conn.setConnectTimeout(4000);
             conn.setReadTimeout(6000);
             conn.setInstanceFollowRedirects(true);
             int code = conn.getResponseCode();
             if (code >= 200 && code < 300) {
-                String contentType = conn.getContentType();
-                if (contentType == null) contentType = "application/octet-stream";
+                String ct = conn.getContentType();
+                if (ct == null) ct = "application/octet-stream";
                 InputStream is = conn.getInputStream();
-                return new WebResourceResponse(contentType, "UTF-8", is);
-            } else {
-                try { CrashLogger.i("HTTPS fallback returned non-2xx for " + httpsUrl + " code=" + code); } catch (Throwable ignored) {}
-            }
-            return null;
-        } catch (Exception strictEx) {
-            // Strict attempt failed — log and possibly try permissive fallback
-            try { CrashLogger.w("HTTPS strict attempt failed for " + httpsUrl + ": " + strictEx, strictEx); } catch (Throwable ignored) {}
-            Log.i(TAG, "HTTPS strict attempt failed for " + httpsUrl + " -> " + strictEx);
-            // Decide whether to attempt permissive fallback
-            try {
-                URL u = new URL(httpsUrl);
-                String host = u.getHost();
-                boolean tryInsecure = INSECURE_HTTPS_FALLBACK;
-                if (HTTPS_WHITELIST_SUFFIXES != null && HTTPS_WHITELIST_SUFFIXES.length > 0) {
-                    tryInsecure = false;
-                    for (String suf : HTTPS_WHITELIST_SUFFIXES) {
-                        if (host != null && host.endsWith(suf)) { tryInsecure = true; break; }
-                    }
-                }
-                if (!tryInsecure) {
-                    return null;
-                }
-
-                // permissive SSLContext (trust-all) — INSECURE, use only for development/whitelist
-                SSLContext sc = SSLContext.getInstance("TLS");
-                TrustManager[] trustAllCerts = new TrustManager[]{
-                        new X509TrustManager() {
-                            public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
-                            public void checkClientTrusted(X509Certificate[] certs, String authType) {}
-                            public void checkServerTrusted(X509Certificate[] certs, String authType) {}
-                        }
-                };
-                sc.init(null, trustAllCerts, new SecureRandom());
-
-                HttpsURLConnection httpsConn = (HttpsURLConnection) new URL(httpsUrl).openConnection();
-                httpsConn.setSSLSocketFactory(sc.getSocketFactory());
-                httpsConn.setHostnameVerifier((hostname, session) -> true);
-                httpsConn.setConnectTimeout(4000);
-                httpsConn.setReadTimeout(6000);
-                httpsConn.setInstanceFollowRedirects(true);
-                int code2 = httpsConn.getResponseCode();
-                if (code2 >= 200 && code2 < 300) {
-                    String contentType = httpsConn.getContentType();
-                    if (contentType == null) contentType = "application/octet-stream";
-                    InputStream is2 = httpsConn.getInputStream();
-                    Log.i(TAG, "HTTPS insecure fallback success for " + httpsUrl);
-                    try { CrashLogger.i("HTTPS insecure fallback success for " + httpsUrl); } catch (Throwable ignored) {}
-                    return new WebResourceResponse(contentType, "UTF-8", is2);
+                Map<String,String> headers = new HashMap<>();
+                headers.put("Access-Control-Allow-Origin", "*");
+                if (Build.VERSION.SDK_INT >= 21) {
+                    return new WebResourceResponse(ct, "UTF-8", code, "OK", headers, is);
                 } else {
-                    try { CrashLogger.i("HTTPS insecure fallback returned non-2xx for " + httpsUrl + " code=" + code2); } catch (Throwable ignored) {}
+                    return new WebResourceResponse(ct, "UTF-8", is);
                 }
-            } catch (Throwable insecureEx) {
-                try { CrashLogger.w("HTTPS insecure fallback failed for " + httpsUrl, insecureEx); } catch (Throwable ignored) {}
-                Log.w(TAG, "HTTPS insecure fallback failed for " + httpsUrl, insecureEx);
             }
+        } catch (Throwable t) {
+            try { CrashLogger.w("Strict fetch failed for " + urlStr + ": " + t, t); } catch (Throwable ignored) {}
         } finally {
             if (conn != null) conn.disconnect();
         }
         return null;
     }
 
-    // rest of LauncherActivity unchanged...
+    /**
+     * Attempt to fetch using a combined trust manager that tries system CA first, then custom CAs from assets/certs/.
+     * Returns null if combined TM unavailable or fetch failed.
+     */
+    private WebResourceResponse fetchUrlWithCombinedCAs(String urlStr) {
+        try {
+            X509TrustManager combined = createCombinedTrustManagerFromAssets();
+            if (combined == null) return null;
+
+            SSLContext sc = SSLContext.getInstance("TLS");
+            sc.init(null, new TrustManager[]{ combined }, new SecureRandom());
+
+            URL u = new URL(urlStr);
+            HttpsURLConnection httpsConn = (HttpsURLConnection) u.openConnection();
+            httpsConn.setSSLSocketFactory(sc.getSocketFactory());
+            httpsConn.setHostnameVerifier((hostname, session) -> true); // you can tighten hostname verification if desired
+            httpsConn.setConnectTimeout(4000);
+            httpsConn.setReadTimeout(6000);
+            httpsConn.setInstanceFollowRedirects(true);
+            int code2 = httpsConn.getResponseCode();
+            if (code2 >= 200 && code2 < 300) {
+                String ct2 = httpsConn.getContentType();
+                if (ct2 == null) ct2 = "application/octet-stream";
+                InputStream is2 = httpsConn.getInputStream();
+                Map<String,String> headers = new HashMap<>();
+                headers.put("Access-Control-Allow-Origin", "*");
+                if (Build.VERSION.SDK_INT >= 21) {
+                    return new WebResourceResponse(ct2, "UTF-8", code2, "OK", headers, is2);
+                } else {
+                    return new WebResourceResponse(ct2, "UTF-8", is2);
+                }
+            } else {
+                try { CrashLogger.i("Combined CA fetch returned non-2xx: " + code2 + " for " + urlStr); } catch (Throwable ignored) {}
+            }
+        } catch (Throwable t) {
+            try { CrashLogger.w("Combined CA fetch failed for " + urlStr + ": " + t, t); } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    /**
+     * Legacy permissive trust-all fetch used as last resort (kept for compatibility).
+     * Prefer fetchUrlWithCombinedCAs which uses custom CA files in assets/certs/.
+     */
+    private WebResourceResponse fetchUrlPermissiveTrustAll(String urlStr) {
+        try {
+            SSLContext sc = SSLContext.getInstance("TLS");
+            TrustManager[] trustAllCerts = new TrustManager[]{
+                    new X509TrustManager() {
+                        public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+                        public void checkClientTrusted(X509Certificate[] certs, String authType) {}
+                        public void checkServerTrusted(X509Certificate[] certs, String authType) {}
+                    }
+            };
+            sc.init(null, trustAllCerts, new SecureRandom());
+
+            URL u = new URL(urlStr);
+            HttpsURLConnection httpsConn = (HttpsURLConnection) u.openConnection();
+            httpsConn.setSSLSocketFactory(sc.getSocketFactory());
+            httpsConn.setHostnameVerifier((hostname, session) -> true);
+            httpsConn.setConnectTimeout(4000);
+            httpsConn.setReadTimeout(6000);
+            httpsConn.setInstanceFollowRedirects(true);
+            int code2 = httpsConn.getResponseCode();
+            if (code2 >= 200 && code2 < 300) {
+                String ct2 = httpsConn.getContentType();
+                if (ct2 == null) ct2 = "application/octet-stream";
+                InputStream is2 = httpsConn.getInputStream();
+                Map<String,String> headers = new HashMap<>();
+                headers.put("Access-Control-Allow-Origin", "*");
+                if (Build.VERSION.SDK_INT >= 21) {
+                    return new WebResourceResponse(ct2, "UTF-8", code2, "OK", headers, is2);
+                } else {
+                    return new WebResourceResponse(ct2, "UTF-8", is2);
+                }
+            }
+        } catch (Throwable insecureEx) {
+            try { CrashLogger.w("Permissive trust-all fetch failed for " + urlStr, insecureEx); } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    /**
+     * Create a combined X509TrustManager that tries system default first, then custom CAs loaded from assets/certs/*.pem.
+     * Returns null if no custom CAs present / failed to create.
+     */
+    private X509TrustManager createCombinedTrustManagerFromAssets() {
+        try {
+            // 1) get system default TrustManager
+            TrustManagerFactory systemTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            systemTmf.init((KeyStore) null);
+            X509TrustManager systemTm = null;
+            for (TrustManager tm : systemTmf.getTrustManagers()) {
+                if (tm instanceof X509TrustManager) { systemTm = (X509TrustManager) tm; break; }
+            }
+
+            // 2) load custom CA certs from assets/certs/
+            String[] certFiles = null;
+            try {
+                certFiles = getAssets().list("certs");
+            } catch (IOException ioe) {
+                certFiles = null;
+            }
+            if (certFiles == null || certFiles.length == 0) {
+                // no custom CA files present
+                return null;
+            }
+
+            // Build a KeyStore containing all custom CA certs
+            CertificateFactory cf = CertificateFactory.getInstance("X.509");
+            KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
+            ks.load(null, null);
+            int idx = 0;
+            int loaded = 0;
+            for (String fname : certFiles) {
+                if (fname == null || fname.trim().isEmpty()) continue;
+                InputStream in = null;
+                try {
+                    in = getAssets().open("certs/" + fname);
+                    BufferedInputStream bis = new BufferedInputStream(in);
+                    while (bis.available() > 0) {
+                        Certificate cert = cf.generateCertificate(bis);
+                        String alias = "ca" + (idx++);
+                        ks.setCertificateEntry(alias, cert);
+                        loaded++;
+                    }
+                } catch (Throwable e) {
+                    try { CrashLogger.w("Failed to load cert " + fname + ": " + e, e); } catch (Throwable ignored) {}
+                } finally {
+                    try { if (in != null) in.close(); } catch (Throwable ignored) {}
+                }
+            }
+            if (loaded == 0) return null;
+
+            // 3) create TrustManagerFactory from KeyStore (custom CA)
+            TrustManagerFactory customTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            customTmf.init(ks);
+            X509TrustManager customTm = null;
+            for (TrustManager tm : customTmf.getTrustManagers()) {
+                if (tm instanceof X509TrustManager) { customTm = (X509TrustManager) tm; break; }
+            }
+
+            final X509TrustManager sys = systemTm;
+            final X509TrustManager cus = customTm;
+
+            // 4) composite trust manager: try system first, then custom
+            X509TrustManager combined = new X509TrustManager() {
+                @Override
+                public X509Certificate[] getAcceptedIssuers() {
+                    List<X509Certificate> list = new ArrayList<>();
+                    if (sys != null) list.addAll(Arrays.asList(sys.getAcceptedIssuers()));
+                    if (cus != null) list.addAll(Arrays.asList(cus.getAcceptedIssuers()));
+                    return list.toArray(new X509Certificate[list.size()]);
+                }
+
+                @Override
+                public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+                    if (sys != null) {
+                        try { sys.checkClientTrusted(chain, authType); return; } catch (CertificateException ignored) {}
+                    }
+                    if (cus != null) { cus.checkClientTrusted(chain, authType); return; }
+                    throw new CertificateException("Client cert not trusted by system or custom CAs");
+                }
+
+                @Override
+                public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+                    if (sys != null) {
+                        try { sys.checkServerTrusted(chain, authType); return; } catch (CertificateException ignored) {}
+                    }
+                    if (cus != null) { cus.checkServerTrusted(chain, authType); return; }
+                    throw new CertificateException("Server cert not trusted by system or custom CAs");
+                }
+            };
+
+            try { CrashLogger.i("Using combined trust managers with " + loaded + " custom CA(s)"); } catch (Throwable ignored) {}
+            return combined;
+        } catch (Throwable t) {
+            try { CrashLogger.w("createCombinedTrustManagerFromAssets failed: " + t, t); } catch (Throwable ignored) {}
+            return null;
+        }
+    }
+
+    // tryFetchHttpsFallback kept for compatibility; now delegates to fetchRemoteAsWebResource
+    private WebResourceResponse tryFetchHttpsFallback(String url) {
+        return fetchRemoteAsWebResource(url);
+    }
+
+    // rest of class...
 }
