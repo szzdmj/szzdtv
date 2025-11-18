@@ -29,6 +29,10 @@ import java.io.File;
  * Replaces direct setContentView(...) with try/catch around inflation. If inflation fails
  * (InflateException) we write the stack to external log and create a minimal programmatic
  * fallback layout containing a PlayerView so the activity can continue for debugging.
+ *
+ * Also supports Intent extras:
+ *  - auto_fullscreen (boolean) : if true, force landscape + immersive UI
+ *  - auto_play (boolean)       : if true and intent carries Uri, start playback immediately
  */
 public class PlayerActivity extends AppCompatActivity {
     public static final String TAG = "PlayerActivity";
@@ -44,6 +48,9 @@ public class PlayerActivity extends AppCompatActivity {
     private AudioManager audioManager;
     private float brightnessStep = 0.1f;
 
+    /**
+     * factory: create Intent for internal player; extras may be provided by caller.
+     */
     public static Intent createIntent(Context ctx, Uri uri) {
         Intent i = new Intent(ctx, PlayerActivity.class);
         i.setAction(Intent.ACTION_VIEW);
@@ -52,7 +59,7 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
     @Override
-protected void onCreate(Bundle savedInstanceState) {
+    protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         // Defensive inflation: try normal layout inflation, on InflateException fall back to
@@ -85,35 +92,46 @@ protected void onCreate(Bundle savedInstanceState) {
         // Handle Intent (ACTION_VIEW)
         try {
             Intent intent = getIntent();
-    if (intent != null) {
-        boolean autoFs = intent.getBooleanExtra("auto_fullscreen", false);
-        boolean autoPlay = intent.getBooleanExtra("auto_play", false);
-        Uri videoUri = intent.getData(); // 也可能是 intent.getStringExtra("video_url")
-        if (autoFs) {
-            // 进入沉浸式、横屏模式
-        try {
-                // 强制横屏（如果你希望）
-                setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
-            } catch (Throwable ignored) {}
-            // 隐藏系统 UI（沉浸式）
-            decorViewHideSystemUI();
-        }
-        // 如果传了 URL 且 autoPlay 为 true，开始播放
-        if (videoUri != null && autoPlay) {
-            // 假设播放器有 play(Uri) 方法，调用开始播放
-            startPlayback(videoUri.toString());
-    }
+            if (intent != null) {
+                boolean autoFs = intent.getBooleanExtra("auto_fullscreen", false);
+                boolean autoPlay = intent.getBooleanExtra("auto_play", false);
+                Uri videoUri = intent.getData(); // 也可能是 intent.getStringExtra("video_url")
+                if (autoFs) {
+                    // 进入沉浸式、横屏模式
+                    try {
+                        setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+                    } catch (Throwable ignored) {}
+                    // 隐藏系统 UI（沉浸式）
+                    decorViewHideSystemUI();
+                }
+                // 如果传了 URL 且 autoPlay 为 true，开始播放
+                if (videoUri != null && autoPlay) {
+                    startPlayback(videoUri.toString());
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to handle intent", t);
+            writeCrashLog(t);
         }
     }
 
-private void decorViewHideSystemUI() {
-    final android.view.View decorView = getWindow().getDecorView();
-    int flags = android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-            | android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
-            | android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-            | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-            | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
-    decorView.setSystemUiVisibility(flags);
+    private void createFallbackLayout() {
+        FrameLayout root = new FrameLayout(this);
+        playerView = new PlayerView(this);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+        root.addView(playerView, lp);
+        setContentView(root);
+    }
+
+    private void decorViewHideSystemUI() {
+        final android.view.View decorView = getWindow().getDecorView();
+        int flags = android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                | android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                | android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
+        decorView.setSystemUiVisibility(flags);
     }
 
     private void adjustBrightness(boolean increase) {
@@ -133,6 +151,32 @@ private void decorViewHideSystemUI() {
             getWindow().setAttributes(lp);
         } catch (Exception e) {
             Toast.makeText(this, "Can't change brightness: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // start playback using Media3 ExoPlayer
+    private void startPlayback(String url) {
+        try {
+            if (player == null) {
+                player = new ExoPlayer.Builder(this).build();
+            }
+            if (playerView != null) {
+                playerView.setPlayer(player);
+            }
+            fileNameTv = (fileNameTv == null) ? null : fileNameTv;
+            try {
+                if (fileNameTv != null) fileNameTv.setText(url);
+            } catch (Throwable ignored) {}
+
+            MediaItem item = MediaItem.fromUri(Uri.parse(url));
+            player.setMediaItem(item);
+            player.prepare();
+            player.setPlayWhenReady(true);
+
+            Log.i(TAG, "startPlayback: " + url);
+        } catch (Throwable t) {
+            Log.e(TAG, "Failed to start playback", t);
+            writeCrashLog(t);
         }
     }
 
@@ -158,7 +202,7 @@ private void decorViewHideSystemUI() {
     @Override
     protected void onStart() {
         super.onStart();
-        // Player is initialized in onCreate when intent present. In other setups you could init here.
+        // Player is initialized in onCreate when intent present.
     }
 
     @Override
