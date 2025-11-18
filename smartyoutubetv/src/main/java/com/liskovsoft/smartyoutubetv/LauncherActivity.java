@@ -24,6 +24,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Locale;
 
+import fi.iki.elonen.NanoHTTPD; // 用于启动/停止 NanoHTTPD 常量（SOCKET_READ_TIMEOUT）
+
 /**
  * LauncherActivity with improved WebView debugging and asset-based fallback for JS files.
  *
@@ -32,24 +34,30 @@ import java.util.Locale;
  * - Intercepts requests for common JS files and serves them from assets if present
  * - For playable links, forwards to PlayerActivity
  */
-// add near top of onCreate, before webView.loadUrl(...)
-int port = 12721;
-LocalAssetsServer server = null;
-try {
-    server = new LocalAssetsServer(port, getAssets());
-    server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
-    Log.i("LocalAssetsServer", "started on http://127.0.0.1:" + port);
-} catch (Exception e) {
-    Log.e("LocalAssetsServer", "failed to start", e);
-}
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
     private WebView webView;
+
+    // Field to hold reference to the local server (avoid putting start/stop code at class scope)
+    private LocalAssetsServer localServer;
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // --- 启动本地 assets server（放在 onCreate 内，确保语句在方法体中） ---
+        int port = 12721;
+        try {
+            localServer = new LocalAssetsServer(port, getAssets());
+            // start(serverTimeoutMillis, daemon)
+            localServer.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
+            Log.i(TAG, "LocalAssetsServer started on http://127.0.0.1:" + port);
+        } catch (Exception e) {
+            Log.e(TAG, "LocalAssetsServer failed to start", e);
+            // 失败时继续（WebView 仍会从 file:///android_asset 加载），但会在日志中看到错误
+        }
+        // --- end server start ---
 
         webView = new WebView(this);
         setContentView(webView);
@@ -167,13 +175,23 @@ public class LauncherActivity extends AppCompatActivity {
             }
         });
 
-        // Load the index page from assets
+        // Load the gjw page from assets (do not change the test homepage)
         webView.loadUrl("file:///android_asset/gjw.html");
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        // Stop the local server if it was started
+        try {
+            if (localServer != null) {
+                localServer.stop();
+                Log.i(TAG, "LocalAssetsServer stopped");
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Error stopping LocalAssetsServer", t);
+        }
+
         if (webView != null) {
             webView.destroy();
             webView = null;
