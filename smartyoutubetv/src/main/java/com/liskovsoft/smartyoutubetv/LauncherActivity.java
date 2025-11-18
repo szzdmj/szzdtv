@@ -150,23 +150,22 @@ public class LauncherActivity extends AppCompatActivity {
                 }
             }
 
+            // 1) 修改 shouldInterceptRequest 的重载，传入请求头（API 21+）
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request){
                 String url = request.getUrl().toString();
+                Map<String, String> reqHeaders = request.getRequestHeaders(); // 包含 Range 等
                 try { CrashLogger.i("shouldInterceptRequest: "+url); } catch (Throwable ignored) {}
-                return tryServeAssetForUrl(url);
+                return tryServeAssetForUrl(url, reqHeaders);
             }
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, String url){
                 try { CrashLogger.i("shouldInterceptRequest: "+url); } catch (Throwable ignored) {}
-                return tryServeAssetForUrl(url);
+                return tryServeAssetForUrl(url, Collections.emptyMap());
             }
 
-            /**
-             * Try to serve local asset (js), otherwise let app fetch and return secure content to WebView.
-             * This avoids WebView issuing cleartext requests and handles custom CA validation.
-             */
-            private WebResourceResponse tryServeAssetForUrl(String url){
+            // 2) 修改 tryServeAssetForUrl 签名，接收并传递 headers
+            private WebResourceResponse tryServeAssetForUrl(String url, Map<String, String> requestHeaders){
                 try{
                     if (url == null) return null;
                     String lower = url.toLowerCase(Locale.ROOT);
@@ -198,19 +197,19 @@ public class LauncherActivity extends AppCompatActivity {
                     }
 
                     // Let LocalAssetsServer handle localhost
-                    if (lower.startsWith("http://localhost:") || lower.startsWith("http://127.0.0.1:") ||
-                        lower.startsWith("https://localhost:") || lower.startsWith("https://127.0.0.1:")) {
+                    if (lower.startsWith("http://localhost:") || lower.startsWith("https://localhost:") ||
+                        lower.startsWith("http://127.0.0.1:") || lower.startsWith("https://127.0.0.1:")) {
                         return null;
                     }
 
                     // For external http/https: app will fetch and return resource stream to WebView
                     if (lower.startsWith("http://") || lower.startsWith("https://")) {
-                        WebResourceResponse resp = fetchRemoteAsWebResource(url);
+                        WebResourceResponse resp = fetchRemoteAsWebResource(url, requestHeaders);
                         if (resp != null) {
                             try { CrashLogger.i("Served remote resource via app-fetch: " + url); } catch (Throwable ignored) {}
                             return resp;
                         } else {
-                            // If it's http and we couldn't fetch https, block cleartext retry
+                            // If original was http and we couldn't fetch https, block cleartext retry
                             if (lower.startsWith("http://")) {
                                 try { CrashLogger.i("Blocking cleartext request for " + url); } catch (Throwable ignored) {}
                                 if (Build.VERSION.SDK_INT >= 21) {
@@ -229,7 +228,6 @@ public class LauncherActivity extends AppCompatActivity {
                 return null;
             }
 
-            // error handlers unchanged...
             @Override @SuppressWarnings("deprecation")
             public void onReceivedError(WebView view, int errorCode, String description, String failingUrl){
                 String s = "onReceivedError (old): code="+errorCode+" desc="+description+" url="+failingUrl;
@@ -473,9 +471,7 @@ public class LauncherActivity extends AppCompatActivity {
                 boolean tryInsecure = INSECURE_HTTPS_FALLBACK;
                 if (!tryInsecure) return null;
 
-                // try combined trust manager from assets (this method belongs to outer class; cannot call here static)
-                // For simplicity, in proxy fallback we use trust-all as before (kept minimal). If you prefer combined CA here too,
-                // move combined-trust creation logic into a shared util accessible from static context or pass required params.
+                // try trust-all for proxy fallback (kept minimal here)
                 javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
                 javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[] {
                     new javax.net.ssl.X509TrustManager() {
@@ -537,7 +533,7 @@ public class LauncherActivity extends AppCompatActivity {
      *  - If original is http://, try https:// first (strict), then attempt permissive/combined CA fallback.
      *  - If original is https://, try strict then permissive/combined CA fallback.
      */
-    private WebResourceResponse fetchRemoteAsWebResource(String origUrl) {
+    private WebResourceResponse fetchRemoteAsWebResource(String origUrl, Map<String,String> requestHeaders) {
         if (origUrl == null) return null;
         try {
             String tryUrl = origUrl;
@@ -548,21 +544,20 @@ public class LauncherActivity extends AppCompatActivity {
             }
 
             // 1) Strict attempt
-            WebResourceResponse strict = fetchUrlStrict(tryUrl);
+            WebResourceResponse strict = fetchUrlStrict(tryUrl, requestHeaders);
             if (strict != null) return strict;
 
             // 2) Combined CA permissive attempt (system + assets/certs)
-            WebResourceResponse combined = fetchUrlWithCombinedCAs(tryUrl);
+            WebResourceResponse combined = fetchUrlWithCombinedCAs(tryUrl, requestHeaders);
             if (combined != null) return combined;
 
             // 3) Legacy permissive trust-all (last resort, controlled by INSECURE_HTTPS_FALLBACK)
             if (INSECURE_HTTPS_FALLBACK) {
-                WebResourceResponse permissive = fetchUrlPermissiveTrustAll(tryUrl);
+                WebResourceResponse permissive = fetchUrlPermissiveTrustAll(tryUrl, requestHeaders);
                 if (permissive != null) return permissive;
             }
 
             // If original was http and none of the https attempts succeeded, do not return http content (block cleartext)
-            // Returning null causes WebView to proceed with its default behavior which will be blocked; earlier logic returns 204 to block.
         } catch (Throwable t) {
             Log.w(TAG, "fetchRemoteAsWebResource failed for " + origUrl, t);
             try { CrashLogger.w("fetchRemoteAsWebResource failed for " + origUrl, t); } catch (Throwable ignored) {}
@@ -570,32 +565,55 @@ public class LauncherActivity extends AppCompatActivity {
         return null;
     }
 
-    private WebResourceResponse fetchUrlStrict(String urlStr) {
+    private WebResourceResponse fetchUrlStrict(String urlStr, Map<String,String> requestHeaders) {
         HttpURLConnection conn = null;
         try {
             URL u = new URL(urlStr);
             conn = (HttpURLConnection) u.openConnection();
-            conn.setConnectTimeout(4000);
-            conn.setReadTimeout(6000);
-            conn.setInstanceFollowRedirects(true);
-            int code = conn.getResponseCode();
-            if (code >= 200 && code < 300) {
-                String ct = conn.getContentType();
-                if (ct == null) ct = "application/octet-stream";
-                InputStream is = conn.getInputStream();
-                Map<String,String> headers = new HashMap<>();
-                headers.put("Access-Control-Allow-Origin", "*");
-                if (Build.VERSION.SDK_INT >= 21) {
-                    return new WebResourceResponse(ct, "UTF-8", code, "OK", headers, is);
-                } else {
-                    return new WebResourceResponse(ct, "UTF-8", is);
+            // 转发常用请求头（尤其 Range）
+            if (requestHeaders != null) {
+                for (Map.Entry<String,String> e : requestHeaders.entrySet()) {
+                    String k = e.getKey();
+                    String v = e.getValue();
+                    if (k == null || v == null) continue;
+                    // 避免覆盖 Host、Connection 等敏感头（按需）
+                    conn.setRequestProperty(k, v);
                 }
+            }
+            conn.setConnectTimeout(8000); // 可适当放宽
+            conn.setReadTimeout(10000);
+            conn.setInstanceFollowRedirects(true);
+            int code = conn.getResponseCode(); // 200 或 206 等
+            InputStream is = (code >= 400) ? conn.getErrorStream() : conn.getInputStream();
+            if (is == null) return null;
+            String contentType = conn.getContentType();
+            if (contentType == null) contentType = "application/octet-stream";
+
+            // 收集远端返回的 header（透传给 WebView）
+            Map<String,String> respHeaders = new HashMap<>();
+            for (Map.Entry<String, List<String>> hh : conn.getHeaderFields().entrySet()) {
+                String hk = hh.getKey();
+                if (hk == null) continue;
+                List<String> vals = hh.getValue();
+                if (vals == null || vals.isEmpty()) continue;
+                String joined = String.join(", ", vals);
+                respHeaders.put(hk, joined);
+            }
+            // 确保 CORS header 存在
+            if (!respHeaders.containsKey("Access-Control-Allow-Origin")) respHeaders.put("Access-Control-Allow-Origin", "*");
+
+            if (Build.VERSION.SDK_INT >= 21) {
+                String reason = conn.getResponseMessage() != null ? conn.getResponseMessage() : "OK";
+                // 注意：不要 disconnect conn 直到 WebView 完成读取；WebResourceResponse 只是包装了 InputStream
+                return new WebResourceResponse(contentType, "UTF-8", code, reason, respHeaders, is);
+            } else {
+                return new WebResourceResponse(contentType, "UTF-8", is);
             }
         } catch (Throwable t) {
             try { CrashLogger.w("Strict fetch failed for " + urlStr + ": " + t, t); } catch (Throwable ignored) {}
-        } finally {
-            if (conn != null) conn.disconnect();
         }
+        // 注意不要在这里 conn.disconnect()，因为 InputStream 还在被 WebView 读取时需要连接活着；如果没有返回流则在 finally 里断开。
+        if (conn != null) conn.disconnect();
         return null;
     }
 
@@ -603,7 +621,7 @@ public class LauncherActivity extends AppCompatActivity {
      * Attempt to fetch using a combined trust manager that tries system CA first, then custom CAs from assets/certs/.
      * Returns null if combined TM unavailable or fetch failed.
      */
-    private WebResourceResponse fetchUrlWithCombinedCAs(String urlStr) {
+    private WebResourceResponse fetchUrlWithCombinedCAs(String urlStr, Map<String,String> requestHeaders) {
         try {
             X509TrustManager combined = createCombinedTrustManagerFromAssets();
             if (combined == null) return null;
@@ -615,8 +633,19 @@ public class LauncherActivity extends AppCompatActivity {
             HttpsURLConnection httpsConn = (HttpsURLConnection) u.openConnection();
             httpsConn.setSSLSocketFactory(sc.getSocketFactory());
             httpsConn.setHostnameVerifier((hostname, session) -> true); // you can tighten hostname verification if desired
-            httpsConn.setConnectTimeout(4000);
-            httpsConn.setReadTimeout(6000);
+
+            // forward request headers (Range etc.)
+            if (requestHeaders != null) {
+                for (Map.Entry<String,String> e : requestHeaders.entrySet()) {
+                    String k = e.getKey();
+                    String v = e.getValue();
+                    if (k == null || v == null) continue;
+                    httpsConn.setRequestProperty(k, v);
+                }
+            }
+
+            httpsConn.setConnectTimeout(8000);
+            httpsConn.setReadTimeout(10000);
             httpsConn.setInstanceFollowRedirects(true);
             int code2 = httpsConn.getResponseCode();
             if (code2 >= 200 && code2 < 300) {
@@ -624,9 +653,16 @@ public class LauncherActivity extends AppCompatActivity {
                 if (ct2 == null) ct2 = "application/octet-stream";
                 InputStream is2 = httpsConn.getInputStream();
                 Map<String,String> headers = new HashMap<>();
-                headers.put("Access-Control-Allow-Origin", "*");
+                for (Map.Entry<String, List<String>> hh : httpsConn.getHeaderFields().entrySet()) {
+                    String hk = hh.getKey();
+                    if (hk == null) continue;
+                    List<String> vals = hh.getValue();
+                    if (vals == null || vals.isEmpty()) continue;
+                    headers.put(hk, String.join(", ", vals));
+                }
+                if (!headers.containsKey("Access-Control-Allow-Origin")) headers.put("Access-Control-Allow-Origin", "*");
                 if (Build.VERSION.SDK_INT >= 21) {
-                    return new WebResourceResponse(ct2, "UTF-8", code2, "OK", headers, is2);
+                    return new WebResourceResponse(ct2, "UTF-8", code2, httpsConn.getResponseMessage(), headers, is2);
                 } else {
                     return new WebResourceResponse(ct2, "UTF-8", is2);
                 }
@@ -643,7 +679,7 @@ public class LauncherActivity extends AppCompatActivity {
      * Legacy permissive trust-all fetch used as last resort (kept for compatibility).
      * Prefer fetchUrlWithCombinedCAs which uses custom CA files in assets/certs/.
      */
-    private WebResourceResponse fetchUrlPermissiveTrustAll(String urlStr) {
+    private WebResourceResponse fetchUrlPermissiveTrustAll(String urlStr, Map<String,String> requestHeaders) {
         try {
             SSLContext sc = SSLContext.getInstance("TLS");
             TrustManager[] trustAllCerts = new TrustManager[]{
@@ -659,8 +695,19 @@ public class LauncherActivity extends AppCompatActivity {
             HttpsURLConnection httpsConn = (HttpsURLConnection) u.openConnection();
             httpsConn.setSSLSocketFactory(sc.getSocketFactory());
             httpsConn.setHostnameVerifier((hostname, session) -> true);
-            httpsConn.setConnectTimeout(4000);
-            httpsConn.setReadTimeout(6000);
+
+            // forward request headers
+            if (requestHeaders != null) {
+                for (Map.Entry<String,String> e : requestHeaders.entrySet()) {
+                    String k = e.getKey();
+                    String v = e.getValue();
+                    if (k == null || v == null) continue;
+                    httpsConn.setRequestProperty(k, v);
+                }
+            }
+
+            httpsConn.setConnectTimeout(8000);
+            httpsConn.setReadTimeout(10000);
             httpsConn.setInstanceFollowRedirects(true);
             int code2 = httpsConn.getResponseCode();
             if (code2 >= 200 && code2 < 300) {
@@ -668,9 +715,16 @@ public class LauncherActivity extends AppCompatActivity {
                 if (ct2 == null) ct2 = "application/octet-stream";
                 InputStream is2 = httpsConn.getInputStream();
                 Map<String,String> headers = new HashMap<>();
-                headers.put("Access-Control-Allow-Origin", "*");
+                for (Map.Entry<String, List<String>> hh : httpsConn.getHeaderFields().entrySet()) {
+                    String hk = hh.getKey();
+                    if (hk == null) continue;
+                    List<String> vals = hh.getValue();
+                    if (vals == null || vals.isEmpty()) continue;
+                    headers.put(hk, String.join(", ", vals));
+                }
+                if (!headers.containsKey("Access-Control-Allow-Origin")) headers.put("Access-Control-Allow-Origin", "*");
                 if (Build.VERSION.SDK_INT >= 21) {
-                    return new WebResourceResponse(ct2, "UTF-8", code2, "OK", headers, is2);
+                    return new WebResourceResponse(ct2, "UTF-8", code2, httpsConn.getResponseMessage(), headers, is2);
                 } else {
                     return new WebResourceResponse(ct2, "UTF-8", is2);
                 }
@@ -781,9 +835,9 @@ public class LauncherActivity extends AppCompatActivity {
         }
     }
 
-    // tryFetchHttpsFallback kept for compatibility; now delegates to fetchRemoteAsWebResource
+    // tryFetchHttpsFallback kept for compatibility; now delegates to fetchRemoteAsWebResource (with empty headers)
     private WebResourceResponse tryFetchHttpsFallback(String url) {
-        return fetchRemoteAsWebResource(url);
+        return fetchRemoteAsWebResource(url, Collections.emptyMap());
     }
 
     // rest of class...
