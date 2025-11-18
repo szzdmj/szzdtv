@@ -1,3 +1,4 @@
+// 完整文件（只展示替换后的内容供复制）
 package com.liskovsoft.smartyoutubetv;
 
 import android.annotation.SuppressLint;
@@ -35,12 +36,7 @@ import java.net.ServerSocket;
 import java.util.Locale;
 
 /**
- * LauncherActivity
- *
- * - Starts a small local HTTP server that serves assets (NanoHTTPD)
- * - Logs important events to CrashLogger (internal + external file)
- * - Loads http://127.0.0.1:PORT/ when server available; falls back to file:///android_asset/gjw.html
- * - Logs WebView console and network errors into CrashLogger for later retrieval
+ * LauncherActivity（已增强：注入 JS 日志桥）
  */
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
@@ -48,18 +44,27 @@ public class LauncherActivity extends AppCompatActivity {
     private LocalAssetsServer server;
     private int serverPort = -1;
 
+    // 注入到 HTML 页面的 JS：将 console.* 转发到 Android.log，并监听 SW 消息
+    private static final String LOG_BRIDGE_SNIPPET =
+        "<script>" +
+        "(function(){" +
+        "  function send(type,args){ try{ if(window.Android && Android.log){ Android.log(type+': '+Array.prototype.slice.call(args).map(function(a){try{return JSON.stringify(a);}catch(e){return String(a);} }).join(' ')); } }catch(e){} }" +
+        "  ['log','info','warn','error','debug'].forEach(function(k){ var old = console[k] || function(){}; console[k] = function(){ send(k,arguments); try{ old.apply(console,arguments);}catch(e){} }; });" +
+        "  window.addEventListener('error', function(ev){ try{ var msg = ev.message + ' at ' + ev.filename + ':' + ev.lineno; send('error',[msg]); }catch(e){} });" +
+        "  // forward messages from service worker to Android.log" +
+        "  if (navigator && navigator.serviceWorker) {" +
+        "    try{ navigator.serviceWorker.addEventListener('message', function(e){ try{ if(window.Android && Android.log) Android.log('SW: '+ (typeof e.data === 'string' ? e.data : JSON.stringify(e.data))); }catch(ex){} }); }catch(e){}" +
+        "  }" +
+        "})();" +
+        "</script>";
+
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Init crash logger (writes to internal and external files)
-        try {
-            CrashLogger.init(this);
-            CrashLogger.i("LauncherActivity.onCreate");
-        } catch (Throwable t) {
-            Log.w(TAG, "CrashLogger.init failed", t);
-        }
+        // Init CrashLogger
+        try { CrashLogger.init(this); CrashLogger.i("LauncherActivity.onCreate"); } catch (Throwable t) { Log.w(TAG, "CrashLogger init failed", t); }
 
         webView = new WebView(this);
         setContentView(webView);
@@ -69,16 +74,14 @@ public class LauncherActivity extends AppCompatActivity {
         ws.setDomStorageEnabled(true);
         ws.setAllowFileAccess(true);
         ws.setAllowContentAccess(true);
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
             ws.setAllowFileAccessFromFileURLs(true);
             ws.setAllowUniversalAccessFromFileURLs(true);
         }
-
         ws.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         webView.setWebContentsDebuggingEnabled(true);
 
-        // JS -> Android log bridge
+        // JS -> Android bridge (已有)
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
             public void log(String msg) {
@@ -87,10 +90,9 @@ public class LauncherActivity extends AppCompatActivity {
             }
         }, "Android");
 
-        // WebChromeClient -> JS console logging
-        webView.setWebChromeClient(new WebChromeClient() {
+        webView.setWebChromeClient(new WebChromeClient(){
             @Override
-            public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
+            public boolean onConsoleMessage(ConsoleMessage consoleMessage){
                 String msg = String.format(Locale.US, "JSConsole: %s (%s:%d) level=%s",
                         consoleMessage.message(),
                         consoleMessage.sourceId(),
@@ -102,202 +104,135 @@ public class LauncherActivity extends AppCompatActivity {
             }
         });
 
-        // WebViewClient -> intercept and detailed error logging
-        webView.setWebViewClient(new WebViewClient() {
+        webView.setWebViewClient(new WebViewClient(){
+            @Override @SuppressWarnings("deprecation")
+            public boolean shouldOverrideUrlLoading(WebView view, String url){ return handleUrl(url); }
             @Override
-            @SuppressWarnings("deprecation")
-            public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                return handleUrl(url);
-            }
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request){ return handleUrl(request.getUrl().toString()); }
 
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                return handleUrl(request.getUrl().toString());
-            }
-
-            private boolean handleUrl(String url) {
-                try {
+            private boolean handleUrl(String url){
+                try{
                     if (url == null) return false;
-                    if (url.matches("(?i).+\\.(mp4|m3u8|webm)$") || url.contains("youtube.com") || url.contains("youtu.be")) {
+                    if (url.matches("(?i).+\\.(mp4|m3u8|webm)$") || url.contains("youtube.com") || url.contains("youtu.be")){
                         Intent i = PlayerActivity.createIntent(LauncherActivity.this, Uri.parse(url));
                         startActivity(i);
                         return true;
                     }
                     return false;
-                } catch (Throwable t) {
-                    Log.e(TAG, "handleUrl failed", t);
-                    try { CrashLogger.err("handleUrl failed", t); } catch (Throwable ignored) {}
+                }catch(Throwable t){
+                    Log.e(TAG,"handleUrl failed",t); try{ CrashLogger.err("handleUrl failed",t);}catch(Throwable ignored){}
                     return false;
                 }
             }
 
-            // Resource interception (keep existing behavior)
             @Override
-            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request){
                 String url = request.getUrl().toString();
-                try { CrashLogger.i("shouldInterceptRequest: " + url); } catch (Throwable ignored) {}
+                try { CrashLogger.i("shouldInterceptRequest: "+url); } catch (Throwable ignored) {}
                 return tryServeAssetForUrl(url);
             }
-
             @Override
-            public WebResourceResponse shouldInterceptRequest(WebView view, String url) {
-                try { CrashLogger.i("shouldInterceptRequest: " + url); } catch (Throwable ignored) {}
+            public WebResourceResponse shouldInterceptRequest(WebView view, String url){
+                try { CrashLogger.i("shouldInterceptRequest: "+url); } catch (Throwable ignored) {}
                 return tryServeAssetForUrl(url);
             }
 
-            private WebResourceResponse tryServeAssetForUrl(String url) {
-                try {
+            private WebResourceResponse tryServeAssetForUrl(String url){
+                try{
                     if (url == null) return null;
                     String lower = url.toLowerCase(Locale.ROOT);
-                    if (lower.endsWith(".js")) {
+                    if (lower.endsWith(".js")){
                         int idx = url.lastIndexOf('/');
-                        String filename = idx >= 0 ? url.substring(idx + 1) : url;
+                        String filename = idx >= 0 ? url.substring(idx+1) : url;
                         String assetPath = filename;
-                        Log.d(TAG, "Intercept request for JS: " + url + " -> try asset: " + assetPath);
-                        try { CrashLogger.i("Intercept request for JS: " + url + " -> " + assetPath); } catch (Throwable ignored) {}
-                        InputStream is = null;
-                        try {
-                            is = getAssets().open(assetPath);
-                        } catch (IOException ignored) {
-                            try {
-                                is = getAssets().open("js/" + assetPath);
-                            } catch (IOException ignored2) {
-                                is = null;
-                            }
+                        Log.d(TAG,"Intercept JS: "+url+" -> "+assetPath);
+                        try{ CrashLogger.i("Intercept request for JS: "+url+" -> "+assetPath);}catch(Throwable ignored){}
+                        InputStream is=null;
+                        try{ is = getAssets().open(assetPath); }catch(IOException ignored){
+                            try{ is = getAssets().open("js/"+assetPath);}catch(IOException ignored2){ is=null;}
                         }
-                        if (is != null) {
-                            return new WebResourceResponse("application/javascript", "UTF-8", is);
-                        }
+                        if (is!=null) return new WebResourceResponse("application/javascript","UTF-8",is);
                     }
-                } catch (Throwable t) {
-                    Log.w(TAG, "tryServeAssetForUrl failed for " + url, t);
-                    try { CrashLogger.w("tryServeAssetForUrl failed for " + url, t); } catch (Throwable ignored) {}
+                }catch(Throwable t){
+                    Log.w(TAG,"tryServeAssetForUrl failed for "+url,t);
+                    try{ CrashLogger.w("tryServeAssetForUrl failed for "+url,t);}catch(Throwable ignored){}
                 }
                 return null;
             }
 
-            // Old API error callback (deprecated but still useful)
-            @Override
-            @SuppressWarnings("deprecation")
-            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
-                String s = "onReceivedError (old API): code=" + errorCode + " desc=" + description + " url=" + failingUrl;
-                Log.w(TAG, s);
-                try { CrashLogger.w(s, null); } catch (Throwable ignored) {}
+            @Override @SuppressWarnings("deprecation")
+            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl){
+                String s = "onReceivedError (old): code="+errorCode+" desc="+description+" url="+failingUrl;
+                Log.w(TAG,s); try{ CrashLogger.w(s,null);}catch(Throwable ignored){}
             }
 
-            // New API error callback (API >= 23)
             @Override
-            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                try {
-                    String url = request != null ? request.getUrl().toString() : "(unknown)";
-                    String s = "onReceivedError: url=" + url + " code=" + error.getErrorCode() + " desc=" + error.getDescription();
-                    Log.w(TAG, s);
-                    try { CrashLogger.w(s, null); } catch (Throwable ignored) {}
-                } catch (Throwable t) {
-                    Log.w(TAG, "Exception in onReceivedError", t);
-                    try { CrashLogger.w("Exception in onReceivedError", t); } catch (Throwable ignored) {}
-                }
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error){
+                try{
+                    String url = request!=null?request.getUrl().toString():"(unknown)";
+                    String s = "onReceivedError: url="+url+" code="+error.getErrorCode()+" desc="+error.getDescription();
+                    Log.w(TAG,s); try{ CrashLogger.w(s,null);}catch(Throwable ignored){}
+                }catch(Throwable t){ Log.w(TAG,"Exception in onReceivedError",t); try{ CrashLogger.w("Exception in onReceivedError",t);}catch(Throwable ignored){} }
             }
 
-            // HTTP errors (4xx/5xx). Called for main frame and subresources on API >= 23
             @Override
-            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
-                try {
-                    String url = request != null ? request.getUrl().toString() : "(unknown)";
-                    int status = errorResponse != null ? errorResponse.getStatusCode() : -1;
-                    String reason = errorResponse != null ? errorResponse.getReasonPhrase() : "(no reason)";
-                    String s = "onReceivedHttpError: url=" + url + " status=" + status + " reason=" + reason;
-                    Log.w(TAG, s);
-                    try { CrashLogger.w(s, null); } catch (Throwable ignored) {}
-                } catch (Throwable t) {
-                    Log.w(TAG, "Exception in onReceivedHttpError", t);
-                    try { CrashLogger.w("Exception in onReceivedHttpError", t); } catch (Throwable ignored) {}
-                }
+            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse){
+                try{
+                    String url = request!=null?request.getUrl().toString():"(unknown)";
+                    int status = errorResponse!=null?errorResponse.getStatusCode():-1;
+                    String s = "onReceivedHttpError: url="+url+" status="+status;
+                    Log.w(TAG,s); try{ CrashLogger.w(s,null);}catch(Throwable ignored){}
+                }catch(Throwable t){ Log.w(TAG,"Exception in onReceivedHttpError",t); try{ CrashLogger.w("Exception in onReceivedHttpError",t);}catch(Throwable ignored){} }
             }
 
-            // SSL errors: log details. Do NOT proceed by default.
             @Override
-            public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
-                try {
-                    String s = "onReceivedSslError: primaryError=" + error.getPrimaryError()
-                            + " url=" + (view != null ? view.getUrl() : "(unknown)")
-                            + " certificates=" + (error.getCertificate() != null ? "present" : "null");
-                    Log.w(TAG, s);
-                    try { CrashLogger.w(s, null); } catch (Throwable ignored) {}
-                } catch (Throwable t) {
-                    Log.w(TAG, "Exception in onReceivedSslError", t);
-                    try { CrashLogger.w("Exception in onReceivedSslError", t); } catch (Throwable ignored) {}
-                }
-
-                // NOTE: For quick local testing only you can allow localhost by:
-                // if (view.getUrl() != null && (view.getUrl().contains("127.0.0.1") || view.getUrl().contains("localhost"))) {
-                //     handler.proceed(); // insecure: only for debugging!
-                // } else {
-                //     handler.cancel();
-                // }
-                handler.cancel(); // default: cancel for security
+            public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error){
+                try{
+                    String s = "onReceivedSslError: primaryError="+error.getPrimaryError()+" url="+(view!=null?view.getUrl():"(unknown)");
+                    Log.w(TAG,s); try{ CrashLogger.w(s,null);}catch(Throwable ignored){}
+                }catch(Throwable t){ Log.w(TAG,"Exception in onReceivedSslError",t); try{ CrashLogger.w("Exception in onReceivedSslError",t);}catch(Throwable ignored){} }
+                handler.cancel();
             }
         });
 
-        // Start local HTTP server to serve assets
+        // Start server
         try {
             serverPort = findFreePort();
             server = new LocalAssetsServer(serverPort, getAssets());
             server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
             String started = "LocalAssetsServer started at http://127.0.0.1:" + serverPort + " serving assets/";
-            Log.i(TAG, started);
-            try { CrashLogger.i(started); } catch (Throwable ignored) {}
-            // load root (/) when server available
+            Log.i(TAG, started); try{ CrashLogger.i(started);}catch(Throwable ignored){}
             webView.loadUrl("http://127.0.0.1:" + serverPort + "/");
         } catch (IOException e) {
             String warn = "Failed to start LocalAssetsServer (fallback to file://): " + e.getMessage();
-            Log.w(TAG, warn, e);
-            try { CrashLogger.w(warn, e); } catch (Throwable ignored) {}
-            server = null;
-            serverPort = -1;
+            Log.w(TAG,warn,e); try{ CrashLogger.w(warn,e);}catch(Throwable ignored){}
+            server=null; serverPort=-1;
             webView.loadUrl("file:///android_asset/gjw.html");
         } catch (Throwable t) {
             String warn = "Unexpected error starting LocalAssetsServer, fallback to file://";
-            Log.w(TAG, warn, t);
-            try { CrashLogger.err(warn, t); } catch (Throwable ignored) {}
-            server = null;
-            serverPort = -1;
+            Log.w(TAG,warn,t); try{ CrashLogger.err(warn,t);}catch(Throwable ignored){}
+            server=null; serverPort=-1;
             webView.loadUrl("file:///android_asset/gjw.html");
         }
     }
 
     @Override
-    protected void onDestroy() {
+    protected void onDestroy(){
         try { CrashLogger.i("LauncherActivity.onDestroy"); } catch (Throwable ignored) {}
-        if (webView != null) {
-            webView.destroy();
-            webView = null;
-        }
-        if (server != null) {
-            try {
-                server.stop();
-                String stopped = "LocalAssetsServer stopped.";
-                Log.i(TAG, stopped);
-                try { CrashLogger.i(stopped); } catch (Throwable ignored) {}
-            } catch (Throwable t) {
-                Log.e(TAG, "Error stopping server", t);
-                try { CrashLogger.err("Error stopping server", t); } catch (Throwable ignored) {}
-            }
-            server = null;
+        if (webView!=null){ webView.destroy(); webView=null; }
+        if (server!=null){
+            try{ server.stop(); String stopped="LocalAssetsServer stopped."; Log.i(TAG,stopped); try{ CrashLogger.i(stopped);}catch(Throwable ignored){} }catch(Throwable t){ Log.e(TAG,"Error stopping server",t); try{ CrashLogger.err("Error stopping server",t);}catch(Throwable ignored){} }
+            server=null;
         }
         super.onDestroy();
     }
 
     private int findFreePort() throws IOException {
-        // bind explicitly on loopback to avoid EACCES on some devices/ROMs
         java.net.InetAddress loopback = java.net.InetAddress.getByName("127.0.0.1");
-        try (ServerSocket socket = new ServerSocket(0, 0, loopback)) {
-            socket.setReuseAddress(true);
-            return socket.getLocalPort();
-        }
+        try (ServerSocket socket = new ServerSocket(0,0,loopback)) { socket.setReuseAddress(true); return socket.getLocalPort(); }
     }
 
-    // Small LocalAssetsServer kept as inner class for convenience; you may split to its own file.
+    // LocalAssetsServer (内置) —— 在返回 HTML 时注入 LOG_BRIDGE_SNIPPET
     public static class LocalAssetsServer extends NanoHTTPD {
         private static final String TAG2 = "LocalAssetsServer";
         private final AssetManager assets;
@@ -306,7 +241,7 @@ public class LauncherActivity extends AppCompatActivity {
             super("127.0.0.1", port);
             this.assets = assets;
             Log.d(TAG2, "Constructed LocalAssetsServer for port " + port);
-            try { CrashLogger.i("Constructed LocalAssetsServer for port " + port); } catch (Throwable ignored) {}
+            try{ CrashLogger.i("Constructed LocalAssetsServer for port " + port); }catch(Throwable ignored){}
         }
 
         @Override
@@ -323,14 +258,14 @@ public class LauncherActivity extends AppCompatActivity {
             }
 
             try {
-                // special shim path
+                // shim path
                 if ("/__shim__/id-shim.js".equals("/" + path)) {
                     InputStream in = assets.open("id-shim.js");
                     CrashLogger.i("Serving id-shim.js");
                     return newChunkedResponse(Response.Status.OK, "application/javascript", in);
                 }
 
-                // handle favicon specially to avoid 404 user-visible errors
+                // favicon handling (保持之前逻辑)
                 if ("favicon.ico".equalsIgnoreCase(path) || "favicon.png".equalsIgnoreCase(path)) {
                     try {
                         InputStream inFav = assets.open(path);
@@ -346,14 +281,29 @@ public class LauncherActivity extends AppCompatActivity {
                 }
 
                 InputStream is = assets.open(path);
-                if (path.endsWith("index.html")) {
+
+                // HTML 注入位置：对 gjw.html / index.html / *.html 注入日志桥
+                if (path.endsWith(".html") || path.endsWith(".htm")) {
                     String html = readAll(is, "UTF-8");
-                    html = html.replace(
-                            "<script type=\"text/javascript\" src=\"webjs.js\"></script>",
-                            "<script type=\"text/javascript\" src=\"/__shim__/id-shim.js\"></script>\n" +
-                                    "<script type=\"text/javascript\" src=\"webjs.js\"></script>"
-                    );
-                    CrashLogger.i("Serving modified index.html (shim injected)");
+                    // 在 </head> 前插入日志桥，如果没有 head 则放到开头
+                    if (html.contains("</head>")) {
+                        html = html.replaceFirst("(?i)</head>", LOG_BRIDGE_SNIPPET + "</head>");
+                    } else if (html.contains("<body")) {
+                        html = html.replaceFirst("(?i)<body", LOG_BRIDGE_SNIPPET + "<body");
+                    } else {
+                        html = LOG_BRIDGE_SNIPPET + html;
+                    }
+                    // 还保留对 index.html 的 shim 注入（不冲突）
+                    if (path.endsWith("index.html")) {
+                        html = html.replace(
+                                "<script type=\"text/javascript\" src=\"webjs.js\"></script>",
+                                "<script type=\"text/javascript\" src=\"/__shim__/id-shim.js\"></script>\n" +
+                                        "<script type=\"text/javascript\" src=\"webjs.js\"></script>"
+                        );
+                        CrashLogger.i("Serving modified index.html (shim injected)");
+                    } else {
+                        CrashLogger.i("Serving modified HTML (log bridge injected) for: " + path);
+                    }
                     Response r = newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", html);
                     r.addHeader("Access-Control-Allow-Origin", "*");
                     r.addHeader("Cache-Control", "no-cache");
