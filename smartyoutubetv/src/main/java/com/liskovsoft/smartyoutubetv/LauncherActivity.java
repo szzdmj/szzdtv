@@ -21,6 +21,7 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.liskovsoft.smartyoutubetv.player.PlayerActivity;
+import com.szzdmj.nanohttpd.CrashLogger;
 import fi.iki.elonen.NanoHTTPD;
 
 import java.io.IOException;
@@ -29,16 +30,12 @@ import java.net.ServerSocket;
 import java.util.Locale;
 
 /**
- * LauncherActivity with improved WebView debugging and asset-based fallback for JS files.
+ * LauncherActivity
  *
- * - Enables file access & universal access from file URLs
- * - Logs JS console messages to Android log
- * - Intercepts requests for common JS files and serves them from assets if present
- * - For playable links, forwards to PlayerActivity
- *
- * Additionally this version starts a tiny local HTTP server (NanoHTTPD) that serves files from
- * assets/ so we can load pages via http://127.0.0.1:<port>/gjw.html which matches expectations
- * for ServiceWorker, module scripts and correct Content-Type headers.
+ * - Starts a small local HTTP server that serves assets (NanoHTTPD)
+ * - Logs important events to CrashLogger (internal + external file)
+ * - Loads http://127.0.0.1:PORT/gjw.html when server available; falls back to file:///android_asset/gjw.html
+ * - Keeps existing WebView interception for .js assets from APK assets
  */
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
@@ -51,6 +48,14 @@ public class LauncherActivity extends AppCompatActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // Init crash logger (writes to internal and external files)
+        try {
+            CrashLogger.init(this);
+            CrashLogger.i("LauncherActivity.onCreate");
+        } catch (Throwable t) {
+            Log.w(TAG, "CrashLogger.init failed", t);
+        }
+
         webView = new WebView(this);
         setContentView(webView);
 
@@ -60,13 +65,11 @@ public class LauncherActivity extends AppCompatActivity {
         ws.setAllowFileAccess(true);
         ws.setAllowContentAccess(true);
 
-        // Allow file:// access to other file:// and http(s) resources (for debugging / local assets)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
             ws.setAllowFileAccessFromFileURLs(true);
             ws.setAllowUniversalAccessFromFileURLs(true);
         }
 
-        // Optional tuning
         ws.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         webView.setWebContentsDebuggingEnabled(true);
 
@@ -75,19 +78,20 @@ public class LauncherActivity extends AppCompatActivity {
             @JavascriptInterface
             public void log(String msg) {
                 Log.d(TAG, "JS: " + msg);
+                try { CrashLogger.i("JS: " + msg); } catch (Throwable ignored) {}
             }
         }, "Android");
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
-                // Forward JS console messages to Android logcat
                 String msg = String.format(Locale.US, "JSConsole: %s (%s:%d) level=%s",
                         consoleMessage.message(),
                         consoleMessage.sourceId(),
                         consoleMessage.lineNumber(),
                         consoleMessage.messageLevel().name());
                 Log.d(TAG, msg);
+                try { CrashLogger.i(msg); } catch (Throwable ignored) {}
                 return super.onConsoleMessage(consoleMessage);
             }
         });
@@ -107,7 +111,6 @@ public class LauncherActivity extends AppCompatActivity {
             private boolean handleUrl(String url) {
                 try {
                     if (url == null) return false;
-                    // if it's a video link, hand off to player
                     if (url.matches("(?i).+\\.(mp4|m3u8|webm)$") || url.contains("youtube.com") || url.contains("youtu.be")) {
                         Intent i = PlayerActivity.createIntent(LauncherActivity.this, Uri.parse(url));
                         startActivity(i);
@@ -116,13 +119,13 @@ public class LauncherActivity extends AppCompatActivity {
                     return false;
                 } catch (Throwable t) {
                     Log.e(TAG, "handleUrl failed", t);
+                    try { CrashLogger.err("handleUrl failed", t); } catch (Throwable ignored) {}
                     return false;
                 }
             }
 
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                // Try to respond from assets when a .js is requested and asset exists locally.
                 String url = request.getUrl().toString();
                 return tryServeAssetForUrl(url);
             }
@@ -136,20 +139,16 @@ public class LauncherActivity extends AppCompatActivity {
                 try {
                     if (url == null) return null;
                     String lower = url.toLowerCase(Locale.ROOT);
-
-                    // If requesting a JS filename (common: webjs.js), try to return it from assets if present.
                     if (lower.endsWith(".js")) {
-                        // Extract filename
                         int idx = url.lastIndexOf('/');
                         String filename = idx >= 0 ? url.substring(idx + 1) : url;
-                        // Normalize: in assets it's expected at root or same folder
                         String assetPath = filename;
                         Log.d(TAG, "Intercept request for JS: " + url + " -> try asset: " + assetPath);
+                        try { CrashLogger.i("Intercept request for JS: " + url + " -> " + assetPath); } catch (Throwable ignored) {}
                         InputStream is = null;
                         try {
                             is = getAssets().open(assetPath);
                         } catch (IOException ignored) {
-                            // try common subpaths
                             try {
                                 is = getAssets().open("js/" + assetPath);
                             } catch (IOException ignored2) {
@@ -162,26 +161,32 @@ public class LauncherActivity extends AppCompatActivity {
                     }
                 } catch (Throwable t) {
                     Log.w(TAG, "tryServeAssetForUrl failed for " + url, t);
+                    try { CrashLogger.w("tryServeAssetForUrl failed for " + url, t); } catch (Throwable ignored) {}
                 }
                 return null;
             }
         });
 
-        // Start a small local HTTP server that serves assets and then load gjw.html via http://127.0.0.1:PORT/gjw.html
-        // If the server cannot be started, fall back to file:///android_asset/gjw.html
+        // Start local HTTP server to serve assets over HTTP
         try {
             serverPort = findFreePort();
             server = new LocalAssetsServer(serverPort, getAssets());
             server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
-            Log.i(TAG, "LocalAssetsServer started at http://127.0.0.1:" + serverPort + " serving assets/");
+            String started = "LocalAssetsServer started at http://127.0.0.1:" + serverPort + " serving assets/";
+            Log.i(TAG, started);
+            try { CrashLogger.i(started); } catch (Throwable ignored) {}
             webView.loadUrl("http://127.0.0.1:" + serverPort + "/gjw.html");
         } catch (IOException e) {
-            Log.w(TAG, "Failed to start LocalAssetsServer (will fallback to file:///): " + e.getMessage(), e);
+            String warn = "Failed to start LocalAssetsServer (fallback to file://): " + e.getMessage();
+            Log.w(TAG, warn, e);
+            try { CrashLogger.w(warn, e); } catch (Throwable ignored) {}
             server = null;
             serverPort = -1;
             webView.loadUrl("file:///android_asset/gjw.html");
         } catch (Throwable t) {
-            Log.w(TAG, "Unexpected error starting LocalAssetsServer, fallback to file://", t);
+            String warn = "Unexpected error starting LocalAssetsServer, fallback to file://";
+            Log.w(TAG, warn, t);
+            try { CrashLogger.err(warn, t); } catch (Throwable ignored) {}
             server = null;
             serverPort = -1;
             webView.loadUrl("file:///android_asset/gjw.html");
@@ -190,21 +195,26 @@ public class LauncherActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
-        super.onDestroy();
+        try { CrashLogger.i("LauncherActivity.onDestroy"); } catch (Throwable ignored) {}
         if (webView != null) {
             webView.destroy();
             webView = null;
         }
         if (server != null) {
-            server.stop();
-            Log.i(TAG, "LocalAssetsServer stopped.");
+            try {
+                server.stop();
+                String stopped = "LocalAssetsServer stopped.";
+                Log.i(TAG, stopped);
+                try { CrashLogger.i(stopped); } catch (Throwable ignored) {}
+            } catch (Throwable t) {
+                Log.e(TAG, "Error stopping server", t);
+                try { CrashLogger.err("Error stopping server", t); } catch (Throwable ignored) {}
+            }
             server = null;
         }
+        super.onDestroy();
     }
 
-    /**
-     * Find a free ephemeral port by creating a ServerSocket on port 0 then closing it and returning the port.
-     */
     private int findFreePort() throws IOException {
         try (ServerSocket socket = new ServerSocket(0)) {
             socket.setReuseAddress(true);
@@ -212,60 +222,84 @@ public class LauncherActivity extends AppCompatActivity {
         }
     }
 
-    /**
-     * Very small NanoHTTPD based server that serves files from assets/ .
-     * It returns appropriate Content-Type headers for common types and a simple 404 when missing.
-     *
-     * Note: This implementation intentionally keeps complexity low. If you need Range support (for
-     * media seeking) or advanced caching/headers, extend this class accordingly.
-     */
+    // LocalAssetsServer is now a full class in its own file; kept inner for backward compatibility if needed.
     private static class LocalAssetsServer extends NanoHTTPD {
+        private static final String TAG2 = "LocalAssetsServer";
         private final AssetManager assets;
 
-        public LocalAssetsServer(int port, AssetManager assets) {
+        public LocalAssetsServer(int port, AssetManager assets) throws IOException {
             super(port);
             this.assets = assets;
+            Log.d(TAG2, "Constructed LocalAssetsServer for port " + port);
+            try { CrashLogger.i("Constructed LocalAssetsServer for port " + port); } catch (Throwable ignored) {}
         }
 
         @Override
         public Response serve(IHTTPSession session) {
             String uri = session.getUri();
-            if (uri == null || uri.length() == 0 || uri.equals("/")) {
-                uri = "/gjw.html";
-            }
+            String remote = session.getHeaders() != null ? session.getHeaders().get("remote-addr") : null;
+            Log.d(TAG2, "Incoming request: uri=" + uri + ", remote=" + remote + ", method=" + session.getMethod());
+            try { CrashLogger.i("HTTP request: " + session.getMethod() + " " + uri + " remote=" + remote); } catch (Throwable ignored) {}
+            if (uri == null || uri.length() == 0 || uri.equals("/")) uri = "/gjw.html";
             String path = uri.startsWith("/") ? uri.substring(1) : uri;
-            // prevent directory traversal
             if (path.contains("..")) {
+                try { CrashLogger.w("Forbidden path traversal: " + path, null); } catch (Throwable ignored) {}
                 return newFixedLengthResponse(Response.Status.FORBIDDEN, "text/plain", "Forbidden");
             }
 
             try {
                 InputStream is = assets.open(path);
-                String ext = MimeTypeMap.getFileExtensionFromUrl(path);
-                String mime = null;
-                if (ext != null && ext.length() > 0) {
-                    mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.toLowerCase(Locale.ROOT));
+                // Inject shim if serving index.html (preserve behavior from example)
+                if (path.endsWith("index.html")) {
+                    String html = readAll(is, "UTF-8");
+                    html = html.replace(
+                        "<script type=\"text/javascript\" src=\"webjs.js\"></script>",
+                        "<script type=\"text/javascript\" src=\"/__shim__/id-shim.js\"></script>\n" +
+                        "<script type=\"text/javascript\" src=\"webjs.js\"></script>"
+                    );
+                    CrashLogger.i("Serving modified index.html (shim injected)");
+                    Response r = newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", html);
+                    r.addHeader("Access-Control-Allow-Origin", "*");
+                    r.addHeader("Cache-Control", "no-cache");
+                    return r;
                 }
-                if (mime == null) {
-                    // fallback common mappings
-                    if (path.endsWith(".js")) mime = "application/javascript";
-                    else if (path.endsWith(".html")) mime = "text/html; charset=utf-8";
-                    else if (path.endsWith(".css")) mime = "text/css";
-                    else if (path.endsWith(".json")) mime = "application/json";
-                    else if (path.endsWith(".wasm")) mime = "application/wasm";
-                    else if (path.endsWith(".mp4")) mime = "video/mp4";
-                    else mime = "application/octet-stream";
-                }
-
-                Response r = newChunkedResponse(Response.Status.OK, mime, is);
-                // Allow CORS for debugging or remote devtools to fetch resources
-                r.addHeader("Access-Control-Allow-Origin", "*");
-                r.addHeader("Cache-Control", "no-cache");
-                return r;
+                String mime = guessMime(path);
+                CrashLogger.i("Serving asset: " + path + " as " + mime);
+                Response res = newChunkedResponse(Response.Status.OK, mime, is);
+                res.addHeader("Access-Control-Allow-Origin", "*");
+                res.addHeader("Cache-Control", "no-cache");
+                return res;
             } catch (IOException e) {
-                // not found in assets
+                Log.w(TAG2, "Asset not found: " + path);
+                try { CrashLogger.w("Asset not found: " + path, e); } catch (Throwable ignored) {}
                 return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found: " + path);
+            } catch (Throwable t) {
+                Log.e(TAG2, "Serve exception for " + path, t);
+                try { CrashLogger.err("Serve exception for " + path, t); } catch (Throwable ignored) {}
+                return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", "Internal");
             }
+        }
+
+        private static String guessMime(String path) {
+            String lower = path.toLowerCase(Locale.ROOT);
+            if (lower.endsWith(".html") || lower.endsWith(".htm")) return "text/html; charset=utf-8";
+            if (lower.endsWith(".js")) return "application/javascript; charset=utf-8";
+            if (lower.endsWith(".css")) return "text/css; charset=utf-8";
+            if (lower.endsWith(".json")) return "application/json; charset=utf-8";
+            if (lower.endsWith(".png")) return "image/png";
+            if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+            if (lower.endsWith(".mp4")) return "video/mp4";
+            if (lower.endsWith(".m3u8")) return "application/vnd.apple.mpegurl";
+            if (lower.endsWith(".ts")) return "video/mp2t";
+            return "application/octet-stream";
+        }
+
+        private static String readAll(InputStream in, String enc) throws IOException {
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+            return bos.toString(enc);
         }
     }
 }
