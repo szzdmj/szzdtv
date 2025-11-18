@@ -67,7 +67,103 @@ public class LauncherActivity extends AppCompatActivity {
     private volatile String lastLaunchedUrl = null;
     private volatile long lastLaunchTs = 0;
     private static final long LAUNCH_DEBOUNCE_MS = 1500;
+// Insert into LocalAssetsServer.serve(...) near the top, before trying assets.open(path)
+// Handles requests like: /_proxy?u=<url>
+if (path.startsWith("_proxy")) {
+    // parse query param 'u' (encoded URL)
+    Map<String, String> params = session.getParms();
+    String encoded = params.get("u");
+    if (encoded == null || encoded.length() == 0) {
+        return newFixedLengthResponse(Response.Status.BAD_REQUEST, "text/plain", "Missing u parameter");
+    }
+    String remoteUrl;
+    try {
+        remoteUrl = java.net.URLDecoder.decode(encoded, "UTF-8");
+    } catch (Exception e) {
+        remoteUrl = encoded;
+    }
+    CrashLogger.i("Proxying remote URL: " + remoteUrl);
+    // Fetch remote with permissive handling helper (will try strict first, then permissive if allowed)
+    ProxyFetchResult pf = fetchRemoteForProxy(remoteUrl);
+    if (pf == null || pf.stream == null) {
+        return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found: " + remoteUrl);
+    }
+    // Build response using returned content-type, add CORS header
+    Response r = newChunkedResponse(Response.Status.OK, pf.contentType, pf.stream);
+    r.addHeader("Access-Control-Allow-Origin", "*");
+    r.addHeader("Cache-Control", "no-cache");
+    return r;
+}
 
+// Helper class for proxy fetch result (add inside LocalAssetsServer class)
+private static class ProxyFetchResult {
+    InputStream stream;
+    String contentType;
+    ProxyFetchResult(InputStream s, String ct) { stream = s; contentType = ct; }
+}
+
+// Helper method: fetch remote URL with strict then permissive fallback (add inside LocalAssetsServer class)
+private ProxyFetchResult fetchRemoteForProxy(String remoteUrl) {
+    java.net.HttpURLConnection conn = null;
+    try {
+        java.net.URL u = new java.net.URL(remoteUrl);
+        conn = (java.net.HttpURLConnection) u.openConnection();
+        conn.setConnectTimeout(4000);
+        conn.setReadTimeout(6000);
+        conn.setInstanceFollowRedirects(true);
+        int code = conn.getResponseCode();
+        if (code >= 200 && code < 300) {
+            String ct = conn.getContentType();
+            if (ct == null) ct = "application/octet-stream";
+            InputStream is = conn.getInputStream();
+            return new ProxyFetchResult(is, ct);
+        } else {
+            CrashLogger.i("Proxy strict fetch returned non-2xx: " + code + " for " + remoteUrl);
+        }
+    } catch (Throwable strictEx) {
+        CrashLogger.w("Proxy strict fetch failed for " + remoteUrl + ": " + strictEx, strictEx);
+    } finally {
+        // Do not disconnect here if we already obtained stream (we return stream)
+        // but if conn is still non-null and not streaming, disconnect to free resources.
+    }
+
+    // permissive fallback (trust-all) — USE WITH CAUTION; we follow your INSECURE_HTTPS_FALLBACK decision
+    try {
+        // Only attempt permissive if configured to allow (keeps parity with LauncherActivity flags)
+        boolean tryInsecure = INSECURE_HTTPS_FALLBACK;
+        if (!tryInsecure) return null;
+
+        javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
+        javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[] {
+            new javax.net.ssl.X509TrustManager() {
+                public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+                public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
+                public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
+            }
+        };
+        sc.init(null, trustAllCerts, new java.security.SecureRandom());
+
+        javax.net.ssl.HttpsURLConnection httpsConn = (javax.net.ssl.HttpsURLConnection) new java.net.URL(remoteUrl).openConnection();
+        httpsConn.setSSLSocketFactory(sc.getSocketFactory());
+        httpsConn.setHostnameVerifier((hostname, session) -> true);
+        httpsConn.setConnectTimeout(4000);
+        httpsConn.setReadTimeout(6000);
+        httpsConn.setInstanceFollowRedirects(true);
+        int code2 = httpsConn.getResponseCode();
+        if (code2 >= 200 && code2 < 300) {
+            String ct2 = httpsConn.getContentType();
+            if (ct2 == null) ct2 = "application/octet-stream";
+            InputStream is2 = httpsConn.getInputStream();
+            CrashLogger.i("Proxy permissive fetch success for " + remoteUrl);
+            return new ProxyFetchResult(is2, ct2);
+        } else {
+            CrashLogger.i("Proxy permissive returned non-2xx: " + code2 + " for " + remoteUrl);
+        }
+    } catch (Throwable insecureEx) {
+        CrashLogger.w("Proxy permissive fetch failed for " + remoteUrl, insecureEx);
+    }
+    return null;
+}
     // HTTPS fallback settings (KEEP unchanged per your note)
     private static final boolean INSECURE_HTTPS_FALLBACK = true; // set false for production
     private static final String[] HTTPS_WHITELIST_SUFFIXES = new String[] {
