@@ -20,7 +20,7 @@ public class LocalAssetsServer extends NanoHTTPD {
     private final AssetManager assets;
 
     public LocalAssetsServer(int port, AssetManager assets) throws IOException {
-        super(port);
+    super("127.0.0.1", port); // bind explicitly to loopback
         this.assets = assets;
         Log.d(TAG, "Constructed LocalAssetsServer for port " + port);
         try { CrashLogger.i("Constructed LocalAssetsServer for port " + port); } catch (Throwable ignored) {}
