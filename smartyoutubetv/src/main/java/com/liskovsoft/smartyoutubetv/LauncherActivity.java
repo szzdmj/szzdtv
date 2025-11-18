@@ -863,4 +863,180 @@ public class LauncherActivity extends AppCompatActivity {
                     if (is2 == null) return null;
                     String ct2 = httpsConn.getContentType();
                     Map<String,String> remoteHeaders2 = copyHeadersFromConnection(httpsConn);
-                    return new ProxyFetchResult(is2, ct
+                    return new ProxyFetchResult(is2, ct2, code2, remoteHeaders2);
+                }
+            } catch (Throwable ex) {
+                CrashLogger.w("Proxy combined-CA fetch failed for " + remoteUrl, ex);
+            }
+
+            // 3) Fallback trust-all (if enabled)
+            if (INSECURE_HTTPS_FALLBACK) {
+                try {
+                    SSLContext sc = SSLContext.getInstance("TLS");
+                    javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[] {
+                        new javax.net.ssl.X509TrustManager() {
+                            public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+                            public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
+                            public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
+                        }
+                    };
+                    sc.init(null, trustAllCerts, new java.security.SecureRandom());
+                    javax.net.ssl.HttpsURLConnection httpsConn = (javax.net.ssl.HttpsURLConnection) new java.net.URL(remoteUrl).openConnection();
+                    httpsConn.setSSLSocketFactory(sc.getSocketFactory());
+                    httpsConn.setHostnameVerifier((hostname, session) -> true);
+                    httpsConn.setConnectTimeout(8000);
+                    httpsConn.setReadTimeout(10000);
+                    httpsConn.setInstanceFollowRedirects(true);
+                    if (incomingRequestHeaders != null) {
+                        for (Map.Entry<String,String> e : incomingRequestHeaders.entrySet()) {
+                            String k = e.getKey();
+                            String v = e.getValue();
+                            if (k == null || v == null) continue;
+                            if ("host".equalsIgnoreCase(k) || "connection".equalsIgnoreCase(k)) continue;
+                            httpsConn.setRequestProperty(k, v);
+                        }
+                    }
+                    int code3 = httpsConn.getResponseCode();
+                    InputStream is3 = (code3 >= 400) ? httpsConn.getErrorStream() : httpsConn.getInputStream();
+                    if (is3 == null) return null;
+                    String ct3 = httpsConn.getContentType();
+                    Map<String,String> remoteHeaders3 = copyHeadersFromConnection(httpsConn);
+                    return new ProxyFetchResult(is3, ct3, code3, remoteHeaders3);
+                } catch (Throwable insecureEx) {
+                    CrashLogger.w("Proxy permissive fetch failed for " + remoteUrl, insecureEx);
+                }
+            }
+
+            return null;
+        }
+
+        // Copy response headers from HttpURLConnection into a simple Map (joining multiple values)
+        private static Map<String,String> copyHeadersFromConnection(java.net.HttpURLConnection conn) {
+            Map<String, String> map = new HashMap<>();
+            for (Map.Entry<String, List<String>> hh : conn.getHeaderFields().entrySet()) {
+                String hk = hh.getKey();
+                if (hk == null) continue;
+                List<String> vals = hh.getValue();
+                if (vals == null || vals.isEmpty()) continue;
+                map.put(hk, String.join(", ", vals));
+            }
+            return map;
+        }
+
+        // create combined trust manager using this.assets
+        private X509TrustManager createCombinedTrustManagerFromAssetsLocal() {
+            try {
+                // 1) system TM
+                TrustManagerFactory systemTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+                systemTmf.init((KeyStore) null);
+                X509TrustManager systemTm = null;
+                for (TrustManager tm : systemTmf.getTrustManagers()) {
+                    if (tm instanceof X509TrustManager) { systemTm = (X509TrustManager) tm; break; }
+                }
+
+                // 2) load custom CA certs from this.assets/certs
+                String[] certFiles = null;
+                try { certFiles = assets.list("certs"); } catch (IOException ioe) { certFiles = null; }
+                if (certFiles == null || certFiles.length == 0) return null;
+
+                CertificateFactory cf = CertificateFactory.getInstance("X.509");
+                KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
+                ks.load(null, null);
+                int idx = 0;
+                int loaded = 0;
+                for (String fname : certFiles) {
+                    if (fname == null || fname.trim().isEmpty()) continue;
+                    InputStream in = null;
+                    try {
+                        in = assets.open("certs/" + fname);
+                        BufferedInputStream bis = new BufferedInputStream(in);
+                        while (bis.available() > 0) {
+                            Certificate cert = cf.generateCertificate(bis);
+                            String alias = "ca" + (idx++);
+                            ks.setCertificateEntry(alias, cert);
+                            loaded++;
+                        }
+                    } catch (Throwable e) {
+                        try { CrashLogger.w("Failed to load cert " + fname + ": " + e, e); } catch (Throwable ignored) {}
+                    } finally {
+                        try { if (in != null) in.close(); } catch (Throwable ignored) {}
+                    }
+                }
+                if (loaded == 0) return null;
+
+                TrustManagerFactory customTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+                customTmf.init(ks);
+                X509TrustManager customTm = null;
+                for (TrustManager tm : customTmf.getTrustManagers()) {
+                    if (tm instanceof X509TrustManager) { customTm = (X509TrustManager) tm; break; }
+                }
+
+                final X509TrustManager sys = systemTm;
+                final X509TrustManager cus = customTm;
+
+                X509TrustManager combined = new X509TrustManager() {
+                    @Override
+                    public X509Certificate[] getAcceptedIssuers() {
+                        List<X509Certificate> list = new ArrayList<>();
+                        if (sys != null) list.addAll(Arrays.asList(sys.getAcceptedIssuers()));
+                        if (cus != null) list.addAll(Arrays.asList(cus.getAcceptedIssuers()));
+                        return list.toArray(new X509Certificate[list.size()]);
+                    }
+                    @Override
+                    public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+                        if (sys != null) {
+                            try { sys.checkClientTrusted(chain, authType); return; } catch (CertificateException ignored) {}
+                        }
+                        if (cus != null) { cus.checkClientTrusted(chain, authType); return; }
+                        throw new CertificateException("Client cert not trusted by system or custom CAs");
+                    }
+                    @Override
+                    public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+                        if (sys != null) {
+                            try { sys.checkServerTrusted(chain, authType); return; } catch (CertificateException ignored) {}
+                        }
+                        if (cus != null) { cus.checkServerTrusted(chain, authType); return; }
+                        throw new CertificateException("Server cert not trusted by system or custom CAs");
+                    }
+                };
+                try { CrashLogger.i("LocalAssetsServer: Using combined trust managers with " + loaded + " custom CA(s)"); } catch (Throwable ignored) {}
+                return combined;
+            } catch (Throwable t) {
+                try { CrashLogger.w("LocalAssetsServer.createCombinedTrustManagerFromAssetsLocal failed: " + t, t); } catch (Throwable ignored) {}
+                return null;
+            }
+        }
+
+        // static helper for mime guessing
+        static String guessMimeStatic(String path) {
+            String lower = path.toLowerCase(Locale.ROOT);
+            if (lower.endsWith(".html") || lower.endsWith(".htm")) return "text/html; charset=utf-8";
+            if (lower.endsWith(".js")) return "application/javascript; charset=utf-8";
+            if (lower.endsWith(".css")) return "text/css; charset=utf-8";
+            if (lower.endsWith(".json")) return "application/json; charset=utf-8";
+            if (lower.endsWith(".png")) return "image/png";
+            if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+            if (lower.endsWith(".mp4")) return "video/mp4";
+            if (lower.endsWith(".m3u8")) return "application/vnd.apple.mpegurl";
+            if (lower.endsWith(".ts")) return "video/mp2t";
+            return "application/octet-stream";
+        }
+
+        private static String readAll(InputStream in, String enc) throws IOException {
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+            return bos.toString(enc);
+        }
+    } // end LocalAssetsServer
+
+    // findFreePort placed inside LauncherActivity class (after LocalAssetsServer) to avoid compilation ordering issues
+    private int findFreePort() throws IOException {
+        java.net.InetAddress loopback = java.net.InetAddress.getByName("127.0.0.1");
+        try (ServerSocket socket = new ServerSocket(0, 0, loopback)) {
+            socket.setReuseAddress(true);
+            return socket.getLocalPort();
+        }
+    }
+}
