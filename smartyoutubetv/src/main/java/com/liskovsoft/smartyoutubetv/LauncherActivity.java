@@ -2,145 +2,6 @@ package com.liskovsoft.smartyoutubetv;
 
 import android.annotation.SuppressLint;
 import android.content.Intent;
-import android.net.Uri;
-import android.os.Build;
-import android.os.Bundle;
-import android.util.Log;
-import android.webkit.ConsoleMessage;
-import android.webkit.JavascriptInterface;
-import android.webkit.WebChromeClient;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebResourceResponse;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
-
-import androidx.annotation.Nullable;
-import androidx.appcompat.app.AppCompatActivity;
-
-import com.liskovsoft.smartyoutubetv.player.PlayerActivity;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.Locale;
-
-/**
- * LauncherActivity with improved WebView debugging and asset-based fallback for JS files.
- *
- * - Enables file access & universal access from file URLs
- * - Logs JS console messages to Android log
- * - Intercepts requests for common JS files and serves them from assets if present
- * - For playable links, forwards to PlayerActivity
- */
-// add near top of onCreate, before webView.loadUrl(...)
-int port = 12721;
-LocalAssetsServer server = null;
-try {
-    server = new LocalAssetsServer(port, getAssets());
-    server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
-    Log.i("LocalAssetsServer", "started on http://127.0.0.1:" + port);
-} catch (Exception e) {
-    Log.e("LocalAssetsServer", "failed to start", e);
-}
-public class LauncherActivity extends AppCompatActivity {
-    private static final String TAG = "LauncherActivity";
-    private WebView webView;
-
-    @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
-    @Override
-    protected void onCreate(@Nullable Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-
-        webView = new WebView(this);
-        setContentView(webView);
-
-        WebSettings ws = webView.getSettings();
-        ws.setJavaScriptEnabled(true);
-        ws.setDomStorageEnabled(true);
-        ws.setAllowFileAccess(true);
-        ws.setAllowContentAccess(true);
-
-        // Allow file:// access to other file:// and http(s) resources (for debugging / local assets)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-            ws.setAllowFileAccessFromFileURLs(true);
-            ws.setAllowUniversalAccessFromFileURLs(true);
-        }
-
-        // Optional tuning
-        ws.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        webView.setWebContentsDebuggingEnabled(true);
-
-        // JS -> Android log bridge
-        webView.addJavascriptInterface(new Object() {
-            @JavascriptInterface
-            public void log(String msg) {
-                Log.d(TAG, "JS: " + msg);
-            }
-        }, "Android");
-
-        webView.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
-                // Forward JS console messages to Android logcat
-                String msg = String.format(Locale.US, "JSConsole: %s (%s:%d) level=%s",
-                        consoleMessage.message(),
-                        consoleMessage.sourceId(),
-                        consoleMessage.lineNumber(),
-                        consoleMessage.messageLevel().name());
-                Log.d(TAG, msg);
-                return super.onConsoleMessage(consoleMessage);
-            }
-        });
-
-        webView.setWebViewClient(new WebViewClient() {
-            @Override
-            @SuppressWarnings("deprecation")
-            public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                return handleUrl(url);
-            }
-
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                return handleUrl(request.getUrl().toString());
-            }
-
-            private boolean handleUrl(String url) {
-                try {
-                    if (url == null) return false;
-                    // if it's a video link, hand off to player
-                    if (url.matches("(?i).+\\.(mp4|m3u8|webm)$") || url.contains("youtube.com") || url.contains("youtu.be")) {
-                        Intent i = PlayerActivity.createIntent(LauncherActivity.this, Uri.parse(url));
-                        startActivity(i);
-                        return true;
-                    }
-                    return false;
-                } catch (Throwable t) {
-                    Log.e(TAG, "handleUrl failed", t);
-                    return false;
-                }
-            }
-
-            @Override
-            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                // Try to respond from assets when a .js is requested and asset exists locally.
-                String url = request.getUrl().toString();
-                return tryServeAssetForUrl(url);
-            }
-
-            @Override
-            public WebResourceResponse shouldInterceptRequest(WebView view, String url) {
-                return tryServeAssetForUrl(url);
-            }
-
-            private WebResourceResponse tryServeAssetForUrl(String url) {
-                try {
-                    if (url == null) return null;
-                    String lower = url.toLowerCase(Locale.ROOT);
-
-          package com.liskovsoft.smartyoutubetv;
-
-import android.annotation.SuppressLint;
-import android.content.Intent;
 import android.content.res.AssetManager;
 import android.net.Uri;
 import android.os.Build;
@@ -306,7 +167,7 @@ public class LauncherActivity extends AppCompatActivity {
             }
         });
 
-        // Start local HTTP server to serve assets over HTTP
+        // Start local HTTP server to serve assets
         try {
             serverPort = findFreePort();
             server = new LocalAssetsServer(serverPort, getAssets());
@@ -355,21 +216,21 @@ public class LauncherActivity extends AppCompatActivity {
     }
 
     private int findFreePort() throws IOException {
-    // 在 loopback 上绑定，避免绑定到受限接口导致 EACCES
-    java.net.InetAddress loopback = java.net.InetAddress.getByName("127.0.0.1");
-    try (java.net.ServerSocket socket = new java.net.ServerSocket(0, 0, loopback)) {
+        // bind explicitly on loopback to avoid EACCES on some devices/ROMs
+        java.net.InetAddress loopback = java.net.InetAddress.getByName("127.0.0.1");
+        try (ServerSocket socket = new ServerSocket(0, 0, loopback)) {
             socket.setReuseAddress(true);
             return socket.getLocalPort();
         }
     }
 
-    // LocalAssetsServer is now a full class in its own file; kept inner for backward compatibility if needed.
-    private static class LocalAssetsServer extends NanoHTTPD {
+    // Small LocalAssetsServer kept as inner class for convenience; you may split to its own file.
+    public static class LocalAssetsServer extends NanoHTTPD {
         private static final String TAG2 = "LocalAssetsServer";
         private final AssetManager assets;
 
         public LocalAssetsServer(int port, AssetManager assets) throws IOException {
-            super(port);
+            super("127.0.0.1", port);
             this.assets = assets;
             Log.d(TAG2, "Constructed LocalAssetsServer for port " + port);
             try { CrashLogger.i("Constructed LocalAssetsServer for port " + port); } catch (Throwable ignored) {}
@@ -389,14 +250,20 @@ public class LauncherActivity extends AppCompatActivity {
             }
 
             try {
+                // special shim path
+                if ("/__shim__/id-shim.js".equals("/" + path)) {
+                    InputStream in = assets.open("id-shim.js");
+                    CrashLogger.i("Serving id-shim.js");
+                    return newChunkedResponse(Response.Status.OK, "application/javascript", in);
+                }
+
                 InputStream is = assets.open(path);
-                // Inject shim if serving index.html (preserve behavior from example)
                 if (path.endsWith("index.html")) {
                     String html = readAll(is, "UTF-8");
                     html = html.replace(
-                        "<script type=\"text/javascript\" src=\"webjs.js\"></script>",
-                        "<script type=\"text/javascript\" src=\"/__shim__/id-shim.js\"></script>\n" +
-                        "<script type=\"text/javascript\" src=\"webjs.js\"></script>"
+                            "<script type=\"text/javascript\" src=\"webjs.js\"></script>",
+                            "<script type=\"text/javascript\" src=\"/__shim__/id-shim.js\"></script>\n" +
+                                    "<script type=\"text/javascript\" src=\"webjs.js\"></script>"
                     );
                     CrashLogger.i("Serving modified index.html (shim injected)");
                     Response r = newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", html);
@@ -404,6 +271,7 @@ public class LauncherActivity extends AppCompatActivity {
                     r.addHeader("Cache-Control", "no-cache");
                     return r;
                 }
+
                 String mime = guessMime(path);
                 CrashLogger.i("Serving asset: " + path + " as " + mime);
                 Response res = newChunkedResponse(Response.Status.OK, mime, is);
@@ -441,48 +309,6 @@ public class LauncherActivity extends AppCompatActivity {
             int n;
             while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
             return bos.toString(enc);
-        }
-    }
-}          // If requesting a JS filename (common: webjs.js), try to return it from assets if present.
-                    if (lower.endsWith(".js")) {
-                        // Extract filename
-                        int idx = url.lastIndexOf('/');
-                        String filename = idx >= 0 ? url.substring(idx + 1) : url;
-                        // Normalize: in assets it's expected at root or same folder
-                        String assetPath = filename;
-                        Log.d(TAG, "Intercept request for JS: " + url + " -> try asset: " + assetPath);
-                        InputStream is = null;
-                        try {
-                            is = getAssets().open(assetPath);
-                        } catch (IOException ignored) {
-                            // try common subpaths
-                            try {
-                                is = getAssets().open("js/" + assetPath);
-                            } catch (IOException ignored2) {
-                                is = null;
-                            }
-                        }
-                        if (is != null) {
-                            return new WebResourceResponse("application/javascript", "UTF-8", is);
-                        }
-                    }
-                } catch (Throwable t) {
-                    Log.w(TAG, "tryServeAssetForUrl failed for " + url, t);
-                }
-                return null;
-            }
-        });
-
-        // Load the index page from assets
-        webView.loadUrl("file:///android_asset/gjw.html");
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        if (webView != null) {
-            webView.destroy();
-            webView = null;
         }
     }
 }
