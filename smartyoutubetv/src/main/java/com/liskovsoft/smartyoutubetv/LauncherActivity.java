@@ -6,6 +6,7 @@ import android.content.res.AssetManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Base64;
 import android.util.Log;
 import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
@@ -24,6 +25,7 @@ import com.liskovsoft.smartyoutubetv.player.PlayerActivity;
 import com.szzdmj.nanohttpd.CrashLogger;
 import fi.iki.elonen.NanoHTTPD;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.ServerSocket;
@@ -256,6 +258,25 @@ public class LauncherActivity extends AppCompatActivity {
                     InputStream in = assets.open("id-shim.js");
                     CrashLogger.i("Serving id-shim.js");
                     return newChunkedResponse(Response.Status.OK, "application/javascript", in);
+                }
+
+                // handle favicon specially to avoid 404 user-visible errors
+                if ("favicon.ico".equalsIgnoreCase(path) || "favicon.png".equalsIgnoreCase(path)) {
+                    // try to serve actual asset if present
+                    try {
+                        InputStream inFav = assets.open(path);
+                        CrashLogger.i("Serving favicon from assets: " + path);
+                        return newChunkedResponse(Response.Status.OK, guessMime(path), inFav);
+                    } catch (IOException ignored) {
+                        // fallback: return a 1x1 transparent PNG to avoid "Not Found" UI
+                        try {
+                            CrashLogger.i("favicon not found in assets; returning inline transparent PNG");
+                        } catch (Throwable ignored2) {}
+                        final String ONE_PX_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAAWgmWQ0AAAAASUVORK5CYII=";
+                        byte[] bytes = Base64.decode(ONE_PX_PNG_BASE64, Base64.DEFAULT);
+                        InputStream is = new ByteArrayInputStream(bytes);
+                        return newChunkedResponse(Response.Status.OK, "image/png", is);
+                    }
                 }
 
                 InputStream is = assets.open(path);
