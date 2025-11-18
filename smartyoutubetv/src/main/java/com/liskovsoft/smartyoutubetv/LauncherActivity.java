@@ -38,6 +38,7 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.ServerSocket;
 import java.net.URL;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.security.SecureRandom;
@@ -54,6 +55,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -69,11 +72,11 @@ import javax.net.ssl.X509TrustManager;
  * - Intercepts http(s) requests and prefers secure fetch with support for custom CA bundles in assets/certs/
  * - Adds retry, caching and ensures proxy uses combined CA when possible.
  *
- * Fixes applied:
- * - Fixed caching bug that consumed the original InputStream returned to WebView (causing ERR_FAILED).
- * - Added conservative permissive fallback allowlist (isPermissiveAllowedForUrl).
- * - Chose encoding per MIME (text => UTF-8, binary => null) to avoid misinterpretation.
- * - Improved logging around fetch results for easier debugging.
+ * Notes:
+ * - Only small textual responses (JSON/JS/text) are cached. Media is streamed.
+ * - Caching no longer consumes the stream returned to WebView; we return fresh ByteArrayInputStream for cached textual content.
+ * - Charset from Content-Type is honored when present (e.g. charset=GBK).
+ * - Conservative http->https upgrade is performed for textual cached responses for allowed hosts (see HTTPS_WHITELIST_SUFFIXES).
  */
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
@@ -86,10 +89,13 @@ public class LauncherActivity extends AppCompatActivity {
     private volatile long lastLaunchTs = 0;
     private static final long LAUNCH_DEBOUNCE_MS = 1500;
 
-    // HTTPS fallback settings (keep per your note)
-    private static final boolean INSECURE_HTTPS_FALLBACK = true; // set false for production
+    // HTTPS fallback settings (conservative). Set to false to disable permissive trust-all fallback entirely.
+    private static final boolean INSECURE_HTTPS_FALLBACK = true;
+    // Default whitelist suffixes for permissive usage / http->https rewrite (conservative).
+    // Adjust to your needs. Example: {"s3.amazonaws.com","cloudfront.net"}
     private static final String[] HTTPS_WHITELIST_SUFFIXES = new String[] {
-        // add permitted permissive-host suffixes here, e.g. "s3.amazonaws.com"
+        "s3.amazonaws.com",
+        "cloudfront.net"
     };
 
     // Tracking missing assets (optional helper)
@@ -316,7 +322,7 @@ public class LauncherActivity extends AppCompatActivity {
                 FileInputStream fis = new FileInputStream(f);
                 String mime = guessMimeFromUrl(origUrl);
                 Map<String,String> headers = Collections.singletonMap("Access-Control-Allow-Origin","*");
-                String encoding = (mime.startsWith("text/") || mime.contains("json") || mime.contains("javascript")) ? "UTF-8" : null;
+                String encoding = chooseEncodingForMime(mime);
                 if (Build.VERSION.SDK_INT >= 21) {
                     return new WebResourceResponse(mime, encoding, 200, "OK", headers, fis);
                 } else {
@@ -371,13 +377,15 @@ public class LauncherActivity extends AppCompatActivity {
         return null;
     }
 
-    // Helper: if response is cacheable (small textual), read it fully, write cache and return a new response with fresh stream.
+    // Helper: if response is cacheable (small textual), read it fully, optionally rewrite http->https, write cache and return a new response with fresh stream.
     private WebResourceResponse prepareCacheableResponseAndMaybeCache(WebResourceResponse resp, String origUrl) {
         try {
             if (resp == null) return null;
-            String mime = resp.getMimeType() != null ? resp.getMimeType() : guessMimeFromUrl(origUrl);
-            boolean isTextual = mime.startsWith("application/json") || mime.startsWith("application/javascript") || mime.startsWith("text/");
-            String encoding = chooseEncodingForMime(mime);
+            String contentTypeHeader = resp.getMimeType(); // note: WebResourceResponse.getMimeType may not include charset; we used returned Content-Type earlier when creating resp
+            // In our fetch implementations we passed full Content-Type string as the mime param, so try that first
+            String mimeOrType = contentTypeHeader != null ? contentTypeHeader : guessMimeFromUrl(origUrl);
+            boolean isTextual = mimeOrType.startsWith("application/json") || mimeOrType.startsWith("application/javascript") || mimeOrType.startsWith("text/");
+            String encoding = chooseEncodingForMime(mimeOrType);
             if (!isTextual) {
                 // Non-textual -> do not cache; just return resp as-is.
                 return resp;
@@ -386,10 +394,16 @@ public class LauncherActivity extends AppCompatActivity {
             InputStream in = resp.getData();
             if (in == null) return null;
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            byte[] buf = new byte[8192];
-            int n;
-            while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+            try (InputStream rin = in) {
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = rin.read(buf)) > 0) bos.write(buf, 0, n);
+            }
             byte[] data = bos.toByteArray();
+
+            // Optionally rewrite http:// -> https:// for allowed hosts (textual content only)
+            byte[] rewritten = rewriteHttpToHttpsIfNeeded(data, encoding, origUrl);
+            if (rewritten != null) data = rewritten;
 
             // Write cache file (best-effort)
             try {
@@ -407,13 +421,60 @@ public class LauncherActivity extends AppCompatActivity {
 
             ByteArrayInputStream bis = new ByteArrayInputStream(data);
             if (Build.VERSION.SDK_INT >= 21) {
-                return new WebResourceResponse(mime, encoding, 200, "OK", headers, bis);
+                return new WebResourceResponse(mimeOrType, encoding, 200, "OK", headers, bis);
             } else {
-                return new WebResourceResponse(mime, encoding, bis);
+                return new WebResourceResponse(mimeOrType, encoding, bis);
             }
         } catch (Throwable t) {
             try { CrashLogger.w("prepareCacheableResponseAndMaybeCache failed: " + t, t); } catch (Throwable ignored) {}
             return null;
+        }
+    }
+
+    // Try to conservatively rewrite http://host/... to https://host/... only for allowed hosts.
+    private byte[] rewriteHttpToHttpsIfNeeded(byte[] data, String encoding, String origUrl) {
+        if (data == null || data.length == 0) return data;
+        if (origUrl == null) return data;
+        try {
+            // Only rewrite textual data
+            Charset cs = (encoding != null) ? Charset.forName(encoding) : StandardCharsets.UTF_8;
+            String text = new String(data, cs);
+
+            URL u = new URL(origUrl);
+            String host = u.getHost();
+            if (host == null || host.isEmpty()) return data;
+
+            boolean hostAllowed = false;
+            if (HTTPS_WHITELIST_SUFFIXES != null && HTTPS_WHITELIST_SUFFIXES.length > 0) {
+                for (String suf : HTTPS_WHITELIST_SUFFIXES) {
+                    if (suf != null && !suf.isEmpty() && host.endsWith(suf)) { hostAllowed = true; break; }
+                }
+            } else {
+                if (host.endsWith("s3.amazonaws.com") || host.endsWith("cloudfront.net") || host.contains("localhost")) hostAllowed = true;
+            }
+            if (!hostAllowed) return data;
+
+            // Replace only occurrences that reference the same host (http://host/... or //host/).
+            String hostEsc = Pattern.quote(host);
+            // Replace http://host(:port)?/  -> https://host(:port)?/
+            Pattern p1 = Pattern.compile("http://" + hostEsc + "(?::(\\d+))?/");
+            Matcher m1 = p1.matcher(text);
+            boolean any = m1.find();
+            text = m1.replaceAll("https://" + host + "/");
+
+            // Replace protocol-relative //host/ -> https://host/
+            Pattern p2 = Pattern.compile("(?<!:)/{2}" + hostEsc + "/");
+            Matcher m2 = p2.matcher(text);
+            any = any || m2.find();
+            text = m2.replaceAll("https://" + host + "/");
+
+            if (any) {
+                try { CrashLogger.i("Rewrote http->https for host=" + host + " url=" + origUrl); } catch (Throwable ignored) {}
+            }
+            return text.getBytes(cs);
+        } catch (Throwable t) {
+            try { CrashLogger.w("rewriteHttpToHttpsIfNeeded failed: " + t, t); } catch (Throwable ignored) {}
+            return data;
         }
     }
 
@@ -434,31 +495,47 @@ public class LauncherActivity extends AppCompatActivity {
         }
     }
 
-    // decide encoding: return "UTF-8" for textual mime types, null for binary
-    private String chooseEncodingForMime(String mime) {
-        if (mime == null) return null;
-        String m = mime.toLowerCase(Locale.ROOT);
-        if (m.startsWith("text/") || m.contains("json") || m.contains("javascript") || m.contains("xml")) return "UTF-8";
+    /**
+     * Choose encoding for a Content-Type-like string.
+     * If contentType contains charset=... it is honored. Otherwise heuristics apply.
+     */
+    private String chooseEncodingForMime(String contentType) {
+        if (contentType == null) return null;
+        try {
+            String lower = contentType.toLowerCase(Locale.ROOT);
+            int idx = lower.indexOf("charset=");
+            if (idx >= 0) {
+                String cs = lower.substring(idx + 8).trim();
+                int semi = cs.indexOf(';');
+                if (semi >= 0) cs = cs.substring(0, semi).trim();
+                if (!cs.isEmpty()) {
+                    try {
+                        // return normalized charset name; WebResourceResponse accepts charset names
+                        return cs.toUpperCase(Locale.ROOT);
+                    } catch (Throwable ignored) {}
+                }
+            }
+            if (lower.startsWith("text/") || lower.contains("json") || lower.contains("javascript") || lower.contains("xml")) {
+                return "UTF-8";
+            }
+        } catch (Throwable ignored) {}
         return null;
     }
 
-    // Permissive fallback allowlist — conservative defaults; extend HTTPS_WHITELIST_SUFFIXES if needed.
+    // Permissive fallback allowlist — conservative defaults (see HTTPS_WHITELIST_SUFFIXES).
     private boolean isPermissiveAllowedForUrl(String url) {
         if (!INSECURE_HTTPS_FALLBACK) return false;
         try {
             URL u = new URL(url);
             String host = u.getHost();
             if (host == null) return false;
-            // If whitelist suffixes are provided, require host to match one
             if (HTTPS_WHITELIST_SUFFIXES != null && HTTPS_WHITELIST_SUFFIXES.length > 0) {
                 for (String suf : HTTPS_WHITELIST_SUFFIXES) {
                     if (suf != null && !suf.isEmpty() && host.endsWith(suf)) return true;
                 }
                 return false;
             }
-            // Default conservative allowlist for dev/known hosts — adjust to your needs
             if (host.endsWith(".local") || host.endsWith(".test") || host.contains("localhost") || host.contains("127.0.0.1")) return true;
-            // allow some known S3 fallback domains if project requires (comment/uncomment as needed)
             if (host.endsWith("s3.amazonaws.com") || host.endsWith("cloudfront.net")) return true;
         } catch (Throwable ignored) {}
         return false;
@@ -771,37 +848,36 @@ public class LauncherActivity extends AppCompatActivity {
                 }
                 try { CrashLogger.i("Proxying remote URL: " + remoteUrl); } catch (Throwable ignored) {}
 
-         // Collect incoming request headers to forward (Range, Accept-Encoding, Origin, Referer, etc.)
-         Map<String, String> incoming = session.getHeaders() != null ? session.getHeaders() : Collections.emptyMap();
+                // Collect incoming request headers to forward (Range, Accept-Encoding, Origin, Referer, etc.)
+                Map<String, String> incoming = session.getHeaders() != null ? session.getHeaders() : Collections.emptyMap();
 
-         ProxyFetchResult pf = fetchRemoteForProxy(remoteUrl, incoming);
+                ProxyFetchResult pf = fetchRemoteForProxy(remoteUrl, incoming);
                 if (pf == null || pf.stream == null) {
                     return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found: " + remoteUrl);
                 }
 
-         // Create response with remote status and headers
-         Response.Status status = Response.Status.lookup(pf.statusCode);
-         if (status == null) status = Response.Status.OK; // fallback if unknown
-         Response r = newChunkedResponse(status, pf.contentType != null ? pf.contentType : "application/octet-stream", pf.stream);
+                // Create response with remote status and headers
+                Response.Status status = Response.Status.lookup(pf.statusCode);
+                if (status == null) status = Response.Status.OK; // fallback if unknown
+                Response r = newChunkedResponse(status, pf.contentType != null ? pf.contentType : "application/octet-stream", pf.stream);
 
-         // Copy remote headers to local response, but avoid duplicate/forbidden headers
-         if (pf.headers != null) {
-             for (Map.Entry<String, String> he : pf.headers.entrySet()) {
-                 String hk = he.getKey();
-                 String hv = he.getValue();
-                 if (hk == null || hv == null) continue;
-                 // NanoHTTPD will handle common headers; we add them so browser sees them.
-                 // Avoid Content-Length because chunked response manages length.
-                 if ("Content-Length".equalsIgnoreCase(hk)) continue;
-                 r.addHeader(hk, hv);
+                // Copy remote headers to local response, but avoid duplicate/forbidden headers
+                if (pf.headers != null) {
+                    for (Map.Entry<String, String> he : pf.headers.entrySet()) {
+                        String hk = he.getKey();
+                        String hv = he.getValue();
+                        if (hk == null || hv == null) continue;
+                        // Avoid Content-Length because chunked response manages length.
+                        if ("Content-Length".equalsIgnoreCase(hk)) continue;
+                        r.addHeader(hk, hv);
                     }
                 }
 
-         // Ensure CORS present
-                    r.addHeader("Access-Control-Allow-Origin", "*");
-                    r.addHeader("Cache-Control", "no-cache");
-                    return r;
-                }
+                // Ensure CORS present
+                r.addHeader("Access-Control-Allow-Origin", "*");
+                r.addHeader("Cache-Control", "no-cache");
+                return r;
+            }
 
             try {
                 if ("/__shim__/id-shim.js".equals("/" + path)) {
