@@ -1,110 +1,125 @@
 package com.liskovsoft.smartyoutubetv.web;
 
-import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
+import android.util.Log;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.util.Patterns;
-import android.util.Log;
 
+import com.liskovsoft.smartyoutubetv.player.PlayerActivity;
+import com.szzdmj.nanohttpd.CrashLogger;
+
+import java.io.ByteArrayInputStream;
 import java.util.Locale;
-import java.util.regex.Pattern;
 
 /**
- * Minimal WebViewClient that intercepts clicked links.
- * - If the URL looks like a video (mp4/m3u8/webm/... or youtube link), it launches an ACTION_VIEW intent so an external player (or your player activity) will handle it.
- * - Otherwise, it lets the WebView load the URL normally.
+ * Lightweight WebViewClient that opens links.
+ * If useInternalPlayer==true, video links (m3u8/mp4/webm etc.) and YouTube links will be
+ * launched inside PlayerActivity (auto_fullscreen + auto_play). Otherwise ACTION_VIEW is used.
  *
- * This is intentionally small and conservative: it avoids touching legacy modules and focuses on opening playback quickly.
+ * Usage:
+ *   OpenLinkWebViewClient.attachTo(webView, context, true);
  */
 public class OpenLinkWebViewClient extends WebViewClient {
     private static final String TAG = "OpenLinkWebViewClient";
     private final Context mCtx;
+    private final boolean mUseInternalPlayer;
 
-    // basic video/file extension pattern (expand if needed)
-    private static final Pattern VIDEO_EXT_PATTERN = Pattern.compile(".*\\.(mp4|m3u8|mkv|webm|mov|ts)(\\?.*)?$", Pattern.CASE_INSENSITIVE);
+    private OpenLinkWebViewClient(Context ctx, boolean useInternalPlayer) {
+        this.mCtx = ctx.getApplicationContext();
+        this.mUseInternalPlayer = useInternalPlayer;
+    }
 
-    public OpenLinkWebViewClient(Context ctx) {
-        mCtx = ctx != null ? ctx.getApplicationContext() : null;
+    public static void attachTo(WebView webView, Context ctx, boolean useInternalPlayer) {
+        webView.setWebViewClient(new OpenLinkWebViewClient(ctx, useInternalPlayer));
+    }
+
+    private boolean isVideoOrHls(String url) {
+        if (url == null) return false;
+        String lower = url.toLowerCase(Locale.ROOT);
+        return lower.endsWith(".m3u8") || lower.endsWith(".mp4") || lower.endsWith(".webm")
+                || lower.contains("youtube.com") || lower.contains("youtu.be");
     }
 
     @Override
     public boolean shouldOverrideUrlLoading(WebView view, String url) {
-        return handleUrl(view, url);
+        return handleUrl(url);
     }
 
     @Override
     public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-        String url = request == null ? null : request.getUrl().toString();
-        return handleUrl(view, url);
+        String url = request != null ? request.getUrl().toString() : null;
+        return handleUrl(url);
     }
 
-    private boolean handleUrl(WebView view, String url) {
-        if (url == null || mCtx == null) {
-            return false; // let WebView handle it
-        }
-
-        String lower = url.toLowerCase(Locale.ROOT).trim();
-
-        // If it's a simple http(s) URL but not likely a web page -> treat as video if extension or known host
-        if (looksLikeVideoUrl(lower)) {
-            try {
-                Intent i = new Intent(Intent.ACTION_VIEW);
-                i.setData(Uri.parse(url));
-                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                mCtx.startActivity(i);
-                return true; // handled by external player
-            } catch (ActivityNotFoundException e) {
-                Log.w(TAG, "No external activity to handle video URL, falling back to WebView", e);
-                // fallback to WebView loading
-                return false;
-            } catch (Exception e) {
-                Log.e(TAG, "Error launching external player for url: " + url, e);
-                return false;
+    private boolean handleUrl(String url) {
+        try {
+            if (url == null) return false;
+            if (isVideoOrHls(url)) {
+                if (mUseInternalPlayer) {
+                    // launch internal player
+                    try {
+                        Intent i = PlayerActivity.createIntent(mCtx, Uri.parse(url));
+                        i.putExtra("auto_fullscreen", true);
+                        i.putExtra("auto_play", true);
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        mCtx.startActivity(i);
+                        try { CrashLogger.i("OpenLinkWebViewClient: launched internal player for " + url); } catch (Throwable ignored) {}
+                    } catch (Throwable t) {
+                        Log.w(TAG, "Failed to launch internal player, fallback to ACTION_VIEW", t);
+                        try { CrashLogger.w("Failed to launch internal player", t); } catch (Throwable ignored) {}
+                        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        mCtx.startActivity(intent);
+                    }
+                    return true; // we handled it
+                } else {
+                    // external viewer
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    mCtx.startActivity(intent);
+                    return true;
+                }
             }
-        }
-
-        // For youtube short-links and watch links we also open externally (optional)
-        if (isYouTubeLink(lower)) {
-            try {
-                Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                mCtx.startActivity(i);
-                return true;
-            } catch (ActivityNotFoundException ex) {
-                Log.w(TAG, "No handler for YouTube link, let WebView load it", ex);
-                return false;
-            }
-        }
-
-        // otherwise let the WebView load the page
-        return false;
-    }
-
-    private boolean looksLikeVideoUrl(String url) {
-        if (VIDEO_EXT_PATTERN.matcher(url).matches()) return true;
-        // also allow direct links to common streaming patterns
-        if (url.contains(".m3u8") || url.contains("/manifest") || url.contains("range=") || url.contains("videoplayback")) {
-            return true;
+        } catch (Throwable t) {
+            Log.w(TAG, "handleUrl failed", t);
+            try { CrashLogger.w("OpenLinkWebViewClient.handleUrl failed", t); } catch (Throwable ignored) {}
         }
         return false;
     }
 
-    private boolean isYouTubeLink(String url) {
-        return url.contains("youtube.com/watch") || url.contains("youtu.be/");
-    }
-
-    /**
-     * Convenience: attach to a WebView (sets client and enables JavaScript if desired).
-     * Use this from your fragment/activity where you manage the WebView.
-     */
-    public static void attachTo(WebView webView, Context ctx, boolean enableJs) {
-        if (enableJs) {
-            webView.getSettings().setJavaScriptEnabled(true);
+    // Optionally intercept resource requests to detect media requested via <video> or HLS fragments
+    // and launch internal player proactively. Return null to let WebView continue loading.
+    @Override
+    public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+        try {
+            String url = request != null ? request.getUrl().toString() : null;
+            if (isVideoOrHls(url) && mUseInternalPlayer) {
+                // launch internal player and return empty response so WebView does not double-play
+                try {
+                    Intent i = PlayerActivity.createIntent(mCtx, Uri.parse(url));
+                    i.putExtra("auto_fullscreen", true);
+                    i.putExtra("auto_play", true);
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    mCtx.startActivity(i);
+                    try { CrashLogger.i("OpenLinkWebViewClient: intercepted and launched internal player for " + url); } catch (Throwable ignored) {}
+                } catch (Throwable t) {
+                    try { CrashLogger.w("OpenLinkWebViewClient: failed to launch internal player for " + url, t); } catch (Throwable ignored) {}
+                }
+                // return 204 No Content (API>=21) or empty body to avoid WebView default handling
+                if (Build.VERSION.SDK_INT >= 21) {
+                    return new WebResourceResponse("text/plain", "UTF-8", 204, "No Content", null, new ByteArrayInputStream(new byte[0]));
+                } else {
+                    return new WebResourceResponse("text/plain", "UTF-8", new ByteArrayInputStream(new byte[0]));
+                }
+            }
+        } catch (Throwable t) {
+            try { CrashLogger.w("OpenLinkWebViewClient.shouldInterceptRequest failed", t); } catch (Throwable ignored) {}
         }
-        webView.setWebViewClient(new OpenLinkWebViewClient(ctx));
+        return super.shouldInterceptRequest(view, request);
     }
 }
