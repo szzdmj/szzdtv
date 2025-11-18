@@ -13,14 +13,14 @@ import java.util.Locale;
 
 /**
  * LocalAssetsServer: serves files from assets with clear logs and optional shim injection.
- * This variant mirrors the example LocalHttpServer: injects id-shim for index.html and logs via CrashLogger.
+ * Mirrors example LocalHttpServer: injects id-shim for index.html and logs via CrashLogger.
  */
 public class LocalAssetsServer extends NanoHTTPD {
     private static final String TAG = "LocalAssetsServer";
     private final AssetManager assets;
 
     public LocalAssetsServer(int port, AssetManager assets) throws IOException {
-    super("127.0.0.1", port); // bind explicitly to loopback
+        super("127.0.0.1", port);
         this.assets = assets;
         Log.d(TAG, "Constructed LocalAssetsServer for port " + port);
         try { CrashLogger.i("Constructed LocalAssetsServer for port " + port); } catch (Throwable ignored) {}
