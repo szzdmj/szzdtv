@@ -372,53 +372,39 @@ public class LauncherActivity extends AppCompatActivity {
                     remoteUrl = encoded;
                 }
                 try { CrashLogger.i("Proxying remote URL: " + remoteUrl); } catch (Throwable ignored) {}
-                ProxyFetchResult pf = fetchRemoteForProxy(remoteUrl);
+
+         // Collect incoming request headers to forward (Range, Accept-Encoding, Origin, Referer, etc.)
+         Map<String, String> incoming = session.getHeaders() != null ? session.getHeaders() : Collections.emptyMap();
+
+         ProxyFetchResult pf = fetchRemoteForProxy(remoteUrl, incoming);
                 if (pf == null || pf.stream == null) {
                     return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found: " + remoteUrl);
                 }
-                Response r = newChunkedResponse(Response.Status.OK, pf.contentType, pf.stream);
-                r.addHeader("Access-Control-Allow-Origin", "*");
-                r.addHeader("Cache-Control", "no-cache");
-                return r;
-            }
 
-            try {
-                if ("/__shim__/id-shim.js".equals("/" + path)) {
-                    InputStream in = assets.open("id-shim.js");
-                    CrashLogger.i("Serving id-shim.js");
-                    return newChunkedResponse(Response.Status.OK, "application/javascript", in);
-                }
+         // Create response with remote status and headers
+         Response.Status status = Response.Status.lookup(pf.statusCode);
+         if (status == null) status = Response.Status.OK; // fallback if unknown
+         Response r = newChunkedResponse(status, pf.contentType != null ? pf.contentType : "application/octet-stream", pf.stream);
 
-                if ("favicon.ico".equalsIgnoreCase(path) || "favicon.png".equalsIgnoreCase(path)) {
-                    try {
-                        InputStream inFav = assets.open(path);
-                        CrashLogger.i("Serving favicon from assets: " + path);
-                        return newChunkedResponse(Response.Status.OK, guessMime(path), inFav);
-                    } catch (IOException ignored) {
-                        try { CrashLogger.i("favicon not found in assets; returning inline transparent PNG"); } catch (Throwable ignored2) {}
-                        final String ONE_PX_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAAWgmWQ0AAAAASUVORK5CYII=";
-                        byte[] bytes = Base64.decode(ONE_PX_PNG_BASE64, Base64.DEFAULT);
-                        InputStream is = new ByteArrayInputStream(bytes);
-                        return newChunkedResponse(Response.Status.OK, "image/png", is);
+         // Copy remote headers to local response, but avoid duplicate/forbidden headers
+         if (pf.headers != null) {
+             for (Map.Entry<String, String> he : pf.headers.entrySet()) {
+                 String hk = he.getKey();
+                 String hv = he.getValue();
+                 if (hk == null || hv == null) continue;
+                 // NanoHTTPD will handle common headers; we add them so browser sees them.
+                 // Avoid Content-Length because chunked response manages length.
+                 if ("Content-Length".equalsIgnoreCase(hk)) continue;
+                 r.addHeader(hk, hv);
                     }
                 }
 
-                InputStream is = assets.open(path);
-
-                if (path.endsWith("index.html")) {
-                    String html = readAll(is, "UTF-8");
-                    html = html.replace(
-                            "<script type=\"text/javascript\" src=\"webjs.js\"></script>",
-                            "<script type=\"text/javascript\" src=\"/__shim__/id-shim.js\"></script>\n" +
-                                    "<script type=\"text/javascript\" src=\"webjs.js\"></script>"
-                    );
-                    CrashLogger.i("Serving modified index.html (shim injected)");
-                    Response r = newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", html);
+         // Ensure CORS present
                     r.addHeader("Access-Control-Allow-Origin", "*");
                     r.addHeader("Cache-Control", "no-cache");
                     return r;
                 }
-
+     // --- end proxy ---
                 String mime = guessMime(path);
                 CrashLogger.i("Serving asset: " + path + " as " + mime);
                 Response res = newChunkedResponse(Response.Status.OK, mime, is);
@@ -443,297 +429,132 @@ public class LauncherActivity extends AppCompatActivity {
             ProxyFetchResult(InputStream s, String ct) { stream = s; contentType = ct; }
         }
 
-        private ProxyFetchResult fetchRemoteForProxy(String remoteUrl) {
-            java.net.HttpURLConnection conn = null;
+ // Fetch remote utility used by proxy: forwards incoming headers and returns status+headers+stream
+ private ProxyFetchResult fetchRemoteForProxy(String remoteUrl, Map<String, String> incomingRequestHeaders) {
+     // 1) Try strict HTTP(S) first (system trust)
             try {
                 java.net.URL u = new java.net.URL(remoteUrl);
-                conn = (java.net.HttpURLConnection) u.openConnection();
-                conn.setConnectTimeout(4000);
-                conn.setReadTimeout(6000);
-                conn.setInstanceFollowRedirects(true);
-                int code = conn.getResponseCode();
-                if (code >= 200 && code < 300) {
-                    String ct = conn.getContentType();
-                    if (ct == null) ct = "application/octet-stream";
-                    InputStream is = conn.getInputStream();
-                    return new ProxyFetchResult(is, ct);
-                } else {
-                    CrashLogger.i("Proxy strict fetch returned non-2xx: " + code + " for " + remoteUrl);
-                }
-            } catch (Throwable strictEx) {
-                CrashLogger.w("Proxy strict fetch failed for " + remoteUrl + ": " + strictEx, strictEx);
-            } finally {
-                // do not disconnect here if we returned a stream
-            }
-
-            // permissive fallback if allowed
-            try {
-                boolean tryInsecure = INSECURE_HTTPS_FALLBACK;
-                if (!tryInsecure) return null;
-
-                // try trust-all for proxy fallback (kept minimal here)
-                javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
-                javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[] {
-                    new javax.net.ssl.X509TrustManager() {
-                        public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
-                        public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
-                        public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
-                    }
-                };
-                sc.init(null, trustAllCerts, new java.security.SecureRandom());
-
-                javax.net.ssl.HttpsURLConnection httpsConn = (javax.net.ssl.HttpsURLConnection) new java.net.URL(remoteUrl).openConnection();
-                httpsConn.setSSLSocketFactory(sc.getSocketFactory());
-                httpsConn.setHostnameVerifier((hostname, session) -> true);
-                httpsConn.setConnectTimeout(4000);
-                httpsConn.setReadTimeout(6000);
-                httpsConn.setInstanceFollowRedirects(true);
-                int code2 = httpsConn.getResponseCode();
-                if (code2 >= 200 && code2 < 300) {
-                    String ct2 = httpsConn.getContentType();
-                    if (ct2 == null) ct2 = "application/octet-stream";
-                    InputStream is2 = httpsConn.getInputStream();
-                    CrashLogger.i("Proxy permissive fetch success for " + remoteUrl);
-                    return new ProxyFetchResult(is2, ct2);
-                } else {
-                    CrashLogger.i("Proxy permissive returned non-2xx: " + code2 + " for " + remoteUrl);
-                }
-            } catch (Throwable insecureEx) {
-                CrashLogger.w("Proxy permissive fetch failed for " + remoteUrl, insecureEx);
-            }
-            return null;
-        }
-
-        private static String guessMime(String path) {
-            String lower = path.toLowerCase(Locale.ROOT);
-            if (lower.endsWith(".html") || lower.endsWith(".htm")) return "text/html; charset=utf-8";
-            if (lower.endsWith(".js")) return "application/javascript; charset=utf-8";
-            if (lower.endsWith(".css")) return "text/css; charset=utf-8";
-            if (lower.endsWith(".json")) return "application/json; charset=utf-8";
-            if (lower.endsWith(".png")) return "image/png";
-            if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
-            if (lower.endsWith(".mp4")) return "video/mp4";
-            if (lower.endsWith(".m3u8")) return "application/vnd.apple.mpegurl";
-            if (lower.endsWith(".ts")) return "video/mp2t";
-            return "application/octet-stream";
-        }
-
-        private static String readAll(InputStream in, String enc) throws IOException {
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            byte[] buf = new byte[8192];
-            int n;
-            while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
-            return bos.toString(enc);
-        }
-    } // end LocalAssetsServer
-
-    /**
-     * Fetch remote URL and return a WebResourceResponse (used in shouldInterceptRequest).
-     * Strategy:
-     *  - If original is http://, try https:// first (strict), then attempt permissive/combined CA fallback.
-     *  - If original is https://, try strict then permissive/combined CA fallback.
-     */
-    private WebResourceResponse fetchRemoteAsWebResource(String origUrl, Map<String,String> requestHeaders) {
-        if (origUrl == null) return null;
-        try {
-            String tryUrl = origUrl;
-            boolean wasHttp = false;
-            if (origUrl.startsWith("http://")) {
-                tryUrl = "https://" + origUrl.substring(7);
-                wasHttp = true;
-            }
-
-            // 1) Strict attempt
-            WebResourceResponse strict = fetchUrlStrict(tryUrl, requestHeaders);
-            if (strict != null) return strict;
-
-            // 2) Combined CA permissive attempt (system + assets/certs)
-            WebResourceResponse combined = fetchUrlWithCombinedCAs(tryUrl, requestHeaders);
-            if (combined != null) return combined;
-
-            // 3) Legacy permissive trust-all (last resort, controlled by INSECURE_HTTPS_FALLBACK)
-            if (INSECURE_HTTPS_FALLBACK) {
-                WebResourceResponse permissive = fetchUrlPermissiveTrustAll(tryUrl, requestHeaders);
-                if (permissive != null) return permissive;
-            }
-
-            // If original was http and none of the https attempts succeeded, do not return http content (block cleartext)
-        } catch (Throwable t) {
-            Log.w(TAG, "fetchRemoteAsWebResource failed for " + origUrl, t);
-            try { CrashLogger.w("fetchRemoteAsWebResource failed for " + origUrl, t); } catch (Throwable ignored) {}
-        }
-        return null;
+         java.net.URLConnection connRaw = u.openConnection();
+         if (!(connRaw instanceof java.net.HttpURLConnection)) {
+             // Not HTTP? fallback to generic stream
+             InputStream is = connRaw.getInputStream();
+             Map<String,String> hdrsEmpty = Collections.emptyMap();
+             return new ProxyFetchResult(is, connRaw.getContentType(), 200, hdrsEmpty);
     }
+         java.net.HttpURLConnection conn = (java.net.HttpURLConnection) connRaw;
+         conn.setConnectTimeout(8000);
+         conn.setReadTimeout(10000);
+         conn.setInstanceFollowRedirects(true);
 
-    private WebResourceResponse fetchUrlStrict(String urlStr, Map<String,String> requestHeaders) {
-        HttpURLConnection conn = null;
-        try {
-            URL u = new URL(urlStr);
-            conn = (HttpURLConnection) u.openConnection();
-            // 转发常用请求头（尤其 Range）
-            if (requestHeaders != null) {
-                for (Map.Entry<String,String> e : requestHeaders.entrySet()) {
+         // Forward useful headers from incoming request (Range, Accept, Accept-Encoding, Origin, Referer, User-Agent...)
+         if (incomingRequestHeaders != null) {
+             for (Map.Entry<String, String> e : incomingRequestHeaders.entrySet()) {
                     String k = e.getKey();
                     String v = e.getValue();
                     if (k == null || v == null) continue;
-                    // 避免覆盖 Host、Connection 等敏感头（按需）
+                 // Do not set Host/Connection which are managed by URLConnection
+                 if ("host".equalsIgnoreCase(k) || "connection".equalsIgnoreCase(k)) continue;
                     conn.setRequestProperty(k, v);
                 }
             }
-            conn.setConnectTimeout(8000); // 可适当放宽
-            conn.setReadTimeout(10000);
-            conn.setInstanceFollowRedirects(true);
-            int code = conn.getResponseCode(); // 200 或 206 等
+
+         int code = conn.getResponseCode();
             InputStream is = (code >= 400) ? conn.getErrorStream() : conn.getInputStream();
             if (is == null) return null;
-            String contentType = conn.getContentType();
-            if (contentType == null) contentType = "application/octet-stream";
+         String ct = conn.getContentType();
+         Map<String,String> remoteHeaders = copyHeadersFromConnection(conn);
 
-            // 收集远端返回的 header（透传给 WebView）
-            Map<String,String> respHeaders = new HashMap<>();
-            for (Map.Entry<String, List<String>> hh : conn.getHeaderFields().entrySet()) {
-                String hk = hh.getKey();
-                if (hk == null) continue;
-                List<String> vals = hh.getValue();
-                if (vals == null || vals.isEmpty()) continue;
-                String joined = String.join(", ", vals);
-                respHeaders.put(hk, joined);
-            }
-            // 确保 CORS header 存在
-            if (!respHeaders.containsKey("Access-Control-Allow-Origin")) respHeaders.put("Access-Control-Allow-Origin", "*");
-
-            if (Build.VERSION.SDK_INT >= 21) {
-                String reason = conn.getResponseMessage() != null ? conn.getResponseMessage() : "OK";
-                // 注意：不要 disconnect conn 直到 WebView 完成读取；WebResourceResponse 只是包装了 InputStream
-                return new WebResourceResponse(contentType, "UTF-8", code, reason, respHeaders, is);
-            } else {
-                return new WebResourceResponse(contentType, "UTF-8", is);
-            }
-        } catch (Throwable t) {
-            try { CrashLogger.w("Strict fetch failed for " + urlStr + ": " + t, t); } catch (Throwable ignored) {}
-        }
-        // 注意不要在这里 conn.disconnect()，因为 InputStream 还在被 WebView 读取时需要连接活着；如果没有返回流则在 finally 里断开。
-        if (conn != null) conn.disconnect();
-        return null;
+         return new ProxyFetchResult(is, ct, code, remoteHeaders);
+     } catch (Throwable strictEx) {
+         CrashLogger.w("Proxy strict fetch failed for " + remoteUrl + ": " + strictEx, strictEx);
     }
 
-    /**
-     * Attempt to fetch using a combined trust manager that tries system CA first, then custom CAs from assets/certs/.
-     * Returns null if combined TM unavailable or fetch failed.
-     */
-    private WebResourceResponse fetchUrlWithCombinedCAs(String urlStr, Map<String,String> requestHeaders) {
+     // 2) Try combined CA fallback (if custom certs present)
         try {
-            X509TrustManager combined = createCombinedTrustManagerFromAssets();
-            if (combined == null) return null;
-
+         X509TrustManager combined = createCombinedTrustManagerFromAssetsLocal(); // implemented to use this.assets
+         if (combined != null) {
             SSLContext sc = SSLContext.getInstance("TLS");
-            sc.init(null, new TrustManager[]{ combined }, new SecureRandom());
-
-            URL u = new URL(urlStr);
-            HttpsURLConnection httpsConn = (HttpsURLConnection) u.openConnection();
+             sc.init(null, new javax.net.ssl.TrustManager[]{ combined }, new java.security.SecureRandom());
+             javax.net.ssl.HttpsURLConnection httpsConn = (javax.net.ssl.HttpsURLConnection) new java.net.URL(remoteUrl).openConnection();
             httpsConn.setSSLSocketFactory(sc.getSocketFactory());
-            httpsConn.setHostnameVerifier((hostname, session) -> true); // you can tighten hostname verification if desired
-
-            // forward request headers (Range etc.)
-            if (requestHeaders != null) {
-                for (Map.Entry<String,String> e : requestHeaders.entrySet()) {
+             httpsConn.setHostnameVerifier((hostname, session) -> true);
+             httpsConn.setConnectTimeout(8000);
+             httpsConn.setReadTimeout(10000);
+             httpsConn.setInstanceFollowRedirects(true);
+             // forward headers
+             if (incomingRequestHeaders != null) {
+                 for (Map.Entry<String,String> e : incomingRequestHeaders.entrySet()) {
                     String k = e.getKey();
                     String v = e.getValue();
                     if (k == null || v == null) continue;
+                     if ("host".equalsIgnoreCase(k) || "connection".equalsIgnoreCase(k)) continue;
                     httpsConn.setRequestProperty(k, v);
                 }
             }
-
-            httpsConn.setConnectTimeout(8000);
-            httpsConn.setReadTimeout(10000);
-            httpsConn.setInstanceFollowRedirects(true);
             int code2 = httpsConn.getResponseCode();
-            if (code2 >= 200 && code2 < 300) {
+             InputStream is2 = (code2 >= 400) ? httpsConn.getErrorStream() : httpsConn.getInputStream();
+             if (is2 == null) return null;
                 String ct2 = httpsConn.getContentType();
-                if (ct2 == null) ct2 = "application/octet-stream";
-                InputStream is2 = httpsConn.getInputStream();
-                Map<String,String> headers = new HashMap<>();
-                for (Map.Entry<String, List<String>> hh : httpsConn.getHeaderFields().entrySet()) {
-                    String hk = hh.getKey();
-                    if (hk == null) continue;
-                    List<String> vals = hh.getValue();
-                    if (vals == null || vals.isEmpty()) continue;
-                    headers.put(hk, String.join(", ", vals));
-                }
-                if (!headers.containsKey("Access-Control-Allow-Origin")) headers.put("Access-Control-Allow-Origin", "*");
-                if (Build.VERSION.SDK_INT >= 21) {
-                    return new WebResourceResponse(ct2, "UTF-8", code2, httpsConn.getResponseMessage(), headers, is2);
-                } else {
-                    return new WebResourceResponse(ct2, "UTF-8", is2);
-                }
-            } else {
-                try { CrashLogger.i("Combined CA fetch returned non-2xx: " + code2 + " for " + urlStr); } catch (Throwable ignored) {}
+             Map<String,String> remoteHeaders2 = copyHeadersFromConnection(httpsConn);
+             return new ProxyFetchResult(is2, ct2, code2, remoteHeaders2);
             }
-        } catch (Throwable t) {
-            try { CrashLogger.w("Combined CA fetch failed for " + urlStr + ": " + t, t); } catch (Throwable ignored) {}
-        }
-        return null;
+     } catch (Throwable ex) {
+         CrashLogger.w("Proxy combined-CA fetch failed for " + remoteUrl, ex);
     }
 
-    /**
-     * Legacy permissive trust-all fetch used as last resort (kept for compatibility).
-     * Prefer fetchUrlWithCombinedCAs which uses custom CA files in assets/certs/.
-     */
-    private WebResourceResponse fetchUrlPermissiveTrustAll(String urlStr, Map<String,String> requestHeaders) {
+     // 3) Fallback trust-all (if enabled)
+     if (INSECURE_HTTPS_FALLBACK) {
         try {
             SSLContext sc = SSLContext.getInstance("TLS");
-            TrustManager[] trustAllCerts = new TrustManager[]{
-                    new X509TrustManager() {
-                        public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
-                        public void checkClientTrusted(X509Certificate[] certs, String authType) {}
-                        public void checkServerTrusted(X509Certificate[] certs, String authType) {}
+             javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[] {
+                 new javax.net.ssl.X509TrustManager() {
+                     public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+                     public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
+                     public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
                     }
             };
-            sc.init(null, trustAllCerts, new SecureRandom());
-
-            URL u = new URL(urlStr);
-            HttpsURLConnection httpsConn = (HttpsURLConnection) u.openConnection();
+             sc.init(null, trustAllCerts, new java.security.SecureRandom());
+             javax.net.ssl.HttpsURLConnection httpsConn = (javax.net.ssl.HttpsURLConnection) new java.net.URL(remoteUrl).openConnection();
             httpsConn.setSSLSocketFactory(sc.getSocketFactory());
             httpsConn.setHostnameVerifier((hostname, session) -> true);
-
-            // forward request headers
-            if (requestHeaders != null) {
-                for (Map.Entry<String,String> e : requestHeaders.entrySet()) {
+             httpsConn.setConnectTimeout(8000);
+             httpsConn.setReadTimeout(10000);
+             httpsConn.setInstanceFollowRedirects(true);
+             if (incomingRequestHeaders != null) {
+                 for (Map.Entry<String,String> e : incomingRequestHeaders.entrySet()) {
                     String k = e.getKey();
                     String v = e.getValue();
                     if (k == null || v == null) continue;
+                     if ("host".equalsIgnoreCase(k) || "connection".equalsIgnoreCase(k)) continue;
                     httpsConn.setRequestProperty(k, v);
                 }
             }
-
-            httpsConn.setConnectTimeout(8000);
-            httpsConn.setReadTimeout(10000);
-            httpsConn.setInstanceFollowRedirects(true);
-            int code2 = httpsConn.getResponseCode();
-            if (code2 >= 200 && code2 < 300) {
-                String ct2 = httpsConn.getContentType();
-                if (ct2 == null) ct2 = "application/octet-stream";
-                InputStream is2 = httpsConn.getInputStream();
-                Map<String,String> headers = new HashMap<>();
-                for (Map.Entry<String, List<String>> hh : httpsConn.getHeaderFields().entrySet()) {
-                    String hk = hh.getKey();
-                    if (hk == null) continue;
-                    List<String> vals = hh.getValue();
-                    if (vals == null || vals.isEmpty()) continue;
-                    headers.put(hk, String.join(", ", vals));
-                }
-                if (!headers.containsKey("Access-Control-Allow-Origin")) headers.put("Access-Control-Allow-Origin", "*");
-                if (Build.VERSION.SDK_INT >= 21) {
-                    return new WebResourceResponse(ct2, "UTF-8", code2, httpsConn.getResponseMessage(), headers, is2);
-                } else {
-                    return new WebResourceResponse(ct2, "UTF-8", is2);
-                }
-            }
+             int code3 = httpsConn.getResponseCode();
+             InputStream is3 = (code3 >= 400) ? httpsConn.getErrorStream() : httpsConn.getInputStream();
+             if (is3 == null) return null;
+             String ct3 = httpsConn.getContentType();
+             Map<String,String> remoteHeaders3 = copyHeadersFromConnection(httpsConn);
+             return new ProxyFetchResult(is3, ct3, code3, remoteHeaders3);
         } catch (Throwable insecureEx) {
-            try { CrashLogger.w("Permissive trust-all fetch failed for " + urlStr, insecureEx); } catch (Throwable ignored) {}
+             CrashLogger.w("Proxy permissive fetch failed for " + remoteUrl, insecureEx);
         }
-        return null;
-    }
+     }
+
+       return null;
+ }
+
+ // Copy response headers from HttpURLConnection into a simple Map (joining multiple values)
+ private static Map<String,String> copyHeadersFromConnection(java.net.HttpURLConnection conn) {
+     Map<String, String> map = new HashMap<>();
+     for (Map.Entry<String, List<String>> hh : conn.getHeaderFields().entrySet()) {
+         String hk = hh.getKey();
+         if (hk == null) continue;
+         List<String> vals = hh.getValue();
+         if (vals == null || vals.isEmpty()) continue;
+         map.put(hk, String.join(", ", vals));
+     }
+     return map;
+  }
 
     /**
      * Create a combined X509TrustManager that tries system default first, then custom CAs loaded from assets/certs/*.pem.
