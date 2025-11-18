@@ -32,6 +32,16 @@ import java.util.Locale;
  * - Intercepts requests for common JS files and serves them from assets if present
  * - For playable links, forwards to PlayerActivity
  */
+// add near top of onCreate, before webView.loadUrl(...)
+int port = 12721;
+LocalAssetsServer server = null;
+try {
+    server = new LocalAssetsServer(port, getAssets());
+    server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
+    Log.i("LocalAssetsServer", "started on http://127.0.0.1:" + port);
+} catch (Exception e) {
+    Log.e("LocalAssetsServer", "failed to start", e);
+}
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
     private WebView webView;
