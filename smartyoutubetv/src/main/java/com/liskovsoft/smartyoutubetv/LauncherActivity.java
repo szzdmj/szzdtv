@@ -69,6 +69,15 @@ import javax.net.ssl.X509TrustManager;
  * - Intercepts http(s) requests and prefers secure fetch with support for custom CA bundles in assets/certs/
  * - Adds retry, caching and ensures proxy uses combined CA when possible.
  */
+// Insert this method into the LauncherActivity class (before the LocalAssetsServer inner class).
+private int findFreePort() throws IOException {
+    // Bind to loopback only to avoid exposing port externally
+    java.net.InetAddress loopback = java.net.InetAddress.getByName("127.0.0.1");
+    try (ServerSocket socket = new ServerSocket(0, 0, loopback)) {
+        socket.setReuseAddress(true);
+        return socket.getLocalPort();
+    }
+}
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
     private WebView webView;
