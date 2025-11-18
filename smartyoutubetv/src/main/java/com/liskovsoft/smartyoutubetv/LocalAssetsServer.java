@@ -6,25 +6,27 @@ import fi.iki.elonen.NanoHTTPD;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.InetAddress;
-import java.util.Map;
 
+/**
+ * Simple HTTP server that serves files from assets.
+ */
 public class LocalAssetsServer extends NanoHTTPD {
     private static final String TAG = "LocalAssetsServer";
     private final AssetManager assets;
 
     public LocalAssetsServer(int port, AssetManager assets) throws IOException {
-        // bind explicitly to 0.0.0.0 to avoid IPv6-only localhost issues
-        super(InetAddress.getByName("0.0.0.0"), port);
+        // Bind explicitly by hostname string to avoid constructor mismatch with NanoHTTPD API.
+        // Use "0.0.0.0" to listen on all interfaces (including 127.0.0.1).
+        super("0.0.0.0", port);
         this.assets = assets;
     }
 
     @Override
     public Response serve(IHTTPSession session) {
         String uri = session.getUri();
-        String remote = session.getHeaders().get("remote-addr");
+        String remote = session.getHeaders() != null ? session.getHeaders().get("remote-addr") : null;
         Log.d(TAG, "Incoming request: uri=" + uri + ", remote=" + remote + ", method=" + session.getMethod());
-        if (uri.equals("/") || uri.isEmpty()) uri = "/gjw.html";
+        if (uri == null || uri.equals("/") || uri.isEmpty()) uri = "/gjw.html";
         String path = uri.startsWith("/") ? uri.substring(1) : uri;
         try {
             InputStream is = assets.open(path);
