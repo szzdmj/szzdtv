@@ -179,7 +179,28 @@ public class PlayerActivity extends AppCompatActivity {
             writeCrashLog(t);
         }
     }
-
+// 新增 adjustVolume 方法，放到类的合适位置（例如 adjustBrightness 方法旁）
+private void adjustVolume(boolean increase) {
+    try {
+        if (audioManager == null) {
+            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager == null) return;
+        }
+        int direction = increase ? AudioManager.ADJUST_RAISE : AudioManager.ADJUST_LOWER;
+        // 使用 adjustStreamVolume 可以触发系统 UI/音量条
+        audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, AudioManager.FLAG_SHOW_UI);
+        // 可选：写入日志 / 显示当前音量百分比
+        try {
+            int current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+            int max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+            int percent = (int) ((current / (float) max) * 100f);
+            Log.i(TAG, "adjustVolume: now=" + current + "/" + max + " (" + percent + "%)");
+        } catch (Throwable ignored) {}
+    } catch (Throwable t) {
+        Log.w(TAG, "adjustVolume failed", t);
+        writeCrashLog(t);
+    }
+}
     // 将异常写入外部文件，返回路径（便于在无 adb 时用文件管理器取出）
     private String writeCrashLog(Throwable t) {
         try {
