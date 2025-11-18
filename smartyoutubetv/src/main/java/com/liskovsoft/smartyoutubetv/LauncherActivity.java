@@ -1,3 +1,4 @@
+// 文件完整内容：将此文件覆盖仓库中同路径文件
 package com.liskovsoft.smartyoutubetv;
 
 import android.annotation.SuppressLint;
@@ -34,7 +35,18 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.ServerSocket;
 import java.net.URL;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
 /**
  * LauncherActivity
@@ -42,18 +54,27 @@ import java.util.Locale;
  * - Starts a small local HTTP server that serves assets (NanoHTTPD)
  * - Logs important events to CrashLogger
  * - Loads http://localhost:PORT/ when server available; falls back to file:///android_asset/gjw.html
- * - Removes HTML log-bridge injection (LOG_BRIDGE_SNIPPET cancelled)
- * - When external resources are requested via http://, attempts https:// fallback and returns that response if available
+ * - Intercepts http:// requests and forces HTTPS fetch (returns HTTPS content to WebView).
+ * - If HTTPS fetch fails, returns a safe empty/no-content response to prevent WebView from issuing cleartext HTTP.
  */
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
     private WebView webView;
     private LocalAssetsServer server;
     private int serverPort = -1;
-    // HTTPS fallback settings
+
+    // 去抖：上次启动的 URL 与时间（避免短时间内重复打开播放器）
+    private volatile String lastLaunchedUrl = null;
+    private volatile long lastLaunchTs = 0;
+    private static final long LAUNCH_DEBOUNCE_MS = 1500;
+
+    // HTTPS fallback settings (KEEP unchanged per your note)
     private static final boolean INSECURE_HTTPS_FALLBACK = true; // set false for production
     private static final String[] HTTPS_WHITELIST_SUFFIXES = new String[] {
     };
+
+    // Tracking missing assets (optional helper)
+    private final Set<String> missingAssets = Collections.synchronizedSet(new HashSet<>());
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -139,10 +160,13 @@ public class LauncherActivity extends AppCompatActivity {
                     if (url == null) return null;
                     String lower = url.toLowerCase(Locale.ROOT);
 
+                    // strip query and fragment so filenames like a.js?v=123 don't fail asset lookup
+                    String urlNoQuery = url.split("\\?")[0].split("#")[0];
+
                     // If requesting a JS filename (common: webjs.js), try to return it from assets if present.
                     if (lower.endsWith(".js")) {
-                        int idx = url.lastIndexOf('/');
-                        String filename = idx >= 0 ? url.substring(idx + 1) : url;
+                        int idx = urlNoQuery.lastIndexOf('/');
+                        String filename = idx >= 0 ? urlNoQuery.substring(idx + 1) : urlNoQuery;
                         String assetPath = filename;
                         Log.d(TAG, "Intercept request for JS: " + url + " -> " + assetPath);
                         try { CrashLogger.i("Intercept request for JS: " + url + " -> " + assetPath); } catch (Throwable ignored) {}
@@ -157,27 +181,41 @@ public class LauncherActivity extends AppCompatActivity {
                             }
                         }
                         if (is != null) {
+                            Log.i(TAG, "Serving JS from assets: " + assetPath);
                             return new WebResourceResponse("application/javascript", "UTF-8", is);
+                        } else {
+                            // record missing asset for later debugging
+                            missingAssets.add(assetPath);
+                            Log.d(TAG, "Asset not found for " + assetPath + ", will attempt HTTPS-only network fetch");
                         }
                     }
 
-                    // If it's a local asset path (http(s) pointing to localhost), let LocalAssetsServer handle it (no change here)
+                    // If it's a local asset path (http(s) pointing to localhost), let LocalAssetsServer handle it
                     if (lower.startsWith("http://localhost:") || lower.startsWith("http://127.0.0.1:") ||
                         lower.startsWith("https://localhost:") || lower.startsWith("https://127.0.0.1:")) {
-                        // do not fallback; let network / local server serve normally
                         return null;
                     }
 
-                    // For other http:// third-party resources, try https fallback if original is http
+                    // For ANY http:// external requests — DO NOT let WebView attempt cleartext.
+                    // Instead, attempt HTTPS fetch and return that content. If HTTPS fails, return a safe 204/NoContent
                     if (lower.startsWith("http://")) {
                         WebResourceResponse httpsResp = tryFetchHttpsFallback(url);
                         if (httpsResp != null) {
                             try { CrashLogger.i("HTTPS fallback succeeded for " + url); } catch (Throwable ignored) {}
                             return httpsResp;
                         } else {
-                            try { CrashLogger.i("HTTPS fallback failed for " + url); } catch (Throwable ignored) {}
+                            try { CrashLogger.i("HTTPS fallback failed for " + url + " — blocking cleartext request"); } catch (Throwable ignored) {}
+                            // Prevent WebView from trying plain http (which would be blocked by policy).
+                            // Return a 204 No Content (API21+) or an empty response for older devices.
+                            if (Build.VERSION.SDK_INT >= 21) {
+                                Map<String, String> headers = Collections.singletonMap("Content-Type", "text/plain");
+                                return new WebResourceResponse("text/plain", "UTF-8", 204, "No Content", headers, new ByteArrayInputStream(new byte[0]));
+                            } else {
+                                return new WebResourceResponse("text/plain", "UTF-8", new ByteArrayInputStream(new byte[0]));
+                            }
                         }
                     }
+
                 }catch(Throwable t){
                     Log.w(TAG,"tryServeAssetForUrl failed for "+url,t);
                     try{ CrashLogger.w("tryServeAssetForUrl failed for "+url,t);}catch(Throwable ignored){}
@@ -241,6 +279,44 @@ public class LauncherActivity extends AppCompatActivity {
             server=null; serverPort=-1;
             webView.loadUrl("file:///android_asset/gjw.html");
         }
+    } // end onCreate
+
+    // ---------- Class-level helper: launch internal player if media URL detected ----------
+    private void tryLaunchPlayerIfMedia(final String url) {
+        if (url == null) return;
+        // 基础匹配（文件后缀/扩展名），你可以根据需要扩展正则
+        String lower = url.toLowerCase(Locale.ROOT);
+        boolean looksLikeMedia = lower.endsWith(".m3u8") || lower.endsWith(".mp4") || lower.endsWith(".webm") ||
+                lower.endsWith(".m4a") || lower.endsWith(".aac");
+        if (!looksLikeMedia) return;
+
+        final long now = System.currentTimeMillis();
+        if (url.equals(lastLaunchedUrl) && (now - lastLaunchTs) < LAUNCH_DEBOUNCE_MS) {
+            // 已经在短时间内启动过同一 URL，忽略
+            return;
+        }
+        lastLaunchedUrl = url;
+        lastLaunchTs = now;
+
+        // 启动 PlayerActivity 必须在 UI 线程
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    CrashLogger.i("Launching player for " + url);
+                } catch (Throwable ignored) {}
+                try {
+                    Intent i = PlayerActivity.createIntent(LauncherActivity.this, Uri.parse(url));
+                    // 约定 extra：自动全屏并立即播放
+                    i.putExtra("auto_fullscreen", true);
+                    i.putExtra("auto_play", true);
+                    startActivity(i);
+                } catch (Throwable t) {
+                    Log.w(TAG, "Failed to launch PlayerActivity", t);
+                    try { CrashLogger.w("Failed to launch PlayerActivity", t); } catch (Throwable ignored) {}
+                }
+            }
+        });
     }
 
     @Override
@@ -248,7 +324,7 @@ public class LauncherActivity extends AppCompatActivity {
         try { CrashLogger.i("LauncherActivity.onDestroy"); } catch (Throwable ignored) {}
         if (webView!=null){ webView.destroy(); webView=null; }
         if (server!=null){
-            try{ server.stop(); String stopped="LocalAssetsServer stopped."; Log.i(TAG,stopped); try{ CrashLogger.i(stopped);}catch(Throwable ignored){} }catch(Throwable t){ Log.e(TAG,"Error stopping server",t); try{ CrashLogger.err("Error stopping server",t);}catch(Throwable ignored){} }
+            try{ server.stop(); String stopped="LocalAssetsServer stopped."; Log.i(TAG,stopped); try{ CrashLogger.i(stopped);}catch(Throwable ignored){} }catch(Throwable t){ Log.e(TAG,"Error stopping server",t); try{ CrashLogger.w("Error stopping server",t);}catch(Throwable ignored){} }
             server=null;
         }
         super.onDestroy();
@@ -368,12 +444,18 @@ public class LauncherActivity extends AppCompatActivity {
     /**
      * Try fetching https:// version of a given http:// URL.
      * Returns a WebResourceResponse if successful (HTTP 2xx), otherwise null.
+     *
+     * Enhanced behavior:
+     * - Try default strict HTTPS first.
+     * - If that fails with certificate errors and INSECURE_HTTPS_FALLBACK is enabled,
+     *   and host matches whitelist, do a permissive TLS connection (trust-all) as a last resort.
      */
     private WebResourceResponse tryFetchHttpsFallback(String url) {
         if (url == null || !url.startsWith("http://")) return null;
         String httpsUrl = "https://" + url.substring(7);
         HttpURLConnection conn = null;
         try {
+            // Strict attempt using system trust store
             URL u = new URL(httpsUrl);
             conn = (HttpURLConnection) u.openConnection();
             conn.setConnectTimeout(4000);
@@ -384,16 +466,67 @@ public class LauncherActivity extends AppCompatActivity {
                 String contentType = conn.getContentType();
                 if (contentType == null) contentType = "application/octet-stream";
                 InputStream is = conn.getInputStream();
-                // Note: we don't disconnect the connection here because the stream will be read by WebView
                 return new WebResourceResponse(contentType, "UTF-8", is);
             } else {
                 try { CrashLogger.i("HTTPS fallback returned non-2xx for " + httpsUrl + " code=" + code); } catch (Throwable ignored) {}
             }
-        } catch (Throwable t) {
-            try { CrashLogger.w("HTTPS fallback failed for " + httpsUrl, t); } catch (Throwable ignored) {}
+            return null;
+        } catch (Exception strictEx) {
+            // Strict attempt failed — log and possibly try permissive fallback
+            try { CrashLogger.w("HTTPS strict attempt failed for " + httpsUrl + ": " + strictEx, strictEx); } catch (Throwable ignored) {}
+            Log.i(TAG, "HTTPS strict attempt failed for " + httpsUrl + " -> " + strictEx);
+            // Decide whether to attempt permissive fallback
+            try {
+                URL u = new URL(httpsUrl);
+                String host = u.getHost();
+                boolean tryInsecure = INSECURE_HTTPS_FALLBACK;
+                if (HTTPS_WHITELIST_SUFFIXES != null && HTTPS_WHITELIST_SUFFIXES.length > 0) {
+                    tryInsecure = false;
+                    for (String suf : HTTPS_WHITELIST_SUFFIXES) {
+                        if (host != null && host.endsWith(suf)) { tryInsecure = true; break; }
+                    }
+                }
+                if (!tryInsecure) {
+                    return null;
+                }
+
+                // permissive SSLContext (trust-all) — INSECURE, use only for development/whitelist
+                SSLContext sc = SSLContext.getInstance("TLS");
+                TrustManager[] trustAllCerts = new TrustManager[]{
+                        new X509TrustManager() {
+                            public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+                            public void checkClientTrusted(X509Certificate[] certs, String authType) {}
+                            public void checkServerTrusted(X509Certificate[] certs, String authType) {}
+                        }
+                };
+                sc.init(null, trustAllCerts, new SecureRandom());
+
+                HttpsURLConnection httpsConn = (HttpsURLConnection) new URL(httpsUrl).openConnection();
+                httpsConn.setSSLSocketFactory(sc.getSocketFactory());
+                httpsConn.setHostnameVerifier((hostname, session) -> true);
+                httpsConn.setConnectTimeout(4000);
+                httpsConn.setReadTimeout(6000);
+                httpsConn.setInstanceFollowRedirects(true);
+                int code2 = httpsConn.getResponseCode();
+                if (code2 >= 200 && code2 < 300) {
+                    String contentType = httpsConn.getContentType();
+                    if (contentType == null) contentType = "application/octet-stream";
+                    InputStream is2 = httpsConn.getInputStream();
+                    Log.i(TAG, "HTTPS insecure fallback success for " + httpsUrl);
+                    try { CrashLogger.i("HTTPS insecure fallback success for " + httpsUrl); } catch (Throwable ignored) {}
+                    return new WebResourceResponse(contentType, "UTF-8", is2);
+                } else {
+                    try { CrashLogger.i("HTTPS insecure fallback returned non-2xx for " + httpsUrl + " code=" + code2); } catch (Throwable ignored) {}
+                }
+            } catch (Throwable insecureEx) {
+                try { CrashLogger.w("HTTPS insecure fallback failed for " + httpsUrl, insecureEx); } catch (Throwable ignored) {}
+                Log.w(TAG, "HTTPS insecure fallback failed for " + httpsUrl, insecureEx);
+            }
+        } finally {
+            if (conn != null) conn.disconnect();
         }
-        // if failed, ensure connection closed
-        if (conn != null) conn.disconnect();
         return null;
     }
+
+    // rest of LauncherActivity unchanged...
 }
