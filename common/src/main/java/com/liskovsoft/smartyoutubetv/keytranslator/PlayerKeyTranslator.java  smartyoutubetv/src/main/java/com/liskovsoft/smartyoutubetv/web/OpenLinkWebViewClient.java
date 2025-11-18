@@ -10,16 +10,14 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
-import com.liskovsoft.smartyoutubetv.player.PlayerActivity;
-import com.szzdmj.nanohttpd.CrashLogger;
-
 import java.io.ByteArrayInputStream;
 import java.util.Locale;
 
 /**
  * Lightweight WebViewClient that opens links.
- * If useInternalPlayer==true, video links (m3u8/mp4/webm etc.) and YouTube links will be
- * launched inside PlayerActivity (auto_fullscreen + auto_play). Otherwise ACTION_VIEW is used.
+ * - Does NOT compile-time depend on PlayerActivity or CrashLogger (avoids common-module compile errors).
+ * - If useInternalPlayer==true, tries to start internal PlayerActivity by class name at runtime;
+ *   if that fails falls back to ACTION_VIEW.
  *
  * Usage:
  *   OpenLinkWebViewClient.attachTo(webView, context, true);
@@ -61,22 +59,30 @@ public class OpenLinkWebViewClient extends WebViewClient {
             if (url == null) return false;
             if (isVideoOrHls(url)) {
                 if (mUseInternalPlayer) {
-                    // launch internal player
+                    // Try to launch internal PlayerActivity by class name at runtime.
                     try {
-                        Intent i = PlayerActivity.createIntent(mCtx, Uri.parse(url));
+                        Intent i = new Intent();
+                        i.setAction(Intent.ACTION_VIEW);
+                        i.setData(Uri.parse(url));
+                        // setClassName to avoid compile-time dependency on PlayerActivity
+                        i.setClassName(mCtx.getPackageName(), "com.liskovsoft.smartyoutubetv.player.PlayerActivity");
                         i.putExtra("auto_fullscreen", true);
                         i.putExtra("auto_play", true);
                         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                         mCtx.startActivity(i);
-                        try { CrashLogger.i("OpenLinkWebViewClient: launched internal player for " + url); } catch (Throwable ignored) {}
+                        Log.i(TAG, "launched internal player for " + url);
                     } catch (Throwable t) {
                         Log.w(TAG, "Failed to launch internal player, fallback to ACTION_VIEW", t);
-                        try { CrashLogger.w("Failed to launch internal player", t); } catch (Throwable ignored) {}
-                        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        mCtx.startActivity(intent);
+                        // fallback: external viewer
+                        try {
+                            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            mCtx.startActivity(intent);
+                        } catch (Throwable t2) {
+                            Log.w(TAG, "Fall-back ACTION_VIEW failed", t2);
+                        }
                     }
-                    return true; // we handled it
+                    return true; // handled
                 } else {
                     // external viewer
                     Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
@@ -87,30 +93,29 @@ public class OpenLinkWebViewClient extends WebViewClient {
             }
         } catch (Throwable t) {
             Log.w(TAG, "handleUrl failed", t);
-            try { CrashLogger.w("OpenLinkWebViewClient.handleUrl failed", t); } catch (Throwable ignored) {}
         }
         return false;
     }
 
-    // Optionally intercept resource requests to detect media requested via <video> or HLS fragments
-    // and launch internal player proactively. Return null to let WebView continue loading.
     @Override
-    public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+    public android.webkit.WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
         try {
             String url = request != null ? request.getUrl().toString() : null;
             if (isVideoOrHls(url) && mUseInternalPlayer) {
-                // launch internal player and return empty response so WebView does not double-play
+                // Launch internal player (same runtime approach) and return empty response
                 try {
-                    Intent i = PlayerActivity.createIntent(mCtx, Uri.parse(url));
+                    Intent i = new Intent();
+                    i.setAction(Intent.ACTION_VIEW);
+                    i.setData(Uri.parse(url));
+                    i.setClassName(mCtx.getPackageName(), "com.liskovsoft.smartyoutubetv.player.PlayerActivity");
                     i.putExtra("auto_fullscreen", true);
                     i.putExtra("auto_play", true);
                     i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     mCtx.startActivity(i);
-                    try { CrashLogger.i("OpenLinkWebViewClient: intercepted and launched internal player for " + url); } catch (Throwable ignored) {}
+                    Log.i(TAG, "intercepted and launched internal player for " + url);
                 } catch (Throwable t) {
-                    try { CrashLogger.w("OpenLinkWebViewClient: failed to launch internal player for " + url, t); } catch (Throwable ignored) {}
+                    Log.w(TAG, "failed to launch internal player for " + url, t);
                 }
-                // return 204 No Content (API>=21) or empty body to avoid WebView default handling
                 if (Build.VERSION.SDK_INT >= 21) {
                     return new WebResourceResponse("text/plain", "UTF-8", 204, "No Content", null, new ByteArrayInputStream(new byte[0]));
                 } else {
@@ -118,7 +123,7 @@ public class OpenLinkWebViewClient extends WebViewClient {
                 }
             }
         } catch (Throwable t) {
-            try { CrashLogger.w("OpenLinkWebViewClient.shouldInterceptRequest failed", t); } catch (Throwable ignored) {}
+            Log.w(TAG, "shouldInterceptRequest failed", t);
         }
         return super.shouldInterceptRequest(view, request);
     }
