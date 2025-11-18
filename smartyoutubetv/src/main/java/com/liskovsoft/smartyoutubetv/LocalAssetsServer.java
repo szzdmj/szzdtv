@@ -8,17 +8,18 @@ import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * Simple HTTP server that serves files from assets.
+ * LocalAssetsServer: serves files from assets with clear logs.
+ * Keep implementation simple; binding selection is performed at LauncherActivity start time.
  */
 public class LocalAssetsServer extends NanoHTTPD {
     private static final String TAG = "LocalAssetsServer";
     private final AssetManager assets;
 
+    // Keep single-port constructor for widest compatibility (NanoHTTPD chooses address)
     public LocalAssetsServer(int port, AssetManager assets) throws IOException {
-        // Bind explicitly by hostname string to avoid constructor mismatch with NanoHTTPD API.
-        // Use "0.0.0.0" to listen on all interfaces (including 127.0.0.1).
-        super("0.0.0.0", port);
+        super(port);
         this.assets = assets;
+        Log.d(TAG, "Constructed LocalAssetsServer for port " + port);
     }
 
     @Override
@@ -26,13 +27,12 @@ public class LocalAssetsServer extends NanoHTTPD {
         String uri = session.getUri();
         String remote = session.getHeaders() != null ? session.getHeaders().get("remote-addr") : null;
         Log.d(TAG, "Incoming request: uri=" + uri + ", remote=" + remote + ", method=" + session.getMethod());
-        if (uri == null || uri.equals("/") || uri.isEmpty()) uri = "/gjw.html";
+        if (uri == null || uri.isEmpty() || uri.equals("/")) uri = "/gjw.html";
         String path = uri.startsWith("/") ? uri.substring(1) : uri;
         try {
             InputStream is = assets.open(path);
             String mime = getMimeTypeForPath(path);
             Response res = newChunkedResponse(Response.Status.OK, mime, is);
-            // CORS for debugging
             res.addHeader("Access-Control-Allow-Origin", "*");
             return res;
         } catch (IOException e) {
