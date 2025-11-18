@@ -78,6 +78,15 @@ private int findFreePort() throws IOException {
         return socket.getLocalPort();
     }
 }
+// Insert this method inside the LauncherActivity class (after onDestroy(), before LocalAssetsServer)
+private int findFreePort() throws IOException {
+    // Bind to loopback only to avoid exposing port externally
+    java.net.InetAddress loopback = java.net.InetAddress.getByName("127.0.0.1");
+    try (ServerSocket socket = new ServerSocket(0, 0, loopback)) {
+        socket.setReuseAddress(true);
+        return socket.getLocalPort();
+    }
+}
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
     private WebView webView;
