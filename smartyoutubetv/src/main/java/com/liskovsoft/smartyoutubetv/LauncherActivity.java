@@ -34,7 +34,7 @@ import java.util.Locale;
  *
  * - Starts a small local HTTP server that serves assets (NanoHTTPD)
  * - Logs important events to CrashLogger (internal + external file)
- * - Loads http://127.0.0.1:PORT/gjw.html when server available; falls back to file:///android_asset/gjw.html
+ * - Loads http://127.0.0.1:PORT/ when server available; falls back to file:///android_asset/gjw.html
  * - Keeps existing WebView interception for .js assets from APK assets
  */
 public class LauncherActivity extends AppCompatActivity {
@@ -175,7 +175,8 @@ public class LauncherActivity extends AppCompatActivity {
             String started = "LocalAssetsServer started at http://127.0.0.1:" + serverPort + " serving assets/";
             Log.i(TAG, started);
             try { CrashLogger.i(started); } catch (Throwable ignored) {}
-            webView.loadUrl("http://127.0.0.1:" + serverPort + "/gjw.html");
+            // load root (/) when server available
+            webView.loadUrl("http://127.0.0.1:" + serverPort + "/");
         } catch (IOException e) {
             String warn = "Failed to start LocalAssetsServer (fallback to file://): " + e.getMessage();
             Log.w(TAG, warn, e);
