@@ -50,6 +50,10 @@ public class LauncherActivity extends AppCompatActivity {
     private WebView webView;
     private LocalAssetsServer server;
     private int serverPort = -1;
+    // HTTPS fallback settings
+    private static final boolean INSECURE_HTTPS_FALLBACK = true; // set false for production
+    private static final String[] HTTPS_WHITELIST_SUFFIXES = new String[] {
+    };
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
