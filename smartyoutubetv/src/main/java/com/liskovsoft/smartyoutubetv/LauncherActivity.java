@@ -381,8 +381,7 @@ public class LauncherActivity extends AppCompatActivity {
     private WebResourceResponse prepareCacheableResponseAndMaybeCache(WebResourceResponse resp, String origUrl) {
         try {
             if (resp == null) return null;
-            String contentTypeHeader = resp.getMimeType(); // note: WebResourceResponse.getMimeType may not include charset; we used returned Content-Type earlier when creating resp
-            // In our fetch implementations we passed full Content-Type string as the mime param, so try that first
+            String contentTypeHeader = resp.getMimeType(); // WebResourceResponse#getMimeType sometimes contains full type
             String mimeOrType = contentTypeHeader != null ? contentTypeHeader : guessMimeFromUrl(origUrl);
             boolean isTextual = mimeOrType.startsWith("application/json") || mimeOrType.startsWith("application/javascript") || mimeOrType.startsWith("text/");
             String encoding = chooseEncodingForMime(mimeOrType);
@@ -456,7 +455,7 @@ public class LauncherActivity extends AppCompatActivity {
 
             // Replace only occurrences that reference the same host (http://host/... or //host/).
             String hostEsc = Pattern.quote(host);
-            // Replace http://host(:port)?/  -> https://host(:port)?/
+            // Replace http://host(:port)?/  -> https://host/
             Pattern p1 = Pattern.compile("http://" + hostEsc + "(?::(\\d+))?/");
             Matcher m1 = p1.matcher(text);
             boolean any = m1.find();
