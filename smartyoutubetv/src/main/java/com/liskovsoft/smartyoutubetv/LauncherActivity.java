@@ -1,99 +1,201 @@
-// (Only the relevant added/changed portion is shown within the full file context — integrate into your existing LauncherActivity)
-...
-import java.net.InetAddress;
-import java.net.SocketException;
+package com.liskovsoft.smartyoutubetv;
 
-// inside class LauncherActivity:
-private LocalAssetsServer localServer;
+import android.annotation.SuppressLint;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.util.Log;
+import android.webkit.ConsoleMessage;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 
-@Override
-protected void onCreate(@Nullable Bundle savedInstanceState) {
-    super.onCreate(savedInstanceState);
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
 
-    // Try to start server with fallback strategy and detailed logs.
-    final int port = 12721;
-    // Strategy:
-    // 1) try default constructor (super(port)) -> NanoHTTPD will choose address
-    // 2) if failed, try binding to IPv6 "::" via reflection/alternate constructor if available (optional)
-    // 3) if still failed, try binding to "0.0.0.0"
-    boolean started = false;
-    Exception lastEx = null;
+import com.liskovsoft.smartyoutubetv.player.PlayerActivity;
 
-    try {
-        localServer = new LocalAssetsServer(port, getAssets());
-        localServer.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
-        Log.i(TAG, "LocalAssetsServer started (default bind) on port " + port);
-        started = true;
-    } catch (Exception e) {
-        lastEx = e;
-        Log.w(TAG, "LocalAssetsServer default bind failed: " + e);
-    }
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Locale;
 
-    if (!started) {
-        // Try explicit IPv6 bind if supported by NanoHTTPD constructor (host, port)
+import fi.iki.elonen.NanoHTTPD; // used for SOCKET_READ_TIMEOUT constant
+
+/**
+ * LauncherActivity with improved WebView debugging and asset-based fallback for JS files.
+ *
+ * - Enables file access & universal access from file URLs
+ * - Logs JS console messages to Android log
+ * - Intercepts requests for common JS files and serves them from assets if present
+ * - For playable links, forwards to PlayerActivity
+ */
+public class LauncherActivity extends AppCompatActivity {
+    private static final String TAG = "LauncherActivity";
+    private WebView webView;
+
+    // Reference to the local HTTP server (may be null if start failed)
+    private LocalAssetsServer localServer;
+
+    @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
+    @Override
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        // --- Start local assets HTTP server (safe, inside method body) ---
+        final int port = 12721;
         try {
-            // attempt using reflection to call new LocalAssetsServer with host if you added that constructor;
-            // fallback: construct a NanoHTTPD with host "0.0.0.0" if you implemented such constructor.
-            LocalAssetsServer s2 = null;
-            try {
-                // attempt to use a two-arg constructor LocalAssetsServer(String, int, AssetManager) if you add it
-                // If not present, skip to next attempt.
-                java.lang.reflect.Constructor<?> ctor = LocalAssetsServer.class.getConstructor(String.class, int.class, android.content.res.AssetManager.class);
-                s2 = (LocalAssetsServer) ctor.newInstance("::", port, getAssets());
-                s2.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
-                localServer = s2;
-                Log.i(TAG, "LocalAssetsServer started on IPv6 (::) port " + port);
-                started = true;
-            } catch (NoSuchMethodException nsme) {
-                // constructor not present; ignore
-            }
-        } catch (Exception e2) {
-            lastEx = e2;
-            Log.w(TAG, "LocalAssetsServer IPv6 bind attempt failed: " + e2);
+            // LocalAssetsServer has constructor LocalAssetsServer(int port, AssetManager assets)
+            localServer = new LocalAssetsServer(port, getAssets());
+            // start(timeoutMillis, daemon)
+            localServer.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
+            Log.i(TAG, "LocalAssetsServer started on http://127.0.0.1:" + port);
+        } catch (IOException ioe) {
+            Log.e(TAG, "LocalAssetsServer failed to construct/start", ioe);
+            localServer = null;
+        } catch (Exception e) {
+            Log.e(TAG, "Unexpected error starting LocalAssetsServer", e);
+            localServer = null;
         }
+        // --- end server start ---
+
+        webView = new WebView(this);
+        setContentView(webView);
+
+        WebSettings ws = webView.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setDomStorageEnabled(true);
+        ws.setAllowFileAccess(true);
+        ws.setAllowContentAccess(true);
+
+        // Allow file:// access to other file:// and http(s) resources (for debugging / local assets)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            ws.setAllowFileAccessFromFileURLs(true);
+            ws.setAllowUniversalAccessFromFileURLs(true);
+        }
+
+        // Optional tuning
+        ws.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        webView.setWebContentsDebuggingEnabled(true);
+
+        // JS -> Android log bridge
+        webView.addJavascriptInterface(new Object() {
+            @JavascriptInterface
+            public void log(String msg) {
+                Log.d(TAG, "JS: " + msg);
+            }
+        }, "Android");
+
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
+                // Forward JS console messages to Android logcat
+                String msg = String.format(Locale.US, "JSConsole: %s (%s:%d) level=%s",
+                        consoleMessage.message(),
+                        consoleMessage.sourceId(),
+                        consoleMessage.lineNumber(),
+                        consoleMessage.messageLevel().name());
+                Log.d(TAG, msg);
+                return super.onConsoleMessage(consoleMessage);
+            }
+        });
+
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            @SuppressWarnings("deprecation")
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                return handleUrl(url);
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                return handleUrl(request.getUrl().toString());
+            }
+
+            private boolean handleUrl(String url) {
+                try {
+                    if (url == null) return false;
+                    // if it's a video link, hand off to player
+                    if (url.matches("(?i).+\\.(mp4|m3u8|webm)$") || url.contains("youtube.com") || url.contains("youtu.be")) {
+                        Intent i = PlayerActivity.createIntent(LauncherActivity.this, Uri.parse(url));
+                        startActivity(i);
+                        return true;
+                    }
+                    return false;
+                } catch (Throwable t) {
+                    Log.e(TAG, "handleUrl failed", t);
+                    return false;
+                }
+            }
+
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                String url = request.getUrl().toString();
+                return tryServeAssetForUrl(url);
+            }
+
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, String url) {
+                return tryServeAssetForUrl(url);
+            }
+
+            private WebResourceResponse tryServeAssetForUrl(String url) {
+                try {
+                    if (url == null) return null;
+                    String lower = url.toLowerCase(Locale.ROOT);
+
+                    // If requesting a JS filename (common: webjs.js), try to return it from assets if present.
+                    if (lower.endsWith(".js")) {
+                        // Extract filename
+                        int idx = url.lastIndexOf('/');
+                        String filename = idx >= 0 ? url.substring(idx + 1) : url;
+                        String assetPath = filename;
+                        Log.d(TAG, "Intercept request for JS: " + url + " -> try asset: " + assetPath);
+                        InputStream is = null;
+                        try {
+                            is = getAssets().open(assetPath);
+                        } catch (IOException ignored) {
+                            try {
+                                is = getAssets().open("js/" + assetPath);
+                            } catch (IOException ignored2) {
+                                is = null;
+                            }
+                        }
+                        if (is != null) {
+                            return new WebResourceResponse("application/javascript", "UTF-8", is);
+                        }
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "tryServeAssetForUrl failed for " + url, t);
+                }
+                return null;
+            }
+        });
+
+        // Load the gjw page from assets (keep test homepage unchanged)
+        webView.loadUrl("file:///android_asset/gjw.html");
     }
 
-    if (!started) {
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // Stop the local server if it was started
         try {
-            // Try binding to 0.0.0.0 by reflection constructor if available
-            java.lang.reflect.Constructor<?> ctor = null;
-            try {
-                ctor = LocalAssetsServer.class.getConstructor(String.class, int.class, android.content.res.AssetManager.class);
-            } catch (NoSuchMethodException nsme) {
-                ctor = null;
+            if (localServer != null) {
+                localServer.stop();
+                Log.i(TAG, "LocalAssetsServer stopped");
             }
-            if (ctor != null) {
-                LocalAssetsServer s3 = (LocalAssetsServer) ctor.newInstance("0.0.0.0", port, getAssets());
-                s3.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
-                localServer = s3;
-                Log.i(TAG, "LocalAssetsServer started on 0.0.0.0 port " + port);
-                started = true;
-            }
-        } catch (Exception e3) {
-            lastEx = e3;
-            Log.w(TAG, "LocalAssetsServer 0.0.0.0 bind attempt failed: " + e3);
+        } catch (Throwable t) {
+            Log.w(TAG, "Error stopping LocalAssetsServer", t);
+        }
+
+        if (webView != null) {
+            webView.destroy();
+            webView = null;
         }
     }
-
-    if (!started) {
-        Log.e(TAG, "LocalAssetsServer failed to start on port " + port + " (see earlier logs). Last error: " + lastEx);
-        // continue without server — WebView will fallback to file:///android_asset/gjw.html
-    }
-
-    // ... existing WebView setup remains unchanged ...
-    // webView.loadUrl("file:///android_asset/gjw.html");
-}
-...
-@Override
-protected void onDestroy() {
-    super.onDestroy();
-    try {
-        if (localServer != null) {
-            localServer.stop();
-            Log.i(TAG, "LocalAssetsServer stopped");
-        }
-    } catch (Throwable t) {
-        Log.w(TAG, "Error stopping LocalAssetsServer", t);
-    }
-    // existing cleanup...
 }
