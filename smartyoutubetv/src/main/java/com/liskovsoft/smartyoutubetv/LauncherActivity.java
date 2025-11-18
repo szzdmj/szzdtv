@@ -34,9 +34,7 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.ServerSocket;
 import java.net.URL;
-import java.util.HashMap;
 import java.util.Locale;
-import java.util.Map;
 
 /**
  * LauncherActivity
@@ -52,19 +50,6 @@ public class LauncherActivity extends AppCompatActivity {
     private WebView webView;
     private LocalAssetsServer server;
     private int serverPort = -1;
-
-    // 去抖：上次启动的 URL 与时间（避免短时间内重复打开播放器）
-    private volatile String lastLaunchedUrl = null;
-    private volatile long lastLaunchTs = 0;
-    private static final long LAUNCH_DEBOUNCE_MS = 1500;
-
-    // HTTPS fallback settings (development only)
-    private static final boolean INSECURE_HTTPS_FALLBACK = true; // set false for production
-    private static final String[] HTTPS_WHITELIST_SUFFIXES = new String[] {
-            "cloudfront.net",
-            "s3.amazonaws.com",
-            "amazonaws.com"
-    };
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -189,25 +174,6 @@ public class LauncherActivity extends AppCompatActivity {
                             try { CrashLogger.i("HTTPS fallback failed for " + url); } catch (Throwable ignored) {}
                         }
                     }
-
-                    // 如果是媒体资源（m3u8/mp4 等），启动内置播放器并返回空响应给 WebView，阻止 WebView 自己处理
-                    if (lower.endsWith(".m3u8") || lower.endsWith(".mp4") || lower.endsWith(".webm") ||
-                        lower.endsWith(".m4a") || lower.endsWith(".aac")) {
-
-                        // 记录并拉起播放器
-                        // NOTE: tryLaunchPlayerIfMedia is a class-level method (defined below), not defined inside onCreate.
-                        tryLaunchPlayerIfMedia(url);
-
-                        // 返回空响应给 WebView。API 21+ 可设置状态码 204 No Content
-                        if (Build.VERSION.SDK_INT >= 21) {
-                            Map<String, String> headers = new HashMap<>();
-                            headers.put("Content-Type", "text/plain");
-                            return new WebResourceResponse("text/plain", "UTF-8", 204, "No Content", headers, new ByteArrayInputStream(new byte[0]));
-                        } else {
-                            return new WebResourceResponse("text/plain", "UTF-8", new ByteArrayInputStream(new byte[0]));
-                        }
-                    }
-
                 }catch(Throwable t){
                     Log.w(TAG,"tryServeAssetForUrl failed for "+url,t);
                     try{ CrashLogger.w("tryServeAssetForUrl failed for "+url,t);}catch(Throwable ignored){}
@@ -271,44 +237,6 @@ public class LauncherActivity extends AppCompatActivity {
             server=null; serverPort=-1;
             webView.loadUrl("file:///android_asset/gjw.html");
         }
-    } // end onCreate
-
-    // ---------- Class-level helper: launch internal player if media URL detected ----------
-    private void tryLaunchPlayerIfMedia(final String url) {
-        if (url == null) return;
-        // 基础匹配（文件后缀/扩展名），你可以根据需要扩展正则
-        String lower = url.toLowerCase(Locale.ROOT);
-        boolean looksLikeMedia = lower.endsWith(".m3u8") || lower.endsWith(".mp4") || lower.endsWith(".webm") ||
-                lower.endsWith(".m4a") || lower.endsWith(".aac");
-        if (!looksLikeMedia) return;
-
-        final long now = System.currentTimeMillis();
-        if (url.equals(lastLaunchedUrl) && (now - lastLaunchTs) < LAUNCH_DEBOUNCE_MS) {
-            // 已经在短时间内启动过同一 URL，忽略
-            return;
-        }
-        lastLaunchedUrl = url;
-        lastLaunchTs = now;
-
-        // 启动 PlayerActivity 必须在 UI 线程
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    CrashLogger.i("Launching player for " + url);
-                } catch (Throwable ignored) {}
-                try {
-                    Intent i = PlayerActivity.createIntent(LauncherActivity.this, Uri.parse(url));
-                    // 约定 extra：自动全屏并立即播放
-                    i.putExtra("auto_fullscreen", true);
-                    i.putExtra("auto_play", true);
-                    startActivity(i);
-                } catch (Throwable t) {
-                    Log.w(TAG, "Failed to launch PlayerActivity", t);
-                    try { CrashLogger.w("Failed to launch PlayerActivity", t); } catch (Throwable ignored) {}
-                }
-            }
-        });
     }
 
     @Override
@@ -433,80 +361,35 @@ public class LauncherActivity extends AppCompatActivity {
         }
     }
 
-    private boolean hostMatchesWhitelist(String host) {
-        if (host == null) return false;
-        if (HTTPS_WHITELIST_SUFFIXES == null || HTTPS_WHITELIST_SUFFIXES.length == 0) {
-            return INSECURE_HTTPS_FALLBACK;
-        }
-        for (String suf : HTTPS_WHITELIST_SUFFIXES) {
-            if (host.endsWith(suf)) return true;
-        }
-        return false;
-    }
-
+    /**
+     * Try fetching https:// version of a given http:// URL.
+     * Returns a WebResourceResponse if successful (HTTP 2xx), otherwise null.
+     */
     private WebResourceResponse tryFetchHttpsFallback(String url) {
         if (url == null || !url.startsWith("http://")) return null;
         String httpsUrl = "https://" + url.substring(7);
-        java.net.HttpURLConnection conn = null;
+        HttpURLConnection conn = null;
         try {
-            java.net.URL u = new java.net.URL(httpsUrl);
-            String host = u.getHost();
-
-            boolean tryInsecure = INSECURE_HTTPS_FALLBACK && hostMatchesWhitelist(host);
-
-            if (!tryInsecure) {
-                // 正常安全方式
-                conn = (java.net.HttpURLConnection) u.openConnection();
-                conn.setConnectTimeout(4000);
-                conn.setReadTimeout(6000);
-                conn.setInstanceFollowRedirects(true);
-                int code = conn.getResponseCode();
-                if (code >= 200 && code < 300) {
-                    String contentType = conn.getContentType();
-                    if (contentType == null) contentType = "application/octet-stream";
-                    java.io.InputStream is = conn.getInputStream();
-                    return new WebResourceResponse(contentType, "UTF-8", is);
-                } else {
-                    android.util.Log.i("LauncherActivity", "HTTPS fallback returned non-2xx for " + httpsUrl + " code=" + code);
-                }
-                return null;
-            }
-
-            // —— insecure mode: create permissive SSLContext & HostnameVerifier —— //
-            javax.net.ssl.HttpsURLConnection httpsConn = (javax.net.ssl.HttpsURLConnection) u.openConnection();
-            httpsConn.setConnectTimeout(4000);
-            httpsConn.setReadTimeout(6000);
-            httpsConn.setInstanceFollowRedirects(true);
-
-            // Create an SSLContext that trusts all certificates (INSECURE)
-            javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
-            javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[]{
-                    new javax.net.ssl.X509TrustManager() {
-                        public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
-                        public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
-                        public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
-                    }
-            };
-            sc.init(null, trustAllCerts, new java.security.SecureRandom());
-            httpsConn.setSSLSocketFactory(sc.getSocketFactory());
-            httpsConn.setHostnameVerifier((hostname, session) -> true);
-
-            int code = httpsConn.getResponseCode();
+            URL u = new URL(httpsUrl);
+            conn = (HttpURLConnection) u.openConnection();
+            conn.setConnectTimeout(4000);
+            conn.setReadTimeout(6000);
+            conn.setInstanceFollowRedirects(true);
+            int code = conn.getResponseCode();
             if (code >= 200 && code < 300) {
-                String contentType = httpsConn.getContentType();
+                String contentType = conn.getContentType();
                 if (contentType == null) contentType = "application/octet-stream";
-                java.io.InputStream is = httpsConn.getInputStream();
-                android.util.Log.i("LauncherActivity", "HTTPS insecure fallback success for " + httpsUrl);
+                InputStream is = conn.getInputStream();
+                // Note: we don't disconnect the connection here because the stream will be read by WebView
                 return new WebResourceResponse(contentType, "UTF-8", is);
             } else {
                 try { CrashLogger.i("HTTPS fallback returned non-2xx for " + httpsUrl + " code=" + code); } catch (Throwable ignored) {}
             }
         } catch (Throwable t) {
-            android.util.Log.w("LauncherActivity", "HTTPS fallback failed for " + httpsUrl, t);
-        } finally {
-            // if conn was plain HttpURLConnection and not used (or ended), ensure disconnect
-            if (conn != null) conn.disconnect();
+            try { CrashLogger.w("HTTPS fallback failed for " + httpsUrl, t); } catch (Throwable ignored) {}
         }
+        // if failed, ensure connection closed
+        if (conn != null) conn.disconnect();
         return null;
     }
 }
