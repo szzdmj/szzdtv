@@ -94,8 +94,7 @@ public class LauncherActivity extends AppCompatActivity {
     // Default whitelist suffixes for permissive usage / http->https rewrite (conservative).
     // Adjust to your needs. Example: {"s3.amazonaws.com","cloudfront.net"}
     private static final String[] HTTPS_WHITELIST_SUFFIXES = new String[] {
-        "s3.amazonaws.com",
-        "cloudfront.net"
+       
     };
 
     // Tracking missing assets (optional helper)
