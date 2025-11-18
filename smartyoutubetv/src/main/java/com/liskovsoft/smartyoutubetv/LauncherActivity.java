@@ -201,8 +201,10 @@ public class LauncherActivity extends AppCompatActivity {
             server = new LocalAssetsServer(serverPort, getAssets());
             server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
             String started = "LocalAssetsServer started at http://127.0.0.1:" + serverPort + " serving assets/";
-            Log.i(TAG, started); try{ CrashLogger.i(started);}catch(Throwable ignored){}
-            webView.loadUrl("http://127.0.0.1:" + serverPort + "/");
+                Log.i(TAG, started);
+                try { CrashLogger.i(started); } catch (Throwable ignored) {}
+                // load root (/) when server available — use hostname 'localhost' to match network_security_config
+                webView.loadUrl("http://localhost:" + serverPort + "/");
         } catch (IOException e) {
             String warn = "Failed to start LocalAssetsServer (fallback to file://): " + e.getMessage();
             Log.w(TAG,warn,e); try{ CrashLogger.w(warn,e);}catch(Throwable ignored){}
