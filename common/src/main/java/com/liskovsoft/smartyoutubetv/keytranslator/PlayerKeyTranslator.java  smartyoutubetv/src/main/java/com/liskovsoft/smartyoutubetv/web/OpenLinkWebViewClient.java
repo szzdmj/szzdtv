@@ -14,9 +14,9 @@ import java.util.regex.Pattern;
 
 /**
  * Lightweight WebViewClient that detects playable links and launches internal ExoPlayerActivity at runtime.
+ * Includes runtime logging (CrashLogger) to verify the start attempt.
  *
- * This implementation avoids compile-time dependency on browser module classes by starting the Activity
- * with Intent.setClassName(packageName, fullyQualifiedClassName).
+ * Important: avoid compile-time dependency on browser module classes (start activity by class name).
  */
 public class OpenLinkWebViewClient extends WebViewClient {
     private static final Pattern PLAYABLE_EXT = Pattern.compile("(?i).*\\.(mp4|m3u8|webm)$");
@@ -37,97 +37,88 @@ public class OpenLinkWebViewClient extends WebViewClient {
         String url = request != null && request.getUrl() != null ? request.getUrl().toString() : null;
         if (url == null) return false;
 
-        // If URL looks like a media resource, handle it.
         if (isPlayableUrl(url)) {
-            // Collect optional headers if you need them (for now we only include User-Agent)
             Map<String, String> headers = new HashMap<>();
             try {
                 String ua = view.getSettings().getUserAgentString();
                 if (ua != null) headers.put("User-Agent", ua);
             } catch (Throwable ignored) {}
 
-            // Prefer internal immersive player if configured; otherwise let system handle (fallback)
             if (mPreferInternal) {
                 startInternalPlayer(url, null, headers);
-                return true; // we handled the navigation
+                return true;
             }
         }
 
-        // For youtube links or other special handling you can extend here
         if (isYouTubeUrl(url)) {
-            // Default: let WebView handle
             return false;
         }
 
-        return false; // default: let WebView handle
+        return false;
     }
 
-    // Launch activity by runtime class name to avoid compile-time dependency on browser module.
+    // Start activity by runtime class name to avoid compile-time dependency on browser module.
     private void startInternalPlayer(String url, String title, Map<String, String> headers) {
         try {
             Context ctx = mContext;
             Intent intent = new Intent();
-            // Use the installed app package name (applicationId at runtime)
             String appPkg = ctx.getPackageName();
-
-            // Fully-qualified activity class name as declared in manifest for the browser module:
-            // keep this value in sync with the Activity's package: com.liskovsoft.browser.player.ExoPlayerActivity
+            // FQCN of activity implemented in browser module; must match manifest merged into final app.
             String fqcn = "com.liskovsoft.browser.player.ExoPlayerActivity";
 
-            // Set class name (package, class). The package argument must be the installed application's package name.
             intent.setClassName(appPkg, fqcn);
             intent.putExtra("extra_video_url", url);
             if (title != null) intent.putExtra("extra_title", title);
             if (headers != null && !headers.isEmpty()) {
-                // pass headers as Serializable HashMap
                 intent.putExtra("extra_headers", (Serializable) new HashMap<>(headers));
             }
-            // Ensure starting activity from non-activity context
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
-        // LOG: before starting activity
-        String preMsg = "EXOPLAYER_START_ATTEMPT: pkg=" + appPkg + " class=" + fqcn + " url=" + url
-                + " headers_count=" + (headers == null ? 0 : headers.size());
-        android.util.Log.i("OpenLinkWebViewClient", preMsg);
-        try { com.szzdmj.nanohttpd.CrashLogger.i(preMsg); } catch (Throwable ignored) {}
+            // LOG before start
+            String preMsg = "EXOPLAYER_START_ATTEMPT: pkg=" + appPkg + " class=" + fqcn + " url=" + url
+                    + " headers_count=" + (headers == null ? 0 : headers.size());
+            android.util.Log.i("OpenLinkWebViewClient", preMsg);
+            try { com.szzdmj.nanohttpd.CrashLogger.i(preMsg); } catch (Throwable ignored) {}
 
             ctx.startActivity(intent);
 
-        // LOG: successfully started
-        String okMsg = "EXOPLAYER_START_OK: started internal player for url=" + url;
-        android.util.Log.i("OpenLinkWebViewClient", okMsg);
-        try { com.szzdmj.nanohttpd.CrashLogger.i(okMsg); } catch (Throwable ignored) {}
+            String okMsg = "EXOPLAYER_START_OK: started internal player for url=" + url;
+            android.util.Log.i("OpenLinkWebViewClient", okMsg);
+            try { com.szzdmj.nanohttpd.CrashLogger.i(okMsg); } catch (Throwable ignored) {}
         } catch (Throwable t) {
-        String errMsg = "EXOPLAYER_START_FAIL: will fallback to ACTION_VIEW for url=" + url + " err=" + t;
-        android.util.Log.w("OpenLinkWebViewClient", errMsg, t);
-        try { com.szzdmj.nanohttpd.CrashLogger.w(errMsg, null); } catch (Throwable ignored) {}
+            String errMsg = "EXOPLAYER_START_FAIL: will fallback to ACTION_VIEW for url=" + url + " err=" + t;
+            android.util.Log.w("OpenLinkWebViewClient", errMsg, t);
+            try { com.szzdmj.nanohttpd.CrashLogger.w(errMsg, null); } catch (Throwable ignored) {}
 
-        // fallback
+            // fallback to implicit
             try {
                 Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
                 i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 mContext.startActivity(i);
-            try { com.szzdmj.nanohttpd.CrashLogger.i("EXOPLAYER_START_FALLBACK_OK: ACTION_VIEW started for url=" + url); } catch (Throwable ignored) {}
-        } catch (Throwable ignored2) {
-            try { com.szzdmj.nanohttpd.CrashLogger.w("EXOPLAYER_START_FALLBACK_FAIL: " + ignored2, null); } catch (Throwable ignored3) {}
-    }
+                try { com.szzdmj.nanohttpd.CrashLogger.i("EXOPLAYER_START_FALLBACK_OK: ACTION_VIEW started for url=" + url); } catch (Throwable ignored) {}
+            } catch (Throwable ignored2) {
+                try { com.szzdmj.nanohttpd.CrashLogger.w("EXOPLAYER_START_FALLBACK_FAIL: " + ignored2, null); } catch (Throwable ignored3) {}
+            }
+        }
     }
 
-    // Helper: quick playable URL heuristic
     private boolean isPlayableUrl(String url) {
         if (url == null) return false;
         if (PLAYABLE_EXT.matcher(url).matches()) return true;
-        // also accept streaming playlist patterns
         if (url.toLowerCase().contains("m3u8")) return true;
         return false;
     }
 
     private boolean isYouTubeUrl(String url) {
         if (url == null) return false;
-        Uri u = Uri.parse(url);
-        String host = u.getHost();
-        if (host == null) return false;
-        host = host.toLowerCase();
-        return host.contains("youtube.com") || host.contains("youtu.be");
+        try {
+            android.net.Uri u = android.net.Uri.parse(url);
+            String host = u.getHost();
+            if (host == null) return false;
+            host = host.toLowerCase();
+            return host.contains("youtube.com") || host.contains("youtu.be");
+        } catch (Throwable t) {
+            return false;
+        }
     }
 }
