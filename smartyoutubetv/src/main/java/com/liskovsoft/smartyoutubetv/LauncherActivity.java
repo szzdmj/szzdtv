@@ -202,48 +202,41 @@ public class LauncherActivity extends AppCompatActivity {
                     String lower = url.toLowerCase(Locale.ROOT);
                     String urlNoQuery = url.split("\\?")[0].split("#")[0];
 
-                    // Local assets for JS first
-                    if (lower.endsWith(".js")) {
-                        int idx = urlNoQuery.lastIndexOf('/');
-                        String filename = idx >= 0 ? urlNoQuery.substring(idx + 1) : urlNoQuery;
-                        Log.d(TAG, "Intercept request for JS: " + url + " -> " + filename);
-                        try { CrashLogger.i("Intercept request for JS: " + url + " -> " + filename); } catch (Throwable ignored) {}
-                        InputStream is = null;
-                        try {
-                            is = getAssets().open(filename);
-                        } catch (IOException ignored) {
+// Replace the external-request branch inside tryServeAssetForUrl(...) with this upgraded handling.
+// Key ideas:
+// - If original request is http://..., try to fetch https://... first (using existing fetchWithRetriesAndCache).
+// - If https fetch succeeds, return that response (log upgrade).
+// - If https fails, fall back to existing behavior (attempt to fetch original http).
+// - This forces https where available while preserving fallback.
+if (lower.startsWith("http://") || lower.startsWith("https://")) {
+    // If the original URL is http, attempt an immediate https upgrade and serve that if successful.
+    if (lower.startsWith("http://")) {
+        String httpsUrl = "https://" + url.substring("http://".length());
                             try {
-                                is = getAssets().open("js/" + filename);
-                            } catch (IOException ignored2) {
-                                is = null;
-                            }
-                        }
-                        if (is != null) {
-                            Log.i(TAG, "Serving JS from assets: " + filename);
-                            return new WebResourceResponse("application/javascript", "UTF-8", is);
+            try { CrashLogger.i("Attempting http->https upgrade for: " + url + " -> " + httpsUrl); } catch (Throwable ignored) {}
+            WebResourceResponse httpsResp = fetchWithRetriesAndCache(httpsUrl, requestHeaders);
+            if (httpsResp != null) {
+                try { CrashLogger.i("Upgraded http->https for " + url + " -> " + httpsUrl); } catch (Throwable ignored) {}
+                // Return the https response directly. Caller will log Served remote resource via app-fetch with original url.
+                return httpsResp;
                         } else {
-                            missingAssets.add(filename);
-                            Log.d(TAG, "Asset not found for " + filename);
+                try { CrashLogger.i("http->https upgrade failed or no https content for: " + url); } catch (Throwable ignored) {}
                         }
+        } catch (Throwable t) {
+            try { CrashLogger.w("http->https upgrade attempt failed for " + url + ": " + t, t); } catch (Throwable ignored) {}
+            // continue to try original url below
+                    }
                     }
 
-                    // Local server passthrough
-                    if (lower.startsWith("http://localhost:") || lower.startsWith("https://localhost:") ||
-                        lower.startsWith("http://127.0.0.1:") || lower.startsWith("https://127.0.0.1:")) {
-                        return null;
-                    }
-
-                    // External requests: app-level fetch with retries + cache
-                    if (lower.startsWith("http://") || lower.startsWith("https://")) {
-                        // Prefer https candidate first (already done by helper), but ensure http->https upgrade for cloudfront style hosts:
+    // If we reach here, either original was https, or https upgrade failed: use normal fetch flow (which also tries https candidates internally)
                         WebResourceResponse resp = fetchWithRetriesAndCache(url, requestHeaders);
                         if (resp != null) {
                             try { CrashLogger.i("Served remote resource via app-fetch: " + url); } catch (Throwable ignored) {}
                             return resp;
                         } else {
-                            // If original was http and we couldn't fetch https and caller expects http, return empty placeholder to avoid leaking
+        // If original was http and we couldn't fetch https nor http (network issues), block cleartext retry to avoid unsafe fallthrough
                             if (lower.startsWith("http://")) {
-                                try { CrashLogger.i("Blocking cleartext request for " + url); } catch (Throwable ignored) {}
+            try { CrashLogger.i("Blocking cleartext request for " + url + " (no available content)"); } catch (Throwable ignored) {}
                                 if (Build.VERSION.SDK_INT >= 21) {
                                     Map<String,String> headers = Collections.singletonMap("Content-Type","text/plain");
                                     return new WebResourceResponse("text/plain","UTF-8",204,"No Content",headers,new ByteArrayInputStream(new byte[0]));
