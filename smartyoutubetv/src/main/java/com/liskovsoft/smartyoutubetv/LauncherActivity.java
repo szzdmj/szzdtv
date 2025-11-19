@@ -1,4 +1,3 @@
-// (完整文件：已将 LocalAssetsServer.fetchRemoteForProxy 替换为“最小转发器”，其余内容基于原仓库版本)
 package com.liskovsoft.smartyoutubetv;
 
 import android.annotation.SuppressLint;
@@ -14,7 +13,6 @@ import android.webkit.JavascriptInterface;
 import android.webkit.SslErrorHandler;
 import android.net.http.SslError;
 import android.webkit.WebChromeClient;
-import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -29,155 +27,40 @@ import com.liskovsoft.smartyoutubetv.player.PlayerActivity;
 import com.szzdmj.nanohttpd.CrashLogger;
 import fi.iki.elonen.NanoHTTPD;
 
-import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.HttpURLConnection;
 import java.net.ServerSocket;
-import java.net.SocketException;
 import java.net.URL;
-import java.net.Proxy;
-import java.net.InetSocketAddress;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.security.KeyStore;
-import java.security.SecureRandom;
-import java.security.cert.Certificate;
-import java.security.cert.CertificateException;
-import java.security.cert.CertificateFactory;
-import java.security.cert.X509Certificate;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.TrustManagerFactory;
-import javax.net.ssl.X509TrustManager;
 
-/**
- * LauncherActivity — debug-friendly variant
- *
- * - Starts a small local HTTP server that serves assets (NanoHTTPD)
- * - Intercepts network requests and prefers app-fetch (proxy) so we can log response headers/status
- * - Adds debug relaxations: accept SSL errors (optional), permissive CSP injected into local gjw.html,
- *   cookie enabling, clear caches on startup (for debugging), DOM snapshot on onPageFinished.
- *
- * This variant also injects visibility/debug probes:
- *  - HIDDEN_REPORT: list elements that are "hidden" or zero-size, with selectors/classes/text samples.
- *  - MUTATION: mutation observer logs attribute changes (class/style/hidden/aria-hidden/inert).
- *  - UNHIDE (optional): temporarily reveal hidden elements and outline them for manual inspection.
- *
- * NOTE: These relaxations are for debugging only. Remove or tighten for production.
- */
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
+
     private WebView webView;
     private LocalAssetsServer server;
     private int serverPort = -1;
 
-    // ---------- NEW: optional external minimal proxy settings ----------
-    // If you run the provided minimal-proxy.js on your development machine, set these so LocalAssetsServer
-    // will route its internal proxy fetches via that external proxy (so the Node proxy does the network fetch).
-    // Examples:
-    //  - Android emulator -> host machine: use "10.0.2.2" and port 3000
-    //  - Genymotion -> host: "10.0.3.2"
-    //  - Physical device -> machine IP on same LAN (e.g. "192.168.1.5")
-    // Set EXTERNAL_PROXY_HOST="" and EXTERNAL_PROXY_PORT=0 to disable.
-    private static final String EXTERNAL_PROXY_HOST = ""; // e.g. "10.0.2.2"
-    private static final int EXTERNAL_PROXY_PORT = 0;     // e.g. 3000
-    // -------------------------------------------------------------------
-
-    // debounce for launching player
-    private volatile String lastLaunchedUrl = null;
-    private volatile long lastLaunchTs = 0;
-    private static final long LAUNCH_DEBOUNCE_MS = 1500;
-
-    // HTTPS fallback settings
-    private static final boolean INSECURE_HTTPS_FALLBACK = true;
-    private static final String[] HTTPS_WHITELIST_SUFFIXES = new String[] {
-        "s3.amazonaws.com",
-        "cloudfront.net"
-    };
-
-    // Debug / loosen flags (toggle for testing)
-    private static final boolean ALLOW_ALL_SSL_ERRORS = true;          // If true, WebView SSL errors are proceeded (INSECURE)
-    private static final boolean SANITIZE_JS_RESPONSES = false;       // If false, do not replace JS responses that look like HTML
-    private static final boolean BLOCK_CLEARTEXT_ON_FAILURE = false;  // If false, allow WebView to try direct http if app-proxy failed
-
-    // Visibility debug helpers
-    // ENABLE_VISIBILITY_DEBUG: when true, onPageFinished will inject HIDDEN_REPORT and MUTATION observer logs.
-    // DEBUG_UNHIDE: if true, will try to temporarily reveal matching elements (INSECURE — only for local debugging).
-    // NOTE: You asked to "打开 display:none 的部分" — enable DEBUG_UNHIDE to automatically attempt to reveal elements.
-    private static final boolean ENABLE_VISIBILITY_DEBUG = true;
-    private static final boolean DEBUG_UNHIDE = true; // <-- Enabled as requested
-
-    // Networking / retry tuning
-    private static final int CONNECT_TIMEOUT_MS = 180_000;
-    private static final int READ_TIMEOUT_MS = 180_000;
-    private static final int MAX_ATTEMPTS_PER_CANDIDATE = 4;
-    private static final long RETRY_BASE_BACKOFF_MS = 500L; // multiplied by attempt index
-
-    // Default User-Agent to present to upstream servers (helps with Cloudflare/edge)
-    private static final String DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-
-    // Tracking missing assets (optional helper)
-    private final Set<String> missingAssets = Collections.synchronizedSet(new HashSet<>());
-
-    // Cache directory name under app files
-    private static final String REMOTE_CACHE_DIR = "remote_cache";
+    // Minimal debug flags (kept simple)
+    private static final boolean ALLOW_ALL_SSL_ERRORS = true;
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Init CrashLogger
-        try { CrashLogger.init(this); CrashLogger.i("LauncherActivity.onCreate"); } catch (Throwable t) { Log.w(TAG, "CrashLogger init failed", t); }
+        try { CrashLogger.init(this); CrashLogger.i("LauncherActivity.onCreate"); } catch (Throwable ignored) {}
 
         webView = new WebView(this);
-
-        // Clear caches (best-effort). Must be after webView is instantiated.
-        try {
-            webView.clearCache(true);
-            webView.clearHistory();
-            webView.clearFormData();
-
-            // Clear cookies
-            CookieManager cm = CookieManager.getInstance();
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                cm.removeAllCookies(null);
-                cm.flush();
-            } else {
-                cm.removeAllCookie();
-            }
-
-            // Clear WebStorage (HTML5 localStorage/sessionStorage and WebSQL)
-            try { android.webkit.WebStorage.getInstance().deleteAllData(); } catch (Throwable ignored) {}
-
-            // Delete app-level remote_cache directory (the app's own cache on getFilesDir())
-            try {
-                File cacheDir = new File(getFilesDir(), REMOTE_CACHE_DIR);
-                if (cacheDir.exists()) deleteRecursive(cacheDir);
-            } catch (Throwable ignored) {}
-        } catch (Throwable ignored) { /* best-effort */ }
-
         setContentView(webView);
 
+        // Basic WebView settings
         WebSettings ws = webView.getSettings();
         ws.setJavaScriptEnabled(true);
         ws.setDomStorageEnabled(true);
@@ -190,17 +73,14 @@ public class LauncherActivity extends AppCompatActivity {
         ws.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         webView.setWebContentsDebuggingEnabled(true);
 
-        // Enable cookies / third-party cookies to avoid missing resources that rely on cookies
+        // Cookies
         try {
             CookieManager cm = CookieManager.getInstance();
             cm.setAcceptCookie(true);
-            if (Build.VERSION.SDK_INT >= 21) {
-                cm.setAcceptThirdPartyCookies(webView, true);
-            }
-            try { CrashLogger.i("CookieManager: accept cookies and third-party cookies enabled"); } catch (Throwable ignored) {}
+            if (Build.VERSION.SDK_INT >= 21) cm.setAcceptThirdPartyCookies(webView, true);
         } catch (Throwable ignored) {}
 
-        // JS -> Android bridge
+        // Simple JS-to-Android bridge for logs
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
             public void log(String msg) {
@@ -224,1257 +104,133 @@ public class LauncherActivity extends AppCompatActivity {
         });
 
         webView.setWebViewClient(new WebViewClient(){
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request){
+                String url = request.getUrl().toString();
+                return handleUrl(url);
+            }
             @Override @SuppressWarnings("deprecation")
             public boolean shouldOverrideUrlLoading(WebView view, String url){ return handleUrl(url); }
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request){ return handleUrl(request.getUrl().toString()); }
 
             private boolean handleUrl(String url){
-                try{
+                try {
                     if (url == null) return false;
-                    if (url.matches("(?i).+\\.(mp4|m3u8|webm)$") || url.contains("youtube.com") || url.contains("youtu.be")){
-                        Intent i = PlayerActivity.createIntent(LauncherActivity.this, Uri.parse(url));
-                        startActivity(i);
+                    if (url.matches("(?i).+\\.(mp4|m3u8|webm)$") || url.contains("youtube.com") || url.contains("youtu.be")) {
+                        startActivity(PlayerActivity.createIntent(LauncherActivity.this, Uri.parse(url)));
                         return true;
                     }
                     return false;
-                }catch(Throwable t){
-                    Log.e(TAG,"handleUrl failed",t); try{ CrashLogger.w("handleUrl failed", t);}catch(Throwable ignored){}
+                } catch (Throwable t) {
+                    Log.e(TAG,"handleUrl failed",t);
                     return false;
                 }
             }
 
-            // API21+ shouldInterceptRequest (forwarding headers)
+            // Intercept requests only to serve local APK assets; for external http(s) return null so WebView fetches directly
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request){
-                String url = request.getUrl().toString();
-                Map<String, String> reqHeaders = request.getRequestHeaders(); // contains Range etc.
-                try { CrashLogger.i("shouldInterceptRequest: "+url); } catch (Throwable ignored) {}
-                return LauncherActivity.this.tryServeAssetForUrl(url, reqHeaders);
-            }
-
-            @Override
-            public void onPageFinished(WebView view, String url) {
-                try { CrashLogger.i("onPageFinished: " + url); } catch (Throwable ignored) {}
-
-                // global window.onerror -> forward to Android bridge (so JS runtime errors appear in CrashLogger)
-                try {
-                    String setOnError = "window.onerror = function(msg, src, line, col, err) {" +
-                            "  try { Android.log('JS_ERROR: ' + msg + ' @' + src + ':' + line + ':' + col + (err?(' stack:'+err.stack):'')); } catch(e) {};" +
-                            "};";
-                    view.evaluateJavascript(setOnError, null);
-                } catch (Throwable ignored) {}
-
-                // Query DOM counts (iframes, lists, nodes) and forward results to CrashLogger
-                try {
-                    String probe = "(function(){ try {" +
-                            "var info = {" +
-                            "iframes: document.getElementsByTagName('iframe').length," +
-                            "lists: document.querySelectorAll('ul,ol').length," +
-                            "roleLists: document.querySelectorAll('[role=\"list\"]').length," +
-                            "bodyLen: document.body?document.body.innerText.length:0," +
-                            "title: document.title || ''" +
-                            "};" +
-                            "if (window.Android && Android.log) Android.log('DOM_INFO:' + JSON.stringify(info));" +
-                            "return JSON.stringify(info);" +
-                            "} catch(e) { if (window.Android && Android.log) Android.log('DOM_PROBE_ERR:' + e.toString()); return 'ERR'; } })();";
-                    view.evaluateJavascript(probe, new android.webkit.ValueCallback<String>() {
-                        @Override
-                        public void onReceiveValue(String value) {
-                            try { CrashLogger.i("evaluateJavascript returned: " + value); } catch (Throwable ignored) {}
-                        }
-                    });
-                } catch (Throwable ignored) {}
-
-                // Visibility debug: hidden-elements report and mutation observer (optional unhide)
-                if (ENABLE_VISIBILITY_DEBUG) {
-                    try {
-                        String hiddenProbe =
-                            "(function(){ try{" +
-                            "  function isHidden(el){" +
-                            "    var cs = window.getComputedStyle(el); if(!cs) return false;" +
-                            "    if(cs.display==='none') return 'display:none';" +
-                            "    if(cs.visibility==='hidden' || cs.visibility==='collapse') return 'visibility';" +
-                            "    if(parseFloat(cs.opacity)===0) return 'opacity';" +
-                            "    var rect = el.getBoundingClientRect();" +
-                            "    if(rect.width===0 || rect.height===0) return 'zero-size';" +
-                            "    if(Math.abs(rect.right)<1 && Math.abs(rect.left)<1 && Math.abs(rect.top)<1 && Math.abs(rect.bottom)<1) return 'off-screen';" +
-                            "    if(el.hasAttribute('hidden')) return 'hidden-attr';" +
-                            "    if(el.getAttribute('aria-hidden')==='true') return 'aria-hidden';" +
-                            "    if(el.hasAttribute('inert')) return 'inert';" +
-                            "    return false;" +
-                            "  }" +
-                            "  function selectorFor(el){ try{ if(!el) return ''; if(el.id) return '#'+el.id; var s=el.tagName.toLowerCase(); if(el.classList && el.classList.length) s += '.'+Array.from[...]
-                            "  var nodes = Array.prototype.slice.call(document.querySelectorAll('body *'));" +
-                            "  var report = [];" +
-                            "  for(var i=0;i<nodes.length;i++){ try{ var el = nodes[i]; var why = isHidden(el); if(why){ var txt = (el.innerText||'').trim(); if(txt.length>200) txt = txt.substring(0,2[...]
-                            "  if(window.Android && Android.log) Android.log('HIDDEN_REPORT:' + JSON.stringify(report));" +
-                            "  return JSON.stringify({ok:true,found:report.length});" +
-                            "}catch(e){ if(window.Android && Android.log) Android.log('HIDDEN_REPORT_ERR:'+e.toString()); return JSON.stringify({ok:false,err:String(e)}); }})();";
-                        view.evaluateJavascript(hiddenProbe, new android.webkit.ValueCallback<String>() {
-                            @Override
-                            public void onReceiveValue(String value) {
-                                try { CrashLogger.i("HIDDEN_REPORT eval result: " + value); } catch (Throwable ignored) {}
-                            }
-                        });
-                    } catch (Throwable ignored) {}
-
-                    try {
-                        String mutationObserverProbe =
-                            "(function(){ try{" +
-                            "  var obs = new MutationObserver(function(muts){ try{ muts.forEach(function(m){ if(m.type==='attributes' && (m.attributeName==='class' || m.attributeName==='style' || m.at[...]
-                            "  obs.observe(document.body, { attributes:true, subtree:true, attributeFilter:['class','style','hidden','aria-hidden','inert'] });" +
-                            "  if(window.Android && Android.log) Android.log('MUTATION_OBSERVER_STARTED');" +
-                            "  return true;" +
-                            "}catch(e){ if(window.Android && Android.log) Android.log('MUTATION_OBSERVER_ERR:'+e.toString()); return false; }})();";
-                        view.evaluateJavascript(mutationObserverProbe, null);
-                    } catch (Throwable ignored) {}
-
-                    if (DEBUG_UNHIDE) {
-                        try {
-                            // Enhanced unhide: skip non-visual tags (script/style/meta/link/head), unhide elements with display:none / visibility:hidden / opacity:0 / hidden attr / aria-hidden / iner[...]
-                            String unhideScript =
-                                "(function(){ try{" +
-                                "  var css = '*{ transition: none !important; } ._dbg_unhide{ outline:3px solid rgba(255,0,0,0.6) !important; }';" +
-                                "  var s = document.createElement('style'); s.appendChild(document.createTextNode(css)); document.head && document.head.appendChild(s);" +
-                                "  function selectorFor(el){ try{ if(!el) return ''; if(el.id) return '#'+el.id; var s=el.tagName.toLowerCase(); if(el.classList && el.classList.length) s += '.'+Array.[...]
-                                "  var els = Array.prototype.slice.call(document.querySelectorAll('body *'));" +
-                                "  var unhidden = [];" +
-                                "  function tagDefault(tag){ tag = tag.toLowerCase(); if(tag==='li') return 'list-item'; if(tag==='img') return 'inline-block'; if(tag==='a' || tag==='span' || tag==='s[...]
-                                "  for(var i=0;i<els.length;i++){ try{ var el = els[i]; var t = el.tagName.toLowerCase(); if(t==='script' || t==='style' || t==='link' || t==='meta' || t==='head') cont[...]
-                                "  if(window.Android && Android.log) Android.log('UNHIDE_DONE:' + unhidden.length + ' LIST:' + JSON.stringify(unhidden));" +
-                                "  return unhidden.length;" +
-                                "}catch(e){ if(window.Android && Android.log) Android.log('UNHIDE_ERR:'+e.toString()); return 0; }})();";
-                            view.evaluateJavascript(unhideScript, new android.webkit.ValueCallback<String>() {
-                                @Override
-                                public void onReceiveValue(String value) {
-                                    try { CrashLogger.i("UNHIDE eval result: " + value); } catch (Throwable ignored) {}
-                                }
-                            });
-                        } catch (Throwable ignored) {}
-                    }
-                } // end ENABLE_VISIBILITY_DEBUG
-            }
-
-            @Override
-            public WebResourceResponse shouldInterceptRequest(WebView view, String url){
-                try { CrashLogger.i("shouldInterceptRequest: "+url); } catch (Throwable ignored) {}
-                return LauncherActivity.this.tryServeAssetForUrl(url, Collections.emptyMap());
-            }
-
-            @Override @SuppressWarnings("deprecation")
-            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl){
-                String s = "onReceivedError (old): code="+errorCode+" desc="+description+" url="+failingUrl;
-                Log.w(TAG,s); try{ CrashLogger.w(s,null);}catch(Throwable ignored){}
-            }
-
-            @Override
-            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error){
-                try{
-                    String url = request!=null?request.getUrl().toString():"(unknown)";
-                    String s = "onReceivedError: url="+url+" code="+error.getErrorCode()+" desc="+error.getDescription();
-                    Log.w(TAG,s); try{ CrashLogger.w(s,null);}catch(Throwable ignored){}
-                }catch(Throwable t){ Log.w(TAG,"Exception in onReceivedError",t); try{ CrashLogger.w("Exception in onReceivedError",t);}catch(Throwable ignored){} }
-            }
-
-            @Override
-            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse){
-                try{
-                    String url = request!=null?request.getUrl().toString():"(unknown)";
-                    int status = errorResponse!=null?errorResponse.getStatusCode():-1;
-                    String s = "onReceivedHttpError: url="+url+" status="+status;
-                    Log.w(TAG,s); try{ CrashLogger.w(s,null);}catch(Throwable ignored){}
-                }catch(Throwable t){ Log.w(TAG,"Exception in onReceivedHttpError",t); try{ CrashLogger.w("Exception in onReceivedHttpError",t);}catch(Throwable ignored){} }
+                try { CrashLogger.i("shouldInterceptRequest: " + request.getUrl()); } catch (Throwable ignored) {}
+                return LauncherActivity.this.tryServeAssetForUrl(request.getUrl().toString(), request.getRequestHeaders());
             }
 
             @Override
             public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error){
-                try{
-                    String s = "onReceivedSslError: primaryError="+error.getPrimaryError()+" url="+(view!=null?view.getUrl():"(unknown)");
-                    Log.w(TAG,s); try{ CrashLogger.w(s,null);}catch(Throwable ignored){}
-                }catch(Throwable t){ Log.w(TAG,"Exception in onReceivedSslError",t); try{ CrashLogger.w("Exception in onReceivedSslError",t);}catch(Throwable ignored){} }
-                // For debugging: optionally proceed (INSECURE)
-                if (ALLOW_ALL_SSL_ERRORS) {
-                    try { CrashLogger.i("Proceeding on SSL error because ALLOW_ALL_SSL_ERRORS=true"); } catch (Throwable ignored) {}
-                    handler.proceed();
-                } else {
-                    handler.cancel();
-                }
+                try { CrashLogger.w("onReceivedSslError: " + error, error); } catch (Throwable ignored) {}
+                if (ALLOW_ALL_SSL_ERRORS) handler.proceed(); else handler.cancel();
             }
         });
 
-        // Start server
+        // Start local assets server (serves embedded assets only)
         try {
             serverPort = findFreePort();
             server = new LocalAssetsServer(serverPort, getAssets());
             server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
-            String started = "LocalAssetsServer started at http://127.0.0.1:" + serverPort + " serving assets/";
+            String started = "LocalAssetsServer started at http://127.0.0.1:" + serverPort;
             Log.i(TAG, started);
             try { CrashLogger.i(started); } catch (Throwable ignored) {}
-            webView.loadUrl("http://localhost:" + serverPort + "/");
+            // Load local server root
+            webView.loadUrl("http://127.0.0.1:" + serverPort + "/");
         } catch (IOException e) {
-            String warn = "Failed to start LocalAssetsServer (fallback to file://): " + e.getMessage();
-            Log.w(TAG,warn,e); try{ CrashLogger.w(warn,e);}catch(Throwable ignored){}
-            server=null; serverPort=-1;
+            Log.w(TAG, "Failed to start LocalAssetsServer, fallback to asset file", e);
+            try { CrashLogger.w("Failed to start LocalAssetsServer: " + e, e); } catch (Throwable ignored) {}
             webView.loadUrl("file:///android_asset/gjw.html");
-        } catch (Throwable t) {
-            String warn = "Unexpected error starting LocalAssetsServer, fallback to file://";
-            Log.w(TAG,warn,t); try{ CrashLogger.err(warn,t);}catch(Throwable ignored){}
-            server=null; serverPort=-1;
-            webView.loadUrl("file:///android_asset/gjw.html");
-        }
-    } // end onCreate
-
-    // ---------- helpers: content-type parsing ----------
-    private String[] splitMimeAndCharset(String contentType) {
-        if (contentType == null) return new String[] { "application/octet-stream", null };
-        try {
-            String ct = contentType;
-            int idx = ct.toLowerCase(Locale.ROOT).indexOf("charset=");
-            String charset = null;
-            if (idx >= 0) {
-                charset = ct.substring(idx + 8).trim();
-                int semi = charset.indexOf(';');
-                if (semi >= 0) charset = charset.substring(0, semi).trim();
-                if (charset.isEmpty()) charset = null;
-                ct = ct.substring(0, idx);
-                ct = ct.replaceAll("[;\\s]+$", "").trim();
-            }
-            return new String[] { ct.trim(), charset != null ? charset.toUpperCase(Locale.ROOT) : null };
-        } catch (Throwable t) {
-            return new String[] { contentType, null };
         }
     }
 
-    // ---------- core entry for intercepting and providing resources ----------
-    // Make this a LauncherActivity instance method so anonymous WebViewClient can call it reliably.
+    // Try to serve local asset files only. For external URLs (http/https) return null and let WebView handle network.
     private WebResourceResponse tryServeAssetForUrl(String url, Map<String, String> requestHeaders){
-        try{
+        try {
             if (url == null) return null;
             String lower = url.toLowerCase(Locale.ROOT);
-            String urlNoQuery = url.split("\\?")[0].split("#")[0];
 
-            // 1) Serve local JS if present in apk assets (preferable for critical scripts)
+            // Bypass local-server requests
+            if (lower.startsWith("http://127.0.0.1:") || lower.startsWith("http://localhost:")) return null;
+
+            // Serve packaged JS from assets if requested by filename
             if (lower.endsWith(".js")) {
-                int idx = urlNoQuery.lastIndexOf('/');
-                String filename = idx >= 0 ? urlNoQuery.substring(idx + 1) : urlNoQuery;
-                try { CrashLogger.i("Intercept request for JS: " + url + " -> " + filename); } catch (Throwable ignored) {}
-                InputStream is = null;
+                String name = url.substring(url.lastIndexOf('/') + 1).split("\\?")[0];
                 try {
-                    is = getAssets().open(filename);
-                } catch (IOException ignored) {
-                    try {
-                        is = getAssets().open("js/" + filename);
-                    } catch (IOException ignored2) {
-                        is = null;
-                    }
-                }
-                if (is != null) {
-                    try { CrashLogger.i("Serving JS from assets: " + filename); } catch (Throwable ignored) {}
+                    InputStream is = getAssets().open(name);
                     return new WebResourceResponse("application/javascript", "UTF-8", is);
-                } else {
-                    missingAssets.add(filename);
-                    try { CrashLogger.w("Asset not found for " + filename, null); } catch (Throwable ignored) {}
+                } catch (IOException ignored) {
+                    // try js/ subdir
+                    try {
+                        InputStream is = getAssets().open("js/" + name);
+                        return new WebResourceResponse("application/javascript", "UTF-8", is);
+                    } catch (IOException ex) {
+                        // not found in assets, let WebView fetch from network
+                        return null;
+                    }
                 }
             }
 
-            // 2) Bypass: let WebView talk directly to local server (do NOT proxy/upgrade local requests)
-            if (lower.startsWith("http://localhost:") || lower.startsWith("https://localhost:")
-                    || lower.startsWith("http://127.0.0.1:") || lower.startsWith("https://127.0.0.1:")) {
-                try { CrashLogger.i("Bypassing proxy for local request: " + url); } catch (Throwable ignored) {}
-                return null;
-            }
-
-            // 3) External requests via app-level fetch (with https-upgrade attempt for http)
+            // If the request is an http(s) URL, we no longer proxy — allow WebView to perform the network request
             if (lower.startsWith("http://") || lower.startsWith("https://")) {
-                boolean origWasHttp = lower.startsWith("http://");
-
-                // If the request was http -> try https upgrade first for non-local hosts
-                if (origWasHttp) {
-                    String httpsUrl = "https://" + url.substring("http://".length());
-                    try {
-                        try { CrashLogger.i("Attempting http->https upgrade for: " + url + " -> " + httpsUrl); } catch (Throwable ignored) {}
-                        WebResourceResponse httpsResp = fetchWithRetriesAndCache(httpsUrl, requestHeaders);
-                        if (httpsResp != null) {
-                            try { CrashLogger.i("Upgraded http->https for " + url + " -> " + httpsUrl); } catch (Throwable ignored) {}
-                            return httpsResp;
-                        } else {
-                            try { CrashLogger.i("http->https upgrade failed or no https content for: " + url); } catch (Throwable ignored) {}
-                        }
-                    } catch (Throwable t) {
-                        try { CrashLogger.w("http->https upgrade attempt failed for " + url + ": " + t, t); } catch (Throwable ignored) {}
-                        // fall-through to try original URL
-                    }
-                }
-
-                // Try fetching original URL (either https original or http when upgrade failed)
-                WebResourceResponse resp = fetchWithRetriesAndCache(url, requestHeaders);
-                if (resp != null) {
-                    try { CrashLogger.i("Served remote resource via app-fetch: " + url); } catch (Throwable ignored) {}
-                    return resp;
-                } else {
-                    // If original was http and nothing returned, either block cleartext (original behaviour) or allow WebView try
-                    if (origWasHttp) {
-                        if (BLOCK_CLEARTEXT_ON_FAILURE) {
-                            try { CrashLogger.i("Blocking cleartext request for " + url + " (no available content)"); } catch (Throwable ignored) {}
-                            if (Build.VERSION.SDK_INT >= 21) {
-                                Map<String,String> headers = Collections.singletonMap("Content-Type","text/plain");
-                                return new WebResourceResponse("text/plain","UTF-8",204,"No Content",headers,new ByteArrayInputStream(new byte[0]));
-                            } else {
-                                return new WebResourceResponse("text/plain","UTF-8", new ByteArrayInputStream(new byte[0]));
-                            }
-                        } else {
-                            try { CrashLogger.i("Allowing WebView to attempt original http request for: " + url); } catch (Throwable ignored) {}
-                            return null; // let WebView do default http request (we relaxed blocking)
-                        }
-                    }
-                }
-            }
-
-        }catch(Throwable t){
-            Log.w(TAG,"tryServeAssetForUrl failed for "+url,t);
-            try{ CrashLogger.w("tryServeAssetForUrl failed for "+url,t);}catch(Throwable ignored){}
-        }
-        return null;
-    }
-
-    // ---------- helpers: retry + cache + candidate hosts ----------
-    private WebResourceResponse fetchWithRetriesAndCache(String origUrl, Map<String,String> requestHeaders) {
-        // 1) try cache (small textual cached files)
-        try {
-            File cacheDir = new File(getFilesDir(), REMOTE_CACHE_DIR);
-            if (!cacheDir.exists()) cacheDir.mkdirs();
-            String cacheName = cacheFileNameForUrl(origUrl);
-            File f = new File(cacheDir, cacheName);
-            if (f.exists() && f.length() > 0) {
-                FileInputStream fis = new FileInputStream(f);
-                String guessed = guessMimeFromUrl(origUrl);
-                String[] parts = splitMimeAndCharset(guessed);
-                String mimeOnly = parts[0];
-                String encoding = parts[1] != null ? parts[1] : chooseEncodingForMime(mimeOnly);
-                Map<String,String> headers = Collections.singletonMap("Access-Control-Allow-Origin","*");
-                if (Build.VERSION.SDK_INT >= 21) {
-                    return new WebResourceResponse(mimeOnly, encoding, 200, "OK", headers, fis);
-                } else {
-                    return new WebResourceResponse(mimeOnly, encoding, fis);
-                }
-            }
-        } catch (Throwable ignored) {}
-
-        // 2) build candidate URLs (try https for http origins first and fallbacks for known patterns)
-        List<String> candidates = new ArrayList<>();
-        boolean origWasHttp = origUrl.startsWith("http://");
-        if (origWasHttp) candidates.add("https://" + origUrl.substring(7)); else candidates.add(origUrl);
-        if (origUrl.contains("s3-us-east-1.amazonaws.com") || origUrl.contains("s3.us-east-1.amazonaws.com")) {
-            String alt = origUrl.replaceFirst("s3[.-]us-east-1\\.amazonaws\\.com", "s3.amazonaws.com");
-            if (!candidates.contains(alt)) candidates.add(alt);
-        }
-
-        // 3) attempts: for each candidate try strict -> combined CA -> permissive (if allowed); retry per candidate
-        for (String tryUrl : candidates) {
-            for (int attempt = 0; attempt < MAX_ATTEMPTS_PER_CANDIDATE; attempt++) {
-                // strict
-                WebResourceResponse r = fetchUrlStrict(tryUrl, requestHeaders);
-                if (r != null) {
-                    WebResourceResponse safe = prepareCacheableResponseAndMaybeCache(r, origUrl);
-                    if (safe != null) return safe;
-                    return r;
-                }
-
-                // combined CA
-                WebResourceResponse r2 = fetchUrlWithCombinedCAs(tryUrl, requestHeaders);
-                if (r2 != null) {
-                    WebResourceResponse safe2 = prepareCacheableResponseAndMaybeCache(r2, origUrl);
-                    if (safe2 != null) return safe2;
-                    return r2;
-                }
-
-                // permissive trust-all fallback only if allowed for this host
-                if (INSECURE_HTTPS_FALLBACK && isPermissiveAllowedForUrl(tryUrl)) {
-                    WebResourceResponse r3 = fetchUrlPermissiveTrustAll(tryUrl, requestHeaders);
-                    if (r3 != null) {
-                        WebResourceResponse safe3 = prepareCacheableResponseAndMaybeCache(r3, origUrl);
-                        if (safe3 != null) return safe3;
-                        return r3;
-                    }
-                }
-
-                // small backoff (exponential-ish)
-                try { Thread.sleep(RETRY_BASE_BACKOFF_MS * (attempt + 1)); } catch (InterruptedException ignored) {}
-            }
-        }
-        return null;
-    }
-
-    // Helper to detect if data looks like HTML
-    private boolean looksLikeHtml(byte[] data, Charset cs) {
-        try {
-            String head = new String(data, 0, Math.min(data.length, 512), cs).trim().toLowerCase(Locale.ROOT);
-            return head.startsWith("<!doctype") || head.startsWith("<html") || head.startsWith("<!--") || head.contains("<script") || head.contains("<html");
-        } catch (Throwable t) { return false; }
-    }
-
-    // Extract redirect target from HTML preview (meta refresh or window.location or location.replace)
-    private String extractRedirectFromHtml(byte[] data, Charset cs, String baseUrl) {
-        try {
-            String text = new String(data, 0, Math.min(data.length, 8192), cs);
-            // meta refresh: <meta http-equiv='refresh' content='0;url=/path'>
-            Pattern meta = Pattern.compile("(?i)<meta[^>]*http-equiv\\s*=\\s*['\"]?refresh['\"]?[^>]*content\\s*=\\s*['\"]?[^;]*;\\s*url=([^'\">]+)['\"]?", Pattern.CASE_INSENSITIVE);
-            Matcher m = meta.matcher(text);
-            if (m.find()) {
-                String url = m.group(1).trim();
-                try { return new URL(new URL(baseUrl), url).toString(); } catch (Throwable ignored) {}
-            }
-            // window.location = '...'; location.href='...'; location.replace('...')
-            Pattern loc = Pattern.compile("(?i)location\\.(?:href|replace)\\s*[:=]\\s*['\"]([^'\"]+)['\"]");
-            m = loc.matcher(text);
-            if (m.find()) {
-                String url = m.group(1).trim();
-                try { return new URL(new URL(baseUrl), url).toString(); } catch (Throwable ignored) {}
-            }
-            Pattern winloc = Pattern.compile("(?i)window\\.location\\s*[:=]\\s*['\"]([^'\"]+)['\"]");
-            m = winloc.matcher(text);
-            if (m.find()) {
-                String url = m.group(1).trim();
-                try { return new URL(new URL(baseUrl), url).toString(); } catch (Throwable ignored) {}
-            }
-        } catch (Throwable ignored) {}
-        return null;
-    }
-
-    // Helper to check if data looks like JS request
-    private boolean isJsRequest(String url) {
-        if (url == null) return false;
-        String u = url.split("\\?")[0].toLowerCase(Locale.ROOT);
-        return u.endsWith(".js");
-    }
-
-    // prepareCacheableResponseAndMaybeCache: read textual stream, preview log, sanitize .js-if-html and follow simple HTML redirects once
-    private WebResourceResponse prepareCacheableResponseAndMaybeCache(WebResourceResponse resp, String origUrl) {
-        try {
-            if (resp == null) return null;
-
-            String incomingMime = resp.getMimeType();
-            String[] parts = splitMimeAndCharset(incomingMime);
-            String mimeOnly = parts[0] != null ? parts[0] : "application/octet-stream";
-            String encoding = parts[1] != null ? parts[1] : chooseEncodingForMime(mimeOnly);
-
-            boolean isTextual = mimeOnly.startsWith("application/json") || mimeOnly.startsWith("application/javascript") || mimeOnly.startsWith("text/") || mimeOnly.contains("html");
-            if (!isTextual) {
-                // Non-textual -> do not cache; just return resp as-is.
-                return resp;
-            }
-            InputStream in = resp.getData();
-            if (in == null) return null;
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            try (InputStream rin = in) {
-                byte[] buf = new byte[8192];
-                int n;
-                while ((n = rin.read(buf)) > 0) bos.write(buf, 0, n);
-            }
-            byte[] data = bos.toByteArray();
-
-            // DEBUG preview
-            try {
-                Charset ct = (encoding != null) ? Charset.forName(encoding) : StandardCharsets.UTF_8;
-                int previewLen = Math.min(data.length, 2048);
-                String preview = new String(data, 0, previewLen, ct);
-                String dbg = String.format("DEBUG_FETCH preview for %s (len=%d): %s",
-                        origUrl, data.length, preview.replaceAll("[\\r\\n]+", " "));
-                try { CrashLogger.i(dbg); } catch (Throwable ignored) { Log.i(TAG, dbg); }
-            } catch (Throwable dbgEx) {
-                try { CrashLogger.w("DEBUG_FETCH preview failed: " + dbgEx, dbgEx); } catch (Throwable ignored) {}
-            }
-
-            // If HTML looks like a blocking/wrapped page, attempt to extract redirect and follow once
-            try {
-                Charset cs = (encoding != null) ? Charset.forName(encoding) : StandardCharsets.UTF_8;
-                if (looksLikeHtml(data, cs)) {
-                    String follow = extractRedirectFromHtml(data, cs, origUrl);
-                    if (follow != null && !follow.isEmpty()) {
-                        try {
-                            try { CrashLogger.i("Auto-following HTML redirect from " + origUrl + " -> " + follow); } catch (Throwable ignored) {}
-                            WebResourceResponse followed = fetchWithRetriesAndCache(follow, Collections.emptyMap());
-                            if (followed != null) {
-                                try { CrashLogger.i("Auto-follow returned content for " + follow); } catch (Throwable ignored) {}
-                                return followed;
-                            }
-                        } catch (Throwable fx) {
-                            try { CrashLogger.w("Auto-follow failed: " + fx, fx); } catch (Throwable ignored) {}
-                        }
-                    }
-                }
-            } catch (Throwable ignored) {}
-
-            // If JS requested but server returned HTML (404/520 pages), optionally return safe empty JS to avoid parse error,
-            // but when SANITIZE_JS_RESPONSES==false we keep original content so the site may still work (risky).
-            try {
-                Charset cs = (encoding != null) ? Charset.forName(encoding) : StandardCharsets.UTF_8;
-                if (isJsRequest(origUrl) && (mimeOnly.contains("html") || looksLikeHtml(data, cs))) {
-                    if (SANITIZE_JS_RESPONSES) {
-                        String note = "/* blocked returned HTML for JS request: replaced with empty JS to avoid parse error */";
-                        byte[] empty = note.getBytes(StandardCharsets.UTF_8);
-                        data = empty;
-                        mimeOnly = "application/javascript";
-                        encoding = "UTF-8";
-                        try { CrashLogger.i("Replaced unexpected HTML response with empty JS for: " + origUrl); } catch (Throwable ignored) {}
-                    } else {
-                        try { CrashLogger.i("SANITIZE_JS_RESPONSES=false: keeping original HTML for JS request: " + origUrl); } catch (Throwable ignored) {}
-                        // keep data as-is (may produce JS parse errors, but can enable complex front-end to run)
-                    }
-                }
-            } catch (Throwable t) {
-                try { CrashLogger.w("JS sanitization failed: " + t, t); } catch (Throwable ignored) {}
-            }
-
-            // Optional http->https rewrite (unchanged)
-            byte[] rewritten = rewriteHttpToHttpsIfNeeded(data, encoding, origUrl);
-            if (rewritten != null) data = rewritten;
-
-            // Write cache file (best-effort)
-            try {
-                File cacheDir = new File(getFilesDir(), REMOTE_CACHE_DIR);
-                if (!cacheDir.exists()) cacheDir.mkdirs();
-                File out = new File(cacheDir, cacheFileNameForUrl(origUrl));
-                try (FileOutputStream fos = new FileOutputStream(out)) { fos.write(data); fos.flush(); }
-            } catch (Throwable ce) {
-                try { CrashLogger.w("Cache write failed: " + ce, ce); } catch (Throwable ignored) {}
-            }
-
-            Map<String,String> headers = new HashMap<>();
-            headers.put("Access-Control-Allow-Origin", "*");
-
-            ByteArrayInputStream bis = new ByteArrayInputStream(data);
-            if (Build.VERSION.SDK_INT >= 21) {
-                return new WebResourceResponse(mimeOnly, encoding, 200, "OK", headers, bis);
-            } else {
-                return new WebResourceResponse(mimeOnly, encoding, bis);
-            }
-        } catch (Throwable t) {
-            try { CrashLogger.w("prepareCacheableResponseAndMaybeCache failed: " + t, t); } catch (Throwable ignored) {}
-            return null;
-        }
-    }
-
-    // Try to conservatively rewrite http://host/... to https://host/... only for allowed hosts.
-    private byte[] rewriteHttpToHttpsIfNeeded(byte[] data, String encoding, String origUrl) {
-        if (data == null || data.length == 0) return data;
-        if (origUrl == null) return data;
-        try {
-            Charset cs = (encoding != null) ? Charset.forName(encoding) : StandardCharsets.UTF_8;
-            String text = new String(data, cs);
-
-            URL u = new URL(origUrl);
-            String host = u.getHost();
-            if (host == null || host.isEmpty()) return data;
-
-            boolean hostAllowed = false;
-            if (HTTPS_WHITELIST_SUFFIXES != null && HTTPS_WHITELIST_SUFFIXES.length > 0) {
-                for (String suf : HTTPS_WHITELIST_SUFFIXES) {
-                    if (suf != null && !suf.isEmpty() && host.endsWith(suf)) { hostAllowed = true; break; }
-                }
-            } else {
-                if (host.endsWith("s3.amazonaws.com") || host.endsWith("cloudfront.net") || host.contains("localhost")) hostAllowed = true;
-            }
-            if (!hostAllowed) return data;
-
-            String hostEsc = Pattern.quote(host);
-            Pattern p1 = Pattern.compile("http://" + hostEsc + "(?::(\\d+))?/");
-            Matcher m1 = p1.matcher(text);
-            boolean any = m1.find();
-            text = m1.replaceAll("https://" + host + "/");
-            Pattern p2 = Pattern.compile("(?<!:)/{2}" + hostEsc + "/");
-            Matcher m2 = p2.matcher(text);
-            any = any || m2.find();
-            text = m2.replaceAll("https://" + host + "/");
-            if (any) {
-                try { CrashLogger.i("Rewrote http->https for host=" + host + " url=" + origUrl); } catch (Throwable ignored) {}
-            }
-            return text.getBytes(cs);
-        } catch (Throwable t) {
-            try { CrashLogger.w("rewriteHttpToHttpsIfNeeded failed: " + t, t); } catch (Throwable ignored) {}
-            return data;
-        }
-    }
-
-    private String cacheFileNameForUrl(String url) {
-        byte[] b = url.getBytes(StandardCharsets.UTF_8);
-        String enc = Base64.encodeToString(b, Base64.URL_SAFE | Base64.NO_PADDING | Base64.NO_WRAP);
-        return "cache_" + enc;
-    }
-
-    private String guessMimeFromUrl(String url) {
-        try {
-            String path = new URL(url).getPath();
-            int idx = path.lastIndexOf('/');
-            String name = idx >= 0 ? path.substring(idx + 1) : path;
-            return LocalAssetsServer.guessMimeStatic(name);
-        } catch (Exception e) {
-            return "application/octet-stream";
-        }
-    }
-
-    private String chooseEncodingForMime(String contentType) {
-        if (contentType == null) return null;
-        try {
-            String lower = contentType.toLowerCase(Locale.ROOT);
-            int idx = lower.indexOf("charset=");
-            if (idx >= 0) {
-                String cs = lower.substring(idx + 8).trim();
-                int semi = cs.indexOf(';');
-                if (semi >= 0) cs = cs.substring(0, semi).trim();
-                if (!cs.isEmpty()) {
-                    try {
-                        return cs.toUpperCase(Locale.ROOT);
-                    } catch (Throwable ignored) {}
-                }
-            }
-            if (lower.startsWith("text/") || lower.contains("json") || lower.contains("javascript") || lower.contains("xml")) {
-                return "UTF-8";
-            }
-        } catch (Throwable ignored) {}
-        return null;
-    }
-
-    // permissive allowlist (kept as before)
-    private boolean isPermissiveAllowedForUrl(String url) {
-        if (!INSECURE_HTTPS_FALLBACK) return false;
-        try {
-            URL u = new URL(url);
-            String host = u.getHost();
-            if (host == null) return false;
-            if (HTTPS_WHITELIST_SUFFIXES != null && HTTPS_WHITELIST_SUFFIXES.length > 0) {
-                for (String suf : HTTPS_WHITELIST_SUFFIXES) {
-                    if (suf != null && !suf.isEmpty() && host.endsWith(suf)) return true;
-                }
-                return false;
-            }
-            if (host.endsWith(".local") || host.endsWith(".test") || host.contains("localhost") || host.contains("127.0.0.1")) return true;
-            if (host.endsWith("s3.amazonaws.com") || host.endsWith("cloudfront.net")) return true;
-        } catch (Throwable ignored) {}
-        return false;
-    }
-
-    // ---------- helpers: strict/combined/permissive fetch ----------
-    private WebResourceResponse fetchUrlStrict(String urlStr, Map<String,String> requestHeaders) {
-        HttpURLConnection conn = null;
-        try {
-            URL u = new URL(urlStr);
-            conn = (HttpURLConnection) u.openConnection();
-
-            // forward headers from requestHeaders and ensure UA/Accept/Accept-Encoding set
-            boolean uaPresent = false;
-            if (requestHeaders != null) {
-                for (Map.Entry<String,String> e : requestHeaders.entrySet()) {
-                    String k = e.getKey();
-                    String v = e.getValue();
-                    if (k == null || v == null) continue;
-                    if ("host".equalsIgnoreCase(k) || "connection".equalsIgnoreCase(k)) continue;
-                    conn.setRequestProperty(k, v);
-                    if ("user-agent".equalsIgnoreCase(k)) uaPresent = true;
-                }
-            }
-            if (!uaPresent) conn.setRequestProperty("User-Agent", DEFAULT_UA);
-            // Avoid compressed responses that we may mishandle; ask for identity
-            conn.setRequestProperty("Accept-Encoding", "identity");
-            conn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-
-            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
-            conn.setReadTimeout(READ_TIMEOUT_MS);
-            conn.setInstanceFollowRedirects(true);
-            int code = conn.getResponseCode();
-            InputStream is = (code >= 400) ? conn.getErrorStream() : conn.getInputStream();
-            if (is == null) return null;
-            String contentType = conn.getContentType();
-            if (contentType == null) contentType = "application/octet-stream";
-
-            String[] parts = splitMimeAndCharset(contentType);
-            String mimeOnly = parts[0];
-            String encoding = parts[1] != null ? parts[1] : chooseEncodingForMime(mimeOnly);
-
-            Map<String,String> respHeaders = new HashMap<>();
-            for (Map.Entry<String, List<String>> hh : conn.getHeaderFields().entrySet()) {
-                String hk = hh.getKey();
-                if (hk == null) continue;
-                List<String> vals = hh.getValue();
-                if (vals == null || vals.isEmpty()) continue;
-                respHeaders.put(hk, String.join(", ", vals));
-            }
-            if (!respHeaders.containsKey("Access-Control-Allow-Origin")) respHeaders.put("Access-Control-Allow-Origin", "*");
-
-            try { CrashLogger.i("Strict fetch returned for " + urlStr + " code=" + code + " type=" + contentType); } catch (Throwable ignored) {}
-            if (Build.VERSION.SDK_INT >= 21) {
-                String reason = conn.getResponseMessage() != null ? conn.getResponseMessage() : "OK";
-                return new WebResourceResponse(mimeOnly, encoding, code, reason, respHeaders, is);
-            } else {
-                return new WebResourceResponse(mimeOnly, encoding, is);
-            }
-        } catch (SocketException se) {
-            try { CrashLogger.w("Strict fetch socket error for " + urlStr + ": " + se, se); } catch (Throwable ignored) {}
-        } catch (Throwable t) {
-            try { CrashLogger.w("Strict fetch failed for " + urlStr + ": " + t, t); } catch (Throwable ignored) {}
-        } finally {
-            // don't close connection input stream here; WebResourceResponse will use it
-        }
-        return null;
-    }
-
-    private WebResourceResponse fetchUrlWithCombinedCAs(String urlStr, Map<String,String> requestHeaders) {
-        try {
-            X509TrustManager combined = createCombinedTrustManagerFromAssets(); // instance method uses getAssets()
-            if (combined == null) return null;
-            SSLContext sc = SSLContext.getInstance("TLS");
-            sc.init(null, new TrustManager[]{ combined }, new SecureRandom());
-
-            URL u = new URL(urlStr);
-            HttpsURLConnection httpsConn = (HttpsURLConnection) u.openConnection();
-            httpsConn.setSSLSocketFactory(sc.getSocketFactory());
-            httpsConn.setHostnameVerifier((hostname, session) -> true);
-
-            boolean uaPresent = false;
-            if (requestHeaders != null) {
-                for (Map.Entry<String,String> e : requestHeaders.entrySet()) {
-                    String k = e.getKey();
-                    String v = e.getValue();
-                    if (k == null || v == null) continue;
-                    if ("host".equalsIgnoreCase(k) || "connection".equalsIgnoreCase(k)) continue;
-                    httpsConn.setRequestProperty(k, v);
-                    if ("user-agent".equalsIgnoreCase(k)) uaPresent = true;
-                }
-            }
-            if (!uaPresent) httpsConn.setRequestProperty("User-Agent", DEFAULT_UA);
-            httpsConn.setRequestProperty("Accept-Encoding", "identity");
-            httpsConn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-
-            httpsConn.setConnectTimeout(CONNECT_TIMEOUT_MS);
-            httpsConn.setReadTimeout(READ_TIMEOUT_MS);
-            httpsConn.setInstanceFollowRedirects(true);
-            int code2 = httpsConn.getResponseCode();
-            InputStream is2 = (code2 >= 400) ? httpsConn.getErrorStream() : httpsConn.getInputStream();
-            if (is2 == null) return null;
-            String ct2 = httpsConn.getContentType();
-            if (ct2 == null) ct2 = "application/octet-stream";
-
-            String[] parts = splitMimeAndCharset(ct2);
-            String mimeOnly = parts[0];
-            String encoding = parts[1] != null ? parts[1] : chooseEncodingForMime(mimeOnly);
-
-            Map<String,String> headers = new HashMap<>();
-            for (Map.Entry<String, List<String>> hh : httpsConn.getHeaderFields().entrySet()) {
-                String hk = hh.getKey();
-                if (hk == null) continue;
-                List<String> vals = hh.getValue();
-                if (vals == null || vals.isEmpty()) continue;
-                headers.put(hk, String.join(", ", vals));
-            }
-            if (!headers.containsKey("Access-Control-Allow-Origin")) headers.put("Access-Control-Allow-Origin", "*");
-
-            try { CrashLogger.i("Combined-CA fetch returned for " + urlStr + " code=" + code2 + " type=" + ct2); } catch (Throwable ignored) {}
-            if (Build.VERSION.SDK_INT >= 21) {
-                return new WebResourceResponse(mimeOnly, encoding, code2, httpsConn.getResponseMessage(), headers, is2);
-            } else {
-                return new WebResourceResponse(mimeOnly, encoding, is2);
-            }
-        } catch (Throwable t) {
-            try { CrashLogger.w("Combined CA fetch failed for " + urlStr + ": " + t, t); } catch (Throwable ignored) {}
-        }
-        return null;
-    }
-
-    private WebResourceResponse fetchUrlPermissiveTrustAll(String urlStr, Map<String,String> requestHeaders) {
-        try {
-            SSLContext sc = SSLContext.getInstance("TLS");
-            TrustManager[] trustAllCerts = new TrustManager[]{
-                    new X509TrustManager() {
-                        @Override
-                        public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
-                        @Override
-                        public void checkClientTrusted(X509Certificate[] certs, String authType) throws CertificateException {}
-                        @Override
-                        public void checkServerTrusted(X509Certificate[] certs, String authType) throws CertificateException {}
-                    }
-            };
-            sc.init(null, trustAllCerts, new SecureRandom());
-
-            URL u = new URL(urlStr);
-            HttpsURLConnection httpsConn = (HttpsURLConnection) u.openConnection();
-            httpsConn.setSSLSocketFactory(sc.getSocketFactory());
-            httpsConn.setHostnameVerifier((hostname, session) -> true);
-
-            boolean uaPresent = false;
-            if (requestHeaders != null) {
-                for (Map.Entry<String,String> e : requestHeaders.entrySet()) {
-                    String k = e.getKey();
-                    String v = e.getValue();
-                    if (k == null || v == null) continue;
-                    if ("host".equalsIgnoreCase(k) || "connection".equalsIgnoreCase(k)) continue;
-                    httpsConn.setRequestProperty(k, v);
-                    if ("user-agent".equalsIgnoreCase(k)) uaPresent = true;
-                }
-            }
-            if (!uaPresent) httpsConn.setRequestProperty("User-Agent", DEFAULT_UA);
-            httpsConn.setRequestProperty("Accept-Encoding", "identity");
-            httpsConn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-
-            httpsConn.setConnectTimeout(CONNECT_TIMEOUT_MS);
-            httpsConn.setReadTimeout(READ_TIMEOUT_MS);
-            httpsConn.setInstanceFollowRedirects(true);
-            int code2 = httpsConn.getResponseCode();
-            InputStream is2 = (code2 >= 400) ? httpsConn.getErrorStream() : httpsConn.getInputStream();
-            if (is2 == null) return null;
-            String ct2 = httpsConn.getContentType();
-            if (ct2 == null) ct2 = "application/octet-stream";
-
-            String[] parts = splitMimeAndCharset(ct2);
-            String mimeOnly = parts[0];
-            String encoding = parts[1] != null ? parts[1] : chooseEncodingForMime(mimeOnly);
-
-            Map<String,String> headers = new HashMap<>();
-            for (Map.Entry<String, List<String>> hh : httpsConn.getHeaderFields().entrySet()) {
-                String hk = hh.getKey();
-                if (hk == null) continue;
-                List<String> vals = hh.getValue();
-                if (vals == null || vals.isEmpty()) continue;
-                headers.put(hk, String.join(", ", vals));
-            }
-            if (!headers.containsKey("Access-Control-Allow-Origin")) headers.put("Access-Control-Allow-Origin", "*");
-
-            try { CrashLogger.i("Permissive fetch returned for " + urlStr + " code=" + code2 + " type=" + ct2); } catch (Throwable ignored) {}
-            if (Build.VERSION.SDK_INT >= 21) {
-                return new WebResourceResponse(mimeOnly, encoding, code2, httpsConn.getResponseMessage(), headers, is2);
-            } else {
-                return new WebResourceResponse(mimeOnly, encoding, is2);
-            }
-        } catch (Throwable insecureEx) {
-            try { CrashLogger.w("Permissive trust-all fetch failed for " + urlStr, insecureEx); } catch (Throwable ignored) {}
-        }
-        return null;
-    }
-
-    /**
-     * Create a combined X509TrustManager that tries system default first, then custom CAs loaded from assets/certs/*.pem.
-     * Returns null if no custom CAs present / failed to create.
-     */
-    private X509TrustManager createCombinedTrustManagerFromAssets() {
-        try {
-            // 1) get system default TrustManager
-            TrustManagerFactory systemTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-            systemTmf.init((KeyStore) null);
-            X509TrustManager systemTm = null;
-            for (TrustManager tm : systemTmf.getTrustManagers()) {
-                if (tm instanceof X509TrustManager) { systemTm = (X509TrustManager) tm; break; }
-            }
-
-            // 2) load custom CA certs from assets/certs/
-            String[] certFiles = null;
-            try {
-                certFiles = getAssets().list("certs");
-            } catch (IOException ioe) {
-                certFiles = null;
-            }
-            if (certFiles == null || certFiles.length == 0) {
-                // no custom CA files present
                 return null;
             }
-
-            // Build a KeyStore containing all custom CA certs
-            CertificateFactory cf = CertificateFactory.getInstance("X.509");
-            KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
-            ks.load(null, null);
-            int idx = 0;
-            int loaded = 0;
-            for (String fname : certFiles) {
-                if (fname == null || fname.trim().isEmpty()) continue;
-                InputStream in = null;
-                try {
-                    in = getAssets().open("certs/" + fname);
-                    BufferedInputStream bis = new BufferedInputStream(in);
-                    while (bis.available() > 0) {
-                        Certificate cert = cf.generateCertificate(bis);
-                        String alias = "ca" + (idx++);
-                        ks.setCertificateEntry(alias, cert);
-                        loaded++;
-                    }
-                } catch (Throwable e) {
-                    try { CrashLogger.w("Failed to load cert " + fname + ": " + e, e); } catch (Throwable ignored) {}
-                } finally {
-                    try { if (in != null) in.close(); } catch (Throwable ignored) {}
-                }
-            }
-            if (loaded == 0) return null;
-
-            // 3) create TrustManagerFactory from KeyStore (custom CA)
-            TrustManagerFactory customTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-            customTmf.init(ks);
-            X509TrustManager customTm = null;
-            for (TrustManager tm : customTmf.getTrustManagers()) {
-                if (tm instanceof X509TrustManager) { customTm = (X509TrustManager) tm; break; }
-            }
-
-            final X509TrustManager sys = systemTm;
-            final X509TrustManager cus = customTm;
-
-            // 4) composite trust manager: try system first, then custom
-            X509TrustManager combined = new X509TrustManager() {
-                @Override
-                public X509Certificate[] getAcceptedIssuers() {
-                    List<X509Certificate> list = new ArrayList<>();
-                    if (sys != null) list.addAll(Arrays.asList(sys.getAcceptedIssuers()));
-                    if (cus != null) list.addAll(Arrays.asList(cus.getAcceptedIssuers()));
-                    return list.toArray(new X509Certificate[list.size()]);
-                }
-
-                @Override
-                public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
-                    if (sys != null) {
-                        try { sys.checkClientTrusted(chain, authType); return; } catch (CertificateException ignored) {}
-                    }
-                    if (cus != null) { cus.checkClientTrusted(chain, authType); return; }
-                    throw new CertificateException("Client cert not trusted by system or custom CAs");
-                }
-
-                @Override
-                public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
-                    if (sys != null) {
-                        try { sys.checkServerTrusted(chain, authType); return; } catch (CertificateException ignored) {}
-                    }
-                    if (cus != null) { cus.checkServerTrusted(chain, authType); return; }
-                    throw new CertificateException("Server cert not trusted by system or custom CAs");
-                }
-            };
-
-            try { CrashLogger.i("Using combined trust managers with " + loaded + " custom CA(s)"); } catch (Throwable ignored) {}
-            return combined;
         } catch (Throwable t) {
-            try { CrashLogger.w("createCombinedTrustManagerFromAssets failed: " + t, t); } catch (Throwable ignored) {}
-            return null;
+            Log.w(TAG, "tryServeAssetForUrl failed for " + url, t);
+            try { CrashLogger.w("tryServeAssetForUrl failed for "+url, t); } catch (Throwable ignored) {}
         }
+        return null;
     }
 
-    // tryFetchHttpsFallback kept for compatibility; now delegates to fetchWithRetriesAndCache with empty headers
-    private WebResourceResponse tryFetchHttpsFallback(String url) {
-        return fetchWithRetriesAndCache(url, Collections.emptyMap());
-    }
-
-    // ---------- LocalAssetsServer (serves bundled assets and optional proxy) ----------
+    // ---------- LocalAssetsServer: minimal static asset server (no proxying) ----------
     public static class LocalAssetsServer extends NanoHTTPD {
-        private static final String TAG2 = "LocalAssetsServer";
         private final AssetManager assets;
-        private final int listeningPort; // store port for injection use
+        private final int listeningPort;
 
         public LocalAssetsServer(int port, AssetManager assets) throws IOException {
             super("127.0.0.1", port);
             this.assets = assets;
-            this.listeningPort = port; // save port so serve() can use it without calling parent method
-            Log.d(TAG2, "Constructed LocalAssetsServer for port " + port);
-            try{ CrashLogger.i("Constructed LocalAssetsServer for port " + port); }catch(Throwable ignored){}
+            this.listeningPort = port;
         }
 
         @Override
         public Response serve(IHTTPSession session) {
             String uri = session.getUri();
-            String remote = session.getHeaders() != null ? session.getHeaders().get("remote-addr") : null;
-            Log.d(TAG2, "Incoming request: uri=" + uri + ", remote=" + remote + ", method=" + session.getMethod());
-            try { CrashLogger.i("HTTP request: " + session.getMethod() + " " + uri + " remote=" + remote); } catch (Throwable ignored) {}
-            if (uri == null || uri.length() == 0 || uri.equals("/")) uri = "/gjw.html";
+            if (uri == null || uri.equals("/")) uri = "/gjw.html";
             String path = uri.startsWith("/") ? uri.substring(1) : uri;
-            if (path.contains("..")) {
-                try { CrashLogger.w("Forbidden path traversal: " + path, null); } catch (Throwable ignored) {}
-                return newFixedLengthResponse(Response.Status.FORBIDDEN, "text/plain", "Forbidden");
-            }
-
-            // optional proxy endpoint (kept for compatibility)
-            if (path.startsWith("_proxy")) {
-                Map<String, String> params = session.getParms();
-                String encoded = params.get("u");
-                if (encoded == null || encoded.length() == 0) {
-                    return newFixedLengthResponse(Response.Status.BAD_REQUEST, "text/plain", "Missing u parameter");
-                }
-                String remoteUrl;
-                try {
-                    remoteUrl = java.net.URLDecoder.decode(encoded, "UTF-8");
-                } catch (Exception e) {
-                    remoteUrl = encoded;
-                }
-                try { CrashLogger.i("Proxying remote URL: " + remoteUrl); } catch (Throwable ignored) {}
-
-                // Collect incoming request headers to forward (Range, Accept-Encoding, Origin, Referer, etc.)
-                Map<String, String> incoming = session.getHeaders() != null ? session.getHeaders() : Collections.emptyMap();
-
-                // ---------- REPLACED: minimal forwarder implementation ----------
-                // Previously this method tried combined CA / permissive fallbacks and did caching/rewrites.
-                // Now we implement a minimal byte-preserving forwarder: open a URLConnection to remoteUrl,
-                // set headers, read the response stream (error stream if status>=400) and return it directly.
-                ProxyFetchResult pf = fetchRemoteForProxy(remoteUrl, incoming);
-                if (pf == null || pf.stream == null) {
-                    return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found: " + remoteUrl);
-                }
-
-                // Create response with remote status and headers
-                Response.Status status = Response.Status.lookup(pf.statusCode);
-                if (status == null) status = Response.Status.OK; // fallback if unknown
-                Response r = newChunkedResponse(status, pf.contentType != null ? pf.contentType : "application/octet-stream", pf.stream);
-
-                // Copy remote headers to local response, but avoid duplicate/forbidden headers
-                if (pf.headers != null) {
-                    for (Map.Entry<String, String> he : pf.headers.entrySet()) {
-                        String hk = he.getKey();
-                        String hv = he.getValue();
-                        if (hk == null || hv == null) continue;
-                        // Avoid Content-Length because chunked response manages length.
-                        if ("Content-Length".equalsIgnoreCase(hk)) continue;
-                        // Strip embedding-blocking headers (debug proxy)
-                        if ("X-Frame-Options".equalsIgnoreCase(hk) || "Content-Security-Policy".equalsIgnoreCase(hk) || "Frame-Options".equalsIgnoreCase(hk)) continue;
-                        r.addHeader(hk, hv);
-                    }
-                }
-
-                // Ensure CORS present
-                r.addHeader("Access-Control-Allow-Origin", "*");
-                r.addHeader("Cache-Control", "no-cache");
-                return r;
-            }
+            if (path.contains("..")) return newFixedLengthResponse(Response.Status.FORBIDDEN, "text/plain", "Forbidden");
 
             try {
-                // Inject permissive CSP into gjw.html to allow frames/styles/scripts to load (for debugging)
-                if ("gjw.html".equals(path)) {
-                    InputStream is = assets.open(path);
-                    String html = readAll(is, "UTF-8");
-                    // Add permissive CSP (debug only) and ensure base href points to local server so relative URLs resolve
-                    String injection = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; frame-ancestors *;\">";
-                    String base = "<base href=\"http://localhost:" + listeningPort + "/\">";
-                    if (html.contains("<head")) {
-                        html = html.replaceFirst("(?i)<head([^>]*)>", "<head$1>" + injection + base);
-                    } else {
-                        html = injection + base + html;
-                    }
-                    CrashLogger.i("Serving modified gjw.html (permissive CSP injected)");
-                    Response r2 = newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", html);
-                    r2.addHeader("Access-Control-Allow-Origin", "*");
-                    r2.addHeader("Cache-Control", "no-cache");
-                    return r2;
-                }
-
-                if ("/__shim__/id-shim.js".equals("/" + path)) {
-                    InputStream in = assets.open("id-shim.js");
-                    CrashLogger.i("Serving id-shim.js");
-                    return newChunkedResponse(Response.Status.OK, "application/javascript", in);
-                }
-
-                if ("favicon.ico".equalsIgnoreCase(path) || "favicon.png".equalsIgnoreCase(path)) {
-                    try {
-                        InputStream inFav = assets.open(path);
-                        CrashLogger.i("Serving favicon from assets: " + path);
-                        return newChunkedResponse(Response.Status.OK, guessMimeStatic(path), inFav);
-                    } catch (IOException ignored) {
-                        try { CrashLogger.i("favicon not found in assets; returning inline transparent PNG"); } catch (Throwable ignored2) {}
-                        final String ONE_PX_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAAWgmWQ0AAAAASUVORK5CYII=";
-                        byte[] bytes = Base64.decode(ONE_PX_PNG_BASE64, Base64.DEFAULT);
-                        InputStream is = new ByteArrayInputStream(bytes);
-                        return newChunkedResponse(Response.Status.OK, "image/png", is);
-                    }
-                }
-
                 InputStream is = assets.open(path);
-
-                if (path.endsWith("index.html")) {
-                    String html = readAll(is, "UTF-8");
-                    html = html.replace(
-                            "<script type=\"text/javascript\" src=\"webjs.js\"></script>",
-                            "<script type=\"text/javascript\" src=\"/__shim__/id-shim.js\"></script>\n" +
-                                    "<script type=\"text/javascript\" src=\"webjs.js\"></script>"
-                    );
-                    CrashLogger.i("Serving modified index.html (shim injected)");
-                    Response r2 = newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", html);
-                    r2.addHeader("Access-Control-Allow-Origin", "*");
-                    r2.addHeader("Cache-Control", "no-cache");
-                    return r2;
-                }
-
                 String mime = guessMimeStatic(path);
-                CrashLogger.i("Serving asset: " + path + " as " + mime);
                 Response res = newChunkedResponse(Response.Status.OK, mime, is);
                 res.addHeader("Access-Control-Allow-Origin", "*");
-                res.addHeader("Cache-Control", "no-cache");
                 return res;
             } catch (IOException e) {
-                Log.w(TAG2, "Asset not found: " + path);
-                try { CrashLogger.w("Asset not found: " + path, e); } catch (Throwable ignored) {}
+                // Not found in assets: fallback to 404 simple response.
+                final String ONE_PX_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAAWgmWQ0AAAAASUVORK5CYII=";
+                if (path.equalsIgnoreCase("favicon.ico") || path.equalsIgnoreCase("favicon.png")) {
+                    byte[] bytes = Base64.decode(ONE_PX_PNG_BASE64, Base64.DEFAULT);
+                    InputStream is = new ByteArrayInputStream(bytes);
+                    return newChunkedResponse(Response.Status.OK, "image/png", is);
+                }
                 return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found: " + path);
-            } catch (Throwable t) {
-                Log.e(TAG2, "Serve exception for " + path, t);
-                try { CrashLogger.w("Serve exception for " + path, t); } catch (Throwable ignored) {}
-                return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", "Internal");
             }
         }
 
-        // Proxy helpers
-        private static class ProxyFetchResult {
-            final InputStream stream;
-            final String contentType;
-            final int statusCode;
-            final Map<String, String> headers;
-            ProxyFetchResult(InputStream s, String ct, int code, Map<String,String> hdrs) { stream = s; contentType = ct; statusCode = code; headers = hdrs; }
-        }
-
-        // Fetch remote utility used by proxy: forwards incoming headers and returns status+headers+stream
-        // REPLACED: simple, minimal forwarding (no caching, no rewrite, stream-preserving)
-        private ProxyFetchResult fetchRemoteForProxy(String remoteUrl, Map<String, String> incomingRequestHeaders) {
-            try {
-                URL u = new URL(remoteUrl);
-                java.net.URLConnection connRaw;
-                // If EXTERNAL_PROXY_* configured, use it; otherwise open direct connection.
-                if (EXTERNAL_PROXY_HOST != null && !EXTERNAL_PROXY_HOST.isEmpty() && EXTERNAL_PROXY_PORT > 0) {
-                    Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(EXTERNAL_PROXY_HOST, EXTERNAL_PROXY_PORT));
-                    connRaw = u.openConnection(proxy);
-                    CrashLogger.i("Using EXTERNAL_PROXY " + EXTERNAL_PROXY_HOST + ":" + EXTERNAL_PROXY_PORT + " for " + remoteUrl);
-                } else {
-                    connRaw = u.openConnection();
-                }
-
-                // Only support HTTP/HTTPS here; for non-http resources, try to stream generically
-                if (!(connRaw instanceof java.net.HttpURLConnection)) {
-                    InputStream is = connRaw.getInputStream();
-                    Map<String,String> hdrsEmpty = Collections.emptyMap();
-                    return new ProxyFetchResult(is, connRaw.getContentType(), 200, hdrsEmpty);
-                }
-
-                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) connRaw;
-
-                conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
-                conn.setReadTimeout(READ_TIMEOUT_MS);
-                conn.setInstanceFollowRedirects(true);
-
-                boolean uaPresent = false;
-                if (incomingRequestHeaders != null) {
-                    for (Map.Entry<String, String> e : incomingRequestHeaders.entrySet()) {
-                        String k = e.getKey();
-                        String v = e.getValue();
-                        if (k == null || v == null) continue;
-                        // Do not set Host/Connection which are managed by URLConnection
-                        if ("host".equalsIgnoreCase(k) || "connection".equalsIgnoreCase(k)) continue;
-                        conn.setRequestProperty(k, v);
-                        if ("user-agent".equalsIgnoreCase(k)) uaPresent = true;
-                    }
-                }
-                if (!uaPresent) conn.setRequestProperty("User-Agent", DEFAULT_UA);
-                // Ask for identity (no gzip) so we stream raw bytes
-                conn.setRequestProperty("Accept-Encoding", "identity");
-                conn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-
-                int code = conn.getResponseCode();
-                InputStream is = (code >= 400) ? conn.getErrorStream() : conn.getInputStream();
-                if (is == null) return null;
-
-                String contentType = conn.getContentType();
-                Map<String,String> remoteHeaders = copyHeadersFromConnection(conn);
-
-                // Return stream directly (do not buffer/modify)
-                return new ProxyFetchResult(is, contentType, code, remoteHeaders);
-            } catch (Throwable t) {
-                CrashLogger.w("Minimal proxy fetch failed for " + remoteUrl + ": " + t, t);
-                return null;
-            }
-        }
-
-        // Copy response headers from HttpURLConnection into a simple Map (joining multiple values)
-        private static Map<String,String> copyHeadersFromConnection(java.net.HttpURLConnection conn) {
-            Map<String, String> map = new HashMap<>();
-            for (Map.Entry<String, List<String>> hh : conn.getHeaderFields().entrySet()) {
-                String hk = hh.getKey();
-                if (hk == null) continue;
-                List<String> vals = hh.getValue();
-                if (vals == null || vals.isEmpty()) continue;
-                map.put(hk, String.join(", ", vals));
-            }
-            return map;
-        }
-
-        // create combined trust manager using this.assets
-        private X509TrustManager createCombinedTrustManagerFromAssetsLocal() {
-            try {
-                // 1) system TM
-                TrustManagerFactory systemTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-                systemTmf.init((KeyStore) null);
-                X509TrustManager systemTm = null;
-                for (TrustManager tm : systemTmf.getTrustManagers()) {
-                    if (tm instanceof X509TrustManager) { systemTm = (X509TrustManager) tm; break; }
-                }
-
-                // 2) load custom CA certs from this.assets/certs
-                String[] certFiles = null;
-                try { certFiles = assets.list("certs"); } catch (IOException ioe) { certFiles = null; }
-                if (certFiles == null || certFiles.length == 0) return null;
-
-                CertificateFactory cf = CertificateFactory.getInstance("X.509");
-                KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
-                ks.load(null, null);
-                int idx = 0;
-                int loaded = 0;
-                for (String fname : certFiles) {
-                    if (fname == null || fname.trim().isEmpty()) continue;
-                    InputStream in = null;
-                    try {
-                        in = assets.open("certs/" + fname);
-                        BufferedInputStream bis = new BufferedInputStream(in);
-                        while (bis.available() > 0) {
-                            Certificate cert = cf.generateCertificate(bis);
-                            String alias = "ca" + (idx++);
-                            ks.setCertificateEntry(alias, cert);
-                            loaded++;
-                        }
-                    } catch (Throwable e) {
-                        try { CrashLogger.w("Failed to load cert " + fname + ": " + e, e); } catch (Throwable ignored) {}
-                    } finally {
-                        try { if (in != null) in.close(); } catch (Throwable ignored) {}
-                    }
-                }
-                if (loaded == 0) return null;
-
-                TrustManagerFactory customTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-                customTmf.init(ks);
-                X509TrustManager customTm = null;
-                for (TrustManager tm : customTmf.getTrustManagers()) {
-                    if (tm instanceof X509TrustManager) { customTm = (X509TrustManager) tm; break; }
-                }
-
-                final X509TrustManager sys = systemTm;
-                final X509TrustManager cus = customTm;
-
-                X509TrustManager combined = new X509TrustManager() {
-                    @Override
-                    public X509Certificate[] getAcceptedIssuers() {
-                        List<X509Certificate> list = new ArrayList<>();
-                        if (sys != null) list.addAll(Arrays.asList(sys.getAcceptedIssuers()));
-                        if (cus != null) list.addAll(Arrays.asList(cus.getAcceptedIssuers()));
-                        return list.toArray(new X509Certificate[list.size()]);
-                    }
-                    @Override
-                    public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
-                        if (sys != null) {
-                            try { sys.checkClientTrusted(chain, authType); return; } catch (CertificateException ignored) {}
-                        }
-                        if (cus != null) { cus.checkClientTrusted(chain, authType); return; }
-                        throw new CertificateException("Client cert not trusted by system or custom CAs");
-                    }
-                    @Override
-                    public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
-                        if (sys != null) {
-                            try { sys.checkServerTrusted(chain, authType); return; } catch (CertificateException ignored) {}
-                        }
-                        if (cus != null) { cus.checkServerTrusted(chain, authType); return; }
-                        throw new CertificateException("Server cert not trusted by system or custom CAs");
-                    }
-                };
-                try { CrashLogger.i("LocalAssetsServer: Using combined trust managers with " + loaded + " custom CA(s)"); } catch (Throwable ignored) {}
-                return combined;
-            } catch (Throwable t) {
-                try { CrashLogger.w("LocalAssetsServer.createCombinedTrustManagerFromAssetsLocal failed: " + t, t); } catch (Throwable ignored) {}
-                return null;
-            }
-        }
-
-        // static helper for mime guessing
         static String guessMimeStatic(String path) {
             String lower = path.toLowerCase(Locale.ROOT);
             if (lower.endsWith(".html") || lower.endsWith(".htm")) return "text/html; charset=utf-8";
@@ -1488,17 +244,9 @@ public class LauncherActivity extends AppCompatActivity {
             if (lower.endsWith(".ts")) return "video/mp2t";
             return "application/octet-stream";
         }
+    }
 
-        private static String readAll(InputStream in, String enc) throws IOException {
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            byte[] buf = new byte[8192];
-            int n;
-            while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
-            return bos.toString(enc);
-        }
-    } // end LocalAssetsServer
-
-    // helper: delete files/directories recursively
+    // helper: delete files/directories recursively (unchanged)
     private void deleteRecursive(File f) {
         if (f == null || !f.exists()) return;
         if (f.isDirectory()) {
