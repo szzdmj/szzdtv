@@ -123,6 +123,45 @@ public class LauncherActivity extends AppCompatActivity {
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
+    // 放在 onCreate() 开头，webView.loadUrl(...) 之前
+try {
+    // Clear WebView caches
+    webView.clearCache(true);
+    webView.clearHistory();
+    webView.clearFormData();
+
+    // Clear cookies
+    CookieManager cm = CookieManager.getInstance();
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        cm.removeAllCookies(null);
+        cm.flush();
+    } else {
+        cm.removeAllCookie();
+    }
+
+    // Clear WebStorage (HTML5 localStorage/sessionStorage and WebSQL)
+    try { android.webkit.WebStorage.getInstance().deleteAllData(); } catch (Throwable ignored) {}
+
+    // Delete app-level remote_cache directory (the app's own cache on getFilesDir())
+    try {
+        File cacheDir = new File(getFilesDir(), REMOTE_CACHE_DIR);
+        if (cacheDir.exists()) deleteRecursive(cacheDir);
+    } catch (Throwable ignored) {}
+
+    // Optional: unregister service workers via JS after page load (see below)
+} catch (Throwable ignored) { /* best-effort */ }
+
+// helper:
+private void deleteRecursive(File f) {
+    if (f == null || !f.exists()) return;
+    if (f.isDirectory()) {
+        File[] children = f.listFiles();
+        if (children != null) {
+            for (File c : children) deleteRecursive(c);
+        }
+    }
+    f.delete();
+}
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
