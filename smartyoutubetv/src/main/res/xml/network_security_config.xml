@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-  <!-- 默认不允许明文 -->
+  <!-- 默认允许明文 -->
   <base-config cleartextTrafficPermitted="true" />
 
   <!-- 允许对 localhost 的明文访问（仅限本机回环） -->
