@@ -1,22 +1,22 @@
 package com.liskovsoft.smartyoutubetv.web;
 
 import android.content.Context;
+import android.content.Intent;
 import android.net.Uri;
-import android.util.Patterns;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
-import com.liskovsoft.browser.player.ExoPlayerActivity;
-
+import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * Lightweight WebViewClient that detects playable links and launches internal ExoPlayerActivity.
+ * Lightweight WebViewClient that detects playable links and launches internal ExoPlayerActivity at runtime.
  *
- * Keep this class simple: no top-level statements allowed. All logic must be inside methods.
+ * This implementation avoids compile-time dependency on browser module classes by starting the Activity
+ * with Intent.setClassName(packageName, fullyQualifiedClassName).
  */
 public class OpenLinkWebViewClient extends WebViewClient {
     private static final Pattern PLAYABLE_EXT = Pattern.compile("(?i).*\\.(mp4|m3u8|webm)$");
@@ -48,18 +48,52 @@ public class OpenLinkWebViewClient extends WebViewClient {
 
             // Prefer internal immersive player if configured; otherwise let system handle (fallback)
             if (mPreferInternal) {
-                ExoPlayerActivity.start(mContext, url, null, headers);
+                startInternalPlayer(url, null, headers);
                 return true; // we handled the navigation
             }
         }
 
         // For youtube links or other special handling you can extend here
         if (isYouTubeUrl(url)) {
-            // Optionally prefer system or internal handling; default: allow WebView (or you can launch external)
+            // Default: let WebView handle
             return false;
         }
 
         return false; // default: let WebView handle
+    }
+
+    // Launch activity by runtime class name to avoid compile-time dependency on browser module.
+    private void startInternalPlayer(String url, String title, Map<String, String> headers) {
+        try {
+            Context ctx = mContext;
+            Intent intent = new Intent();
+            // Use the installed app package name (applicationId at runtime)
+            String appPkg = ctx.getPackageName();
+
+            // Fully-qualified activity class name as declared in manifest for the browser module:
+            // keep this value in sync with the Activity's package: com.liskovsoft.browser.player.ExoPlayerActivity
+            String fqcn = "com.liskovsoft.browser.player.ExoPlayerActivity";
+
+            // Set class name (package, class). The package argument must be the installed application's package name.
+            intent.setClassName(appPkg, fqcn);
+            intent.putExtra("extra_video_url", url);
+            if (title != null) intent.putExtra("extra_title", title);
+            if (headers != null && !headers.isEmpty()) {
+                // pass headers as Serializable HashMap
+                intent.putExtra("extra_headers", (Serializable) new HashMap<>(headers));
+            }
+            // Ensure starting activity from non-activity context
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(intent);
+        } catch (Throwable t) {
+            // If runtime launch fails, fallback to ACTION_VIEW implicit intent
+            try {
+                Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                mContext.startActivity(i);
+            } catch (Throwable ignored) {
+            }
+        }
     }
 
     // Helper: quick playable URL heuristic
