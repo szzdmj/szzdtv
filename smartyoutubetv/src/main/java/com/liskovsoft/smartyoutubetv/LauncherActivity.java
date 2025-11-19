@@ -106,8 +106,9 @@ public class LauncherActivity extends AppCompatActivity {
     // Visibility debug helpers
     // ENABLE_VISIBILITY_DEBUG: when true, onPageFinished will inject HIDDEN_REPORT and MUTATION observer logs.
     // DEBUG_UNHIDE: if true, will try to temporarily unhide matching elements (INSECURE — only for local debugging).
+    // NOTE: You asked to "打开 display:none 的部分" — enable DEBUG_UNHIDE to automatically attempt to reveal elements.
     private static final boolean ENABLE_VISIBILITY_DEBUG = true;
-    private static final boolean DEBUG_UNHIDE = false;
+    private static final boolean DEBUG_UNHIDE = true; // <-- Enabled as requested
 
     // Networking / retry tuning
     private static final int CONNECT_TIMEOUT_MS = 180_000;
@@ -316,17 +317,25 @@ public class LauncherActivity extends AppCompatActivity {
 
                     if (DEBUG_UNHIDE) {
                         try {
+                            // Enhanced unhide: skip non-visual tags (script/style/meta/link/head), unhide elements with display:none / visibility:hidden / opacity:0 / hidden attr / aria-hidden / inert / zero-size
                             String unhideScript =
                                 "(function(){ try{" +
                                 "  var css = '*{ transition: none !important; } ._dbg_unhide{ outline:3px solid rgba(255,0,0,0.6) !important; }';" +
                                 "  var s = document.createElement('style'); s.appendChild(document.createTextNode(css)); document.head && document.head.appendChild(s);" +
+                                "  function selectorFor(el){ try{ if(!el) return ''; if(el.id) return '#'+el.id; var s=el.tagName.toLowerCase(); if(el.classList && el.classList.length) s += '.'+Array.from(el.classList).slice(0,5).join('.'); return s; }catch(e){return ''; } }" +
                                 "  var els = Array.prototype.slice.call(document.querySelectorAll('body *'));" +
-                                "  var cnt = 0;" +
-                                "  for(var i=0;i<els.length;i++){ try{ var el = els[i]; var cs = window.getComputedStyle(el); if(!cs) continue; if(cs.display==='none' || cs.visibility==='hidden' || parseFloat(cs.opacity)===0 || el.hasAttribute('hidden') || el.getAttribute('aria-hidden')==='true' || el.hasAttribute('inert')){ el.classList.add('_dbg_unhide'); el.style.display='block'; el.style.visibility='visible'; el.style.opacity='1'; el.removeAttribute('hidden'); el.removeAttribute('inert'); el.setAttribute('data-dbg-unhidden','1'); cnt++; } }catch(e){} }" +
-                                "  if(window.Android && Android.log) Android.log('UNHIDE_DONE:'+cnt);" +
-                                "  return cnt;" +
+                                "  var unhidden = [];" +
+                                "  function tagDefault(tag){ tag = tag.toLowerCase(); if(tag==='li') return 'list-item'; if(tag==='img') return 'inline-block'; if(tag==='a' || tag==='span' || tag==='strong' || tag==='b' || tag==='em') return 'inline'; if(tag==='ul' || tag==='ol' || tag==='nav' || tag==='section' || tag==='div' || tag==='header' || tag==='footer' || tag==='main') return 'block'; return 'block'; }" +
+                                "  for(var i=0;i<els.length;i++){ try{ var el = els[i]; var t = el.tagName.toLowerCase(); if(t==='script' || t==='style' || t==='link' || t==='meta' || t==='head') continue; var cs = window.getComputedStyle(el); if(!cs) continue; var rect = el.getBoundingClientRect(); var shouldUnhide = (cs.display==='none' || cs.visibility==='hidden' || cs.visibility==='collapse' || parseFloat(cs.opacity)===0 || rect.width===0 || rect.height===0 || el.hasAttribute('hidden') || el.getAttribute('aria-hidden')==='true' || el.hasAttribute('inert')); if(shouldUnhide){ try{ el.classList.add('_dbg_unhide'); el.style.visibility = 'visible'; el.style.opacity = '1'; el.removeAttribute('hidden'); el.removeAttribute('inert'); if(cs.display==='none'){ try{ el.style.display = tagDefault(t); }catch(e){ el.style.display = 'block'; } } else { try{ el.style.removeProperty('display'); }catch(e){} } el.setAttribute('data-dbg-unhidden','1'); unhidden.push(selectorFor(el)); }catch(e){} } }catch(e){} }" +
+                                "  if(window.Android && Android.log) Android.log('UNHIDE_DONE:' + unhidden.length + ' LIST:' + JSON.stringify(unhidden));" +
+                                "  return unhidden.length;" +
                                 "}catch(e){ if(window.Android && Android.log) Android.log('UNHIDE_ERR:'+e.toString()); return 0; }})();";
-                            view.evaluateJavascript(unhideScript, null);
+                            view.evaluateJavascript(unhideScript, new android.webkit.ValueCallback<String>() {
+                                @Override
+                                public void onReceiveValue(String value) {
+                                    try { CrashLogger.i("UNHIDE eval result: " + value); } catch (Throwable ignored) {}
+                                }
+                            });
                         } catch (Throwable ignored) {}
                     }
                 } // end ENABLE_VISIBILITY_DEBUG
@@ -395,7 +404,7 @@ public class LauncherActivity extends AppCompatActivity {
             webView.loadUrl("file:///android_asset/gjw.html");
         } catch (Throwable t) {
             String warn = "Unexpected error starting LocalAssetsServer, fallback to file://";
-            Log.w(TAG,warn,t); try{ CrashLogger.w(warn,t);}catch(Throwable ignored){}
+            Log.w(TAG,warn,t); try{ CrashLogger.err(warn,t);}catch(Throwable ignored){}
             server=null; serverPort=-1;
             webView.loadUrl("file:///android_asset/gjw.html");
         }
@@ -618,7 +627,7 @@ public class LauncherActivity extends AppCompatActivity {
         return null;
     }
 
-    // Helper to check if requested URL is a JS file
+    // Helper to check if data looks like JS request
     private boolean isJsRequest(String url) {
         if (url == null) return false;
         String u = url.split("\\?")[0].toLowerCase(Locale.ROOT);
