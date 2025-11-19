@@ -5,7 +5,7 @@ android {
     compileSdk 34
 
     defaultConfig {
-        applicationId "szzdtv.smartyoutubetv"
+        applicationId "szzdtv.SmartGJWTV"
         minSdk 22
         targetSdk 34
         versionCode 1
@@ -96,3 +96,4 @@ dependencies {
     implementation 'androidx.media3:media3-ui:1.1.1'
     implementation 'androidx.media3:media3-common:1.1.1'
 }
+
