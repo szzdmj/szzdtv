@@ -133,24 +133,26 @@ public class LauncherActivity extends AppCompatActivity {
                 return LauncherActivity.this.tryServeAssetForUrl(request.getUrl().toString(), request.getRequestHeaders());
             }
 
-@Override
-public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error){
-    try{
-        String s = "onReceivedSslError: primaryError=" + error.getPrimaryError() + " url=" + (view!=null?view.getUrl():"(unknown)");
-        Log.w(TAG,s);
-        try{ CrashLogger.w(s, null); } catch(Throwable ignored) {}
-    }catch(Throwable t){
-        Log.w(TAG,"Exception in onReceivedSslError",t);
-        try{ CrashLogger.w("Exception in onReceivedSslError", t); } catch(Throwable ignored){}
-    }
-    // For debugging: optionally proceed (INSECURE)
-    if (ALLOW_ALL_SSL_ERRORS) {
-        try { CrashLogger.i("Proceeding on SSL error because ALLOW_ALL_SSL_ERRORS=true"); } catch (Throwable ignored) {}
-        handler.proceed();
-    } else {
-        handler.cancel();
-    }
-}
+            @Override
+            public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error){
+                try{
+                    String s = "onReceivedSslError: primaryError=" + error.getPrimaryError() + " url=" + (view!=null?view.getUrl():"(unknown)");
+                    Log.w(TAG,s);
+                    try{ CrashLogger.w(s, null); } catch(Throwable ignored) {}
+                }catch(Throwable t){
+                    Log.w(TAG,"Exception in onReceivedSslError",t);
+                    try{ CrashLogger.w("Exception in onReceivedSslError", t); } catch(Throwable ignored){}
+                }
+                // For debugging: optionally proceed (INSECURE)
+                if (ALLOW_ALL_SSL_ERRORS) {
+                    try { CrashLogger.i("Proceeding on SSL error because ALLOW_ALL_SSL_ERRORS=true"); } catch (Throwable ignored) {}
+                    handler.proceed();
+                } else {
+                    handler.cancel();
+                }
+            }
+        });
+
         // Start local assets server (serves embedded assets only)
         try {
             serverPort = findFreePort();
