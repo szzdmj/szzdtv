@@ -892,9 +892,78 @@ public class LauncherActivity extends AppCompatActivity {
         return null;
     }
 
-    private WebResourceResponse fetchUrlPermissiveTrustAll(String urlStr, Map<String,String> requestHeaders) {
-        try {
-            SSLContext sc = SSLContext.getInstance("TLS");
-            TrustManager[] trustAllCerts = new TrustManager[]{
-                    new X509TrustManager() {
-                        public X509Certificate[] getAcceptedIssuers() { return new X509Ce...
+   private WebResourceResponse fetchUrlPermissiveTrustAll(String urlStr, Map<String,String> requestHeaders) {
+    try {
+        SSLContext sc = SSLContext.getInstance("TLS");
+        TrustManager[] trustAllCerts = new TrustManager[]{
+                new X509TrustManager() {
+                    @Override
+                    public X509Certificate[] getAcceptedIssuers() {
+                        return new X509Certificate[0];
+                    }
+                    @Override
+                    public void checkClientTrusted(X509Certificate[] certs, String authType) throws CertificateException {
+                        // permissive: accept any client cert
+                    }
+                    @Override
+                    public void checkServerTrusted(X509Certificate[] certs, String authType) throws CertificateException {
+                        // permissive: accept any server cert
+                    }
+                }
+        };
+        sc.init(null, trustAllCerts, new SecureRandom());
+
+        URL u = new URL(urlStr);
+        HttpsURLConnection httpsConn = (HttpsURLConnection) u.openConnection();
+        httpsConn.setSSLSocketFactory(sc.getSocketFactory());
+        httpsConn.setHostnameVerifier((hostname, session) -> true);
+
+        boolean uaPresent = false;
+        if (requestHeaders != null) {
+            for (Map.Entry<String,String> e : requestHeaders.entrySet()) {
+                String k = e.getKey();
+                String v = e.getValue();
+                if (k == null || v == null) continue;
+                if ("host".equalsIgnoreCase(k) || "connection".equalsIgnoreCase(k)) continue;
+                httpsConn.setRequestProperty(k, v);
+                if ("user-agent".equalsIgnoreCase(k)) uaPresent = true;
+            }
+        }
+        if (!uaPresent) httpsConn.setRequestProperty("User-Agent", DEFAULT_UA);
+        httpsConn.setRequestProperty("Accept-Encoding", "identity");
+        httpsConn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+
+        httpsConn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+        httpsConn.setReadTimeout(READ_TIMEOUT_MS);
+        httpsConn.setInstanceFollowRedirects(true);
+        int code2 = httpsConn.getResponseCode();
+        InputStream is2 = (code2 >= 400) ? httpsConn.getErrorStream() : httpsConn.getInputStream();
+        if (is2 == null) return null;
+        String ct2 = httpsConn.getContentType();
+        if (ct2 == null) ct2 = "application/octet-stream";
+
+        String[] parts = splitMimeAndCharset(ct2);
+        String mimeOnly = parts[0];
+        String encoding = parts[1] != null ? parts[1] : chooseEncodingForMime(mimeOnly);
+
+        Map<String,String> headers = new HashMap<>();
+        for (Map.Entry<String, List<String>> hh : httpsConn.getHeaderFields().entrySet()) {
+            String hk = hh.getKey();
+            if (hk == null) continue;
+            List<String> vals = hh.getValue();
+            if (vals == null || vals.isEmpty()) continue;
+            headers.put(hk, String.join(", ", vals));
+        }
+        if (!headers.containsKey("Access-Control-Allow-Origin")) headers.put("Access-Control-Allow-Origin", "*");
+
+        try { CrashLogger.i("Permissive fetch returned for " + urlStr + " code=" + code2 + " type=" + ct2); } catch (Throwable ignored) {}
+        if (Build.VERSION.SDK_INT >= 21) {
+            return new WebResourceResponse(mimeOnly, encoding, code2, httpsConn.getResponseMessage(), headers, is2);
+        } else {
+            return new WebResourceResponse(mimeOnly, encoding, is2);
+        }
+    } catch (Throwable insecureEx) {
+        try { CrashLogger.w("Permissive trust-all fetch failed for " + urlStr, insecureEx); } catch (Throwable ignored) {}
+    }
+    return null;
+}
