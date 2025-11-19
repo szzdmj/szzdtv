@@ -290,6 +290,24 @@ public class LauncherActivity extends AppCompatActivity {
             if (path.contains("..")) return newFixedLengthResponse(Response.Status.FORBIDDEN, "text/plain", "Forbidden");
 
             try {
+                // Special-case: inject CSP that upgrades insecure requests in gjw.html
+                if ("gjw.html".equals(path)) {
+                    InputStream is = assets.open(path);
+                    String html = readAll(is, "UTF-8");
+                    // Add CSP upgrade-insecure-requests to force http -> https for subresources
+                    String injection = "<meta http-equiv=\"Content-Security-Policy\" content=\"upgrade-insecure-requests; default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; frame-ancestors *;\">";
+                    String base = "<base href=\"http://localhost:" + listeningPort + "/\">";
+                    if (html.toLowerCase(Locale.ROOT).contains("<head")) {
+                        html = html.replaceFirst("(?i)<head([^>]*)>", "<head$1>" + injection + base);
+                    } else {
+                        html = injection + base + html;
+                    }
+                    Response r2 = newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", html);
+                    r2.addHeader("Access-Control-Allow-Origin", "*");
+                    r2.addHeader("Cache-Control", "no-cache");
+                    return r2;
+                }
+
                 InputStream is = assets.open(path);
                 String mime = guessMimeStatic(path);
                 Response res = newChunkedResponse(Response.Status.OK, mime, is);
@@ -305,6 +323,15 @@ public class LauncherActivity extends AppCompatActivity {
                 }
                 return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found: " + path);
             }
+        }
+
+        // helper to read InputStream into String
+        private static String readAll(InputStream in, String enc) throws IOException {
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+            return bos.toString(enc);
         }
 
         static String guessMimeStatic(String path) {
