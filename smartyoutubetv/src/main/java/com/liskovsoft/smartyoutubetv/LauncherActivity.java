@@ -210,6 +210,41 @@ public class LauncherActivity extends AppCompatActivity {
 // - This forces https where available while preserving fallback.
 if (lower.startsWith("http://") || lower.startsWith("https://")) {
     // If the original URL is http, attempt an immediate https upgrade and serve that if successful.
+// Replace the external-request branch inside tryServeAssetForUrl(...) with this upgraded handling.
+// Key: skip http->https upgrade and "block cleartext" logic for loopback/localhost.
+if (lower.startsWith("http://") || lower.startsWith("https://")) {
+    // If URL is loopback/local, DO NOT attempt https upgrade — local server may not support TLS.
+    boolean isLocal = false;
+    try {
+        URL parsed = new URL(url);
+        String host = parsed.getHost();
+        if (host != null) {
+            String h = host.toLowerCase(Locale.ROOT);
+            if ("localhost".equals(h) || "127.0.0.1".equals(h) || "0.0.0.0".equals(h) || "::1".equals(h)) {
+                isLocal = true;
+            }
+        }
+    } catch (Throwable ignored) {}
+
+    if (isLocal) {
+        // Directly fetch local HTTP resource (don't upgrade, don't block cleartext).
+        try {
+            WebResourceResponse resp = fetchWithRetriesAndCache(url, requestHeaders);
+            if (resp != null) {
+                try { CrashLogger.i("Served local (no-upgrade) resource via app-fetch: " + url); } catch (Throwable ignored) {}
+                return resp;
+            } else {
+                // If local fetch failed, let WebView do default (or return empty) — but do not attempt https upgrade.
+                try { CrashLogger.w("Local fetch failed (no-upgrade) for: " + url, null); } catch (Throwable ignored) {}
+                return null;
+            }
+        } catch (Throwable t) {
+            try { CrashLogger.w("Exception while serving local resource: " + url + " : " + t, t); } catch (Throwable ignored) {}
+            return null;
+        }
+    }
+
+    // For non-local hosts: if original is http, try https upgrade first (existing behavior).
     if (lower.startsWith("http://")) {
         String httpsUrl = "https://" + url.substring("http://".length());
                             try {
@@ -228,13 +263,13 @@ if (lower.startsWith("http://") || lower.startsWith("https://")) {
                     }
                     }
 
-    // If we reach here, either original was https, or https upgrade failed: use normal fetch flow (which also tries https candidates internally)
+    // Normal fetch flow (for https original or upgrade-failed)
                         WebResourceResponse resp = fetchWithRetriesAndCache(url, requestHeaders);
                         if (resp != null) {
                             try { CrashLogger.i("Served remote resource via app-fetch: " + url); } catch (Throwable ignored) {}
                             return resp;
                         } else {
-        // If original was http and we couldn't fetch https nor http (network issues), block cleartext retry to avoid unsafe fallthrough
+        // Only block cleartext if it's not local. (For local we've already returned above.)
                             if (lower.startsWith("http://")) {
             try { CrashLogger.i("Blocking cleartext request for " + url + " (no available content)"); } catch (Throwable ignored) {}
                                 if (Build.VERSION.SDK_INT >= 21) {
