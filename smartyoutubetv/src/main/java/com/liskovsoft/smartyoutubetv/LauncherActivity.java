@@ -1,3 +1,4 @@
+// (完整文件，已修正 LocalAssetsServer: 使用 listeningPort 字段，已删除冲突的 getListeningPort 方法)
 package com.liskovsoft.smartyoutubetv;
 
 import android.annotation.SuppressLint;
@@ -105,7 +106,6 @@ public class LauncherActivity extends AppCompatActivity {
     private static final boolean BLOCK_CLEARTEXT_ON_FAILURE = false;  // If false, allow WebView to try direct http if app-proxy failed
 
     // Networking / retry tuning
-    // Set to 3 minutes to tolerate unstable networks / throttling inside GFW
     private static final int CONNECT_TIMEOUT_MS = 180_000;
     private static final int READ_TIMEOUT_MS = 180_000;
     private static final int MAX_ATTEMPTS_PER_CANDIDATE = 4;
@@ -238,7 +238,6 @@ public class LauncherActivity extends AppCompatActivity {
                             return new WebResourceResponse("application/javascript", "UTF-8", is);
                         } else {
                             missingAssets.add(filename);
-                            // CrashLogger.w requires (String, Throwable) in this project API: pass null throwable
                             try { CrashLogger.w("Asset not found for " + filename, null); } catch (Throwable ignored) {}
                         }
                     }
@@ -1009,10 +1008,12 @@ public class LauncherActivity extends AppCompatActivity {
     public static class LocalAssetsServer extends NanoHTTPD {
         private static final String TAG2 = "LocalAssetsServer";
         private final AssetManager assets;
+        private final int listeningPort; // store port for injection use
 
         public LocalAssetsServer(int port, AssetManager assets) throws IOException {
             super("127.0.0.1", port);
             this.assets = assets;
+            this.listeningPort = port; // save port so serve() can use it without calling parent method
             Log.d(TAG2, "Constructed LocalAssetsServer for port " + port);
             try{ CrashLogger.i("Constructed LocalAssetsServer for port " + port); }catch(Throwable ignored){}
         }
@@ -1083,7 +1084,7 @@ public class LauncherActivity extends AppCompatActivity {
                     String html = readAll(is, "UTF-8");
                     // Add permissive CSP (debug only) and ensure base href points to local server so relative URLs resolve
                     String injection = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; frame-ancestors *;\">";
-                    String base = "<base href=\"http://localhost:" + getListeningPort() + "/\">";
+                    String base = "<base href=\"http://localhost:" + listeningPort + "/\">";
                     if (html.contains("<head")) {
                         html = html.replaceFirst("(?i)<head([^>]*)>", "<head$1>" + injection + base);
                     } else {
@@ -1396,19 +1397,6 @@ public class LauncherActivity extends AppCompatActivity {
             int n;
             while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
             return bos.toString(enc);
-        }
-
-        // helper: get listening port for base injection
-        private int getListeningPort() {
-            return this.getListeningPortStatic();
-        }
-        // hack: access private NanoHTTPD field via this.getListeningPortStatic() wrapper (uses reflection fallback)
-        private int getListeningPortStatic() {
-            try {
-                return this.getListeningPort(); // NanoHTTPD provides getListeningPort() in newer versions
-            } catch (Throwable ignored) {
-                return 0;
-            }
         }
     } // end LocalAssetsServer
 
