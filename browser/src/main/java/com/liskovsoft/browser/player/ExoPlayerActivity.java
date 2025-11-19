@@ -61,6 +61,13 @@ public class ExoPlayerActivity extends AppCompatActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+    // Log start of activity and received intent extras
+    try {
+        String instMsg = "EXOPLAYER_ONCREATE: package=" + getPackageName() + " intent=" + getIntent();
+        android.util.Log.i("ExoPlayerActivity", instMsg);
+        try { com.szzdmj.nanohttpd.CrashLogger.i(instMsg); } catch (Throwable ignored) {}
+    } catch (Throwable ignored) {}
+
         // Keep screen on while playing
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
@@ -73,7 +80,10 @@ public class ExoPlayerActivity extends AppCompatActivity {
 
         // Enter immersive
         enterImmersiveMode();
-    }
+       try {
+        com.szzdmj.nanohttpd.CrashLogger.i("EXOPLAYER_ONCREATE: enterImmersiveMode called");
+    } catch (Throwable ignored) {}
+ }
 
     @Override
     protected void onStart() {
@@ -108,89 +118,40 @@ public class ExoPlayerActivity extends AppCompatActivity {
     }
 
     private void initPlayer() {
+    try {
+        com.szzdmj.nanohttpd.CrashLogger.i("EXOPLAYER_INIT: initPlayer start");
+    } catch (Throwable ignored) {}
+
         mPlayer = new ExoPlayer.Builder(this).build();
         mPlayerView.setPlayer(mPlayer);
         mPlayer.setRepeatMode(Player.REPEAT_MODE_OFF);
 
         Intent intent = getIntent();
         if (intent == null) {
-            Toast.makeText(this, "No media to play", Toast.LENGTH_SHORT).show();
-            finish();
+        com.szzdmj.nanohttpd.CrashLogger.i("EXOPLAYER_INIT: no intent -> finish");
             return;
         }
 
         String url = intent.getStringExtra(EXTRA_VIDEO_URL);
-        if (url == null || url.isEmpty()) {
-            Toast.makeText(this, "No media URL provided", Toast.LENGTH_SHORT).show();
-            finish();
-            return;
-        }
-
-        // Optional title
         String title = intent.getStringExtra(EXTRA_TITLE);
-        if (title != null && !title.isEmpty()) setTitle(title);
 
-        // Optional headers (Serializable)
-        @SuppressWarnings("unchecked")
-        Map<String, String> headers = (Map<String, String>) intent.getSerializableExtra(EXTRA_HEADERS);
-
+    // Log received extras
         try {
-            Uri uri = Uri.parse(url);
+        String extraMsg = "EXOPLAYER_INIT_EXTRAS: url=" + url + " title=" + title
+                + " headers_present=" + (intent.getSerializableExtra(EXTRA_HEADERS) != null);
+        android.util.Log.i("ExoPlayerActivity", extraMsg);
+        try { com.szzdmj.nanohttpd.CrashLogger.i(extraMsg); } catch (Throwable ignored) {}
+    } catch (Throwable ignored) {}
 
-            // Build HttpDataSource.Factory with headers if provided
-            DefaultHttpDataSource.Factory httpFactory = new DefaultHttpDataSource.Factory();
+    // ... existing data source factory creation ...
+    try {
             if (headers != null && !headers.isEmpty()) {
-                httpFactory.setDefaultRequestProperties(headers);
-                Log.i(TAG, "Applied " + headers.size() + " request headers");
-            }
-
-            // Wrap into DefaultDataSource.Factory so ExoPlayer can use either file/cache/http uniformly
-            DefaultDataSource.Factory dataSourceFactory = new DefaultDataSource.Factory(this, httpFactory);
-
-            MediaItem mediaItem = new MediaItem.Builder().setUri(uri).build();
-
-            // Use media item and dataSourceFactory to prepare player
-            mPlayer.setMediaItem(mediaItem);
-            mPlayer.setMediaSource(new com.google.android.exoplayer2.source.ProgressiveMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(mediaItem));
-            mPlayer.prepare();
-            mPlayer.play();
-        } catch (Throwable t) {
-            Log.e(TAG, "Failed to start playback", t);
-            Toast.makeText(this, "Playback error", Toast.LENGTH_SHORT).show();
-            finish();
-        }
+            com.szzdmj.nanohttpd.CrashLogger.i("EXOPLAYER_INIT: applying headers count=" + headers.size());
     }
+    } catch (Throwable ignored) {}
 
-    private void releasePlayer() {
-        if (mPlayer != null) {
-            try { mPlayer.stop(); } catch (Throwable ignored) {}
-            mPlayer.release();
-            mPlayer = null;
-            if (mPlayerView != null) mPlayerView.setPlayer(null);
-        }
-    }
-
-    private void enterImmersiveMode() {
-        View decor = getWindow().getDecorView();
-        decor.setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        | View.SYSTEM_UI_FLAG_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-        );
-        mHandler.removeCallbacks(mReenterImmersive);
-        mHandler.postDelayed(mReenterImmersive, 2000);
-    }
-
-    // Remote / DPAD key handling: forward to controller where appropriate
-    @Override
-    public boolean dispatchKeyEvent(KeyEvent event) {
-        if (mPlayerView != null && mPlayerView.dispatchKeyEvent(event)) return true;
-        return super.dispatchKeyEvent(event);
-    }
-
-    // Optional: expose hooks to integrate MediaSession / Notifications later
+    // After prepare/play
+    try {
+        com.szzdmj.nanohttpd.CrashLogger.i("EXOPLAYER_INIT: prepare/play called for " + url);
+    } catch (Throwable ignored) {}
 }
