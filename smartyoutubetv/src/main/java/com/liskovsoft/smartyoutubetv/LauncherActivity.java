@@ -222,7 +222,8 @@ public class LauncherActivity extends AppCompatActivity {
                             return new WebResourceResponse("application/javascript", "UTF-8", is);
                         } else {
                             missingAssets.add(filename);
-                            try { CrashLogger.w("Asset not found for " + filename); } catch (Throwable ignored) {}
+                            // CrashLogger.w requires (String, Throwable), provide null throwable to match API
+                            try { CrashLogger.w("Asset not found for " + filename, null); } catch (Throwable ignored) {}
                         }
                     }
 
