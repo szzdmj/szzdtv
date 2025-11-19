@@ -202,60 +202,43 @@ public class LauncherActivity extends AppCompatActivity {
                     String lower = url.toLowerCase(Locale.ROOT);
                     String urlNoQuery = url.split("\\?")[0].split("#")[0];
 
-// Replace the external-request branch inside tryServeAssetForUrl(...) with this upgraded handling.
-// Key ideas:
-// - If original request is http://..., try to fetch https://... first (using existing fetchWithRetriesAndCache).
-// - If https fetch succeeds, return that response (log upgrade).
-// - If https fails, fall back to existing behavior (attempt to fetch original http).
-// - This forces https where available while preserving fallback.
-if (lower.startsWith("http://") || lower.startsWith("https://")) {
-    // If the original URL is http, attempt an immediate https upgrade and serve that if successful.
-// Replace the external-request branch inside tryServeAssetForUrl(...) with this upgraded handling.
-// Key: skip http->https upgrade and "block cleartext" logic for loopback/localhost.
-if (lower.startsWith("http://") || lower.startsWith("https://")) {
-    // If URL is loopback/local, DO NOT attempt https upgrade — local server may not support TLS.
-    boolean isLocal = false;
+        // 1) Serve local JS if present in apk assets (preferable for critical scripts)
+        if (lower.endsWith(".js")) {
+            int idx = urlNoQuery.lastIndexOf('/');
+            String filename = idx >= 0 ? urlNoQuery.substring(idx + 1) : urlNoQuery;
+            try { CrashLogger.i("Intercept request for JS: " + url + " -> " + filename); } catch (Throwable ignored) {}
+            InputStream is = null;
     try {
-        URL parsed = new URL(url);
-        String host = parsed.getHost();
-        if (host != null) {
-            String h = host.toLowerCase(Locale.ROOT);
-            if ("localhost".equals(h) || "127.0.0.1".equals(h) || "0.0.0.0".equals(h) || "::1".equals(h)) {
-                isLocal = true;
+                is = getAssets().open(filename);
+            } catch (IOException ignored) {
+                try {
+                    is = getAssets().open("js/" + filename);
+                } catch (IOException ignored2) {
+                    is = null;
             }
         }
-    } catch (Throwable ignored) {}
-
-    if (isLocal) {
-        // Directly fetch local HTTP resource (don't upgrade, don't block cleartext).
-        try {
-            WebResourceResponse resp = fetchWithRetriesAndCache(url, requestHeaders);
-            if (resp != null) {
-                try { CrashLogger.i("Served local (no-upgrade) resource via app-fetch: " + url); } catch (Throwable ignored) {}
-                return resp;
+            if (is != null) {
+                try { CrashLogger.i("Serving JS from assets: " + filename); } catch (Throwable ignored) {}
+                return new WebResourceResponse("application/javascript", "UTF-8", is);
             } else {
-                // If local fetch failed, let WebView do default (or return empty) — but do not attempt https upgrade.
-                try { CrashLogger.w("Local fetch failed (no-upgrade) for: " + url, null); } catch (Throwable ignored) {}
-                return null;
-            }
-        } catch (Throwable t) {
-            try { CrashLogger.w("Exception while serving local resource: " + url + " : " + t, t); } catch (Throwable ignored) {}
-            return null;
+                missingAssets.add(filename);
+                try { CrashLogger.d("Asset not found for " + filename); } catch (Throwable ignored) {}
         }
     }
-// inside tryServeAssetForUrl(...)
- // --- quick pass for local server: do NOT proxy/upgrade local requests ---
- if (lower.startsWith("http://localhost:") || lower.startsWith("https://localhost:") ||
-     lower.startsWith("http://127.0.0.1:") || lower.startsWith("https://127.0.0.1:")) {
-     // Let WebView talk to local NanoHTTPD directly (no https upgrade, no app proxy).
+
+        // 2) Bypass: let WebView talk directly to local server (do NOT proxy/upgrade local requests)
+        if (lower.startsWith("http://localhost:") || lower.startsWith("https://localhost:")
+                || lower.startsWith("http://127.0.0.1:") || lower.startsWith("https://127.0.0.1:")) {
      try { CrashLogger.i("Bypassing proxy for local request: " + url); } catch (Throwable ignored) {}
      return null;
  }
 
- // External requests: prefer https upgrade for non-local http, otherwise normal fetch
+        // 3) External requests via app-level fetch (with https-upgrade attempt for http)
  if (lower.startsWith("http://") || lower.startsWith("https://")) {
-     // If original is http, try https upgrade first for non-local hosts
-    if (lower.startsWith("http://")) {
+            boolean origWasHttp = lower.startsWith("http://");
+
+            // If the request was http -> try https upgrade first for non-local hosts
+            if (origWasHttp) {
         String httpsUrl = "https://" + url.substring("http://".length());
                             try {
             try { CrashLogger.i("Attempting http->https upgrade for: " + url + " -> " + httpsUrl); } catch (Throwable ignored) {}
@@ -279,8 +262,8 @@ if (lower.startsWith("http://") || lower.startsWith("https://")) {
                             try { CrashLogger.i("Served remote resource via app-fetch: " + url); } catch (Throwable ignored) {}
                             return resp;
                         } else {
-        // Only block cleartext if it's not local. (For local we've already returned above.)
-                            if (lower.startsWith("http://")) {
+                // If original was http and nothing returned, block cleartext to avoid leaking or returning error HTML as JS
+                if (origWasHttp) {
             try { CrashLogger.i("Blocking cleartext request for " + url + " (no available content)"); } catch (Throwable ignored) {}
                                 if (Build.VERSION.SDK_INT >= 21) {
                                     Map<String,String> headers = Collections.singletonMap("Content-Type","text/plain");
