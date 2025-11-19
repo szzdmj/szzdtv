@@ -84,16 +84,33 @@ public class OpenLinkWebViewClient extends WebViewClient {
             }
             // Ensure starting activity from non-activity context
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+        // LOG: before starting activity
+        String preMsg = "EXOPLAYER_START_ATTEMPT: pkg=" + appPkg + " class=" + fqcn + " url=" + url
+                + " headers_count=" + (headers == null ? 0 : headers.size());
+        android.util.Log.i("OpenLinkWebViewClient", preMsg);
+        try { com.szzdmj.nanohttpd.CrashLogger.i(preMsg); } catch (Throwable ignored) {}
+
             ctx.startActivity(intent);
+
+        // LOG: successfully started
+        String okMsg = "EXOPLAYER_START_OK: started internal player for url=" + url;
+        android.util.Log.i("OpenLinkWebViewClient", okMsg);
+        try { com.szzdmj.nanohttpd.CrashLogger.i(okMsg); } catch (Throwable ignored) {}
         } catch (Throwable t) {
-            // If runtime launch fails, fallback to ACTION_VIEW implicit intent
+        String errMsg = "EXOPLAYER_START_FAIL: will fallback to ACTION_VIEW for url=" + url + " err=" + t;
+        android.util.Log.w("OpenLinkWebViewClient", errMsg, t);
+        try { com.szzdmj.nanohttpd.CrashLogger.w(errMsg, null); } catch (Throwable ignored) {}
+
+        // fallback
             try {
                 Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
                 i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 mContext.startActivity(i);
-            } catch (Throwable ignored) {
-            }
-        }
+            try { com.szzdmj.nanohttpd.CrashLogger.i("EXOPLAYER_START_FALLBACK_OK: ACTION_VIEW started for url=" + url); } catch (Throwable ignored) {}
+        } catch (Throwable ignored2) {
+            try { com.szzdmj.nanohttpd.CrashLogger.w("EXOPLAYER_START_FALLBACK_FAIL: " + ignored2, null); } catch (Throwable ignored3) {}
+    }
     }
 
     // Helper: quick playable URL heuristic
