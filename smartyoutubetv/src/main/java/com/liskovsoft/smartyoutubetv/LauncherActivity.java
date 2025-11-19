@@ -66,14 +66,17 @@ import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
 
 /**
- * LauncherActivity — debug-friendly variant
+ * LauncherActivity
  *
  * - Starts a small local HTTP server that serves assets (NanoHTTPD)
- * - Intercepts network requests and prefers app-fetch (proxy) so we can log response headers/status
- * - Adds debug relaxations: accept SSL errors (optional), permissive CSP injected into local gjw.html,
- *   cookie enabling, clear caches on startup (for debugging), DOM snapshot on onPageFinished.
+ * - Logs important events to CrashLogger
+ * - Loads http://localhost:PORT/ when server available; falls back to file:///android_asset/gjw.html
+ * - Intercepts http(s) requests and prefers secure fetch with support for custom CA bundles in assets/certs/
+ * - Adds retry, caching and ensures proxy uses combined CA when possible.
  *
- * NOTE: These relaxations are for debugging only. Remove or tighten for production.
+ * Debug changes present: permissive CSP injection, cookie enabling, optional SSL proceed, DOM probes, cache-clearing.
+ *
+ * NOTE: keep these debug relaxations only for troubleshooting. Revert for production.
  */
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
@@ -258,21 +261,6 @@ public class LauncherActivity extends AppCompatActivity {
                         }
                     });
                 } catch (Throwable ignored) {}
-
-                // Snapshot outerHTML + iframe list (Base64) to CrashLogger for deeper inspection
-                try {
-                    String script =
-                        "(function(){ try{" +
-                        "  function b64(s){ return btoa(unescape(encodeURIComponent(s))); }" +
-                        "  var body = document.documentElement ? document.documentElement.outerHTML : (document.body?document.body.innerHTML:'');" +
-                        "  var outer = b64(body.substring(0, Math.min(body.length, 200000))); " +
-                        "  var ifs = Array.prototype.slice.call(document.getElementsByTagName('iframe')).map(function(f){ return {src: f.src, id: f.id||'', name: f.name||''}; });" +
-                        "  var payload = { outerHTML_b64: outer, iframe_list: ifs, title: document.title||'' };" +
-                        "  Android.log('DOM_SNAPSHOT:' + JSON.stringify(payload));" +
-                        "  return JSON.stringify({ok:true});" +
-                        "} catch(e) { Android.log('DOM_SNAPSHOT_ERR:' + e.toString()); return JSON.stringify({ok:false,err: String(e)}); }})();";
-                    view.evaluateJavascript(script, null);
-                } catch (Throwable ignored) {}
             }
 
             @Override
@@ -311,29 +299,56 @@ public class LauncherActivity extends AppCompatActivity {
                         }
                     }
 
-                    // 2) Bypass local server requests
+                    // 2) Bypass: let WebView talk directly to local server (do NOT proxy/upgrade local requests)
                     if (lower.startsWith("http://localhost:") || lower.startsWith("https://localhost:")
                             || lower.startsWith("http://127.0.0.1:") || lower.startsWith("https://127.0.0.1:")) {
                         try { CrashLogger.i("Bypassing proxy for local request: " + url); } catch (Throwable ignored) {}
                         return null;
                     }
 
-                    // 3) Force app-fetch proxy for all external http(s) requests so we can control headers & logging
+                    // 3) External requests via app-level fetch (with https-upgrade attempt for http)
                     if (lower.startsWith("http://") || lower.startsWith("https://")) {
-                        try {
-                            try { CrashLogger.i("Proxying via app-fetch (forced) for: " + url); } catch (Throwable ignored) {}
-                            WebResourceResponse resp = fetchWithRetriesAndCache(url, requestHeaders);
-                            if (resp != null) {
-                                try { CrashLogger.i("App-fetch returned content for: "+url); } catch (Throwable ignored) {}
-                                return resp;
-                            } else {
-                                try { CrashLogger.w("App-fetch returned null for: "+url); } catch (Throwable ignored) {}
-                                // as last resort let WebView try directly
-                                return null;
+                        boolean origWasHttp = lower.startsWith("http://");
+
+                        // If the request was http -> try https upgrade first for non-local hosts
+                        if (origWasHttp) {
+                            String httpsUrl = "https://" + url.substring("http://".length());
+                            try {
+                                try { CrashLogger.i("Attempting http->https upgrade for: " + url + " -> " + httpsUrl); } catch (Throwable ignored) {}
+                                WebResourceResponse httpsResp = fetchWithRetriesAndCache(httpsUrl, requestHeaders);
+                                if (httpsResp != null) {
+                                    try { CrashLogger.i("Upgraded http->https for " + url + " -> " + httpsUrl); } catch (Throwable ignored) {}
+                                    return httpsResp;
+                                } else {
+                                    try { CrashLogger.i("http->https upgrade failed or no https content for: " + url); } catch (Throwable ignored) {}
+                                }
+                            } catch (Throwable t) {
+                                try { CrashLogger.w("http->https upgrade attempt failed for " + url + ": " + t, t); } catch (Throwable ignored) {}
+                                // fall-through to try original URL
                             }
-                        } catch (Throwable t) {
-                            try { CrashLogger.w("Forced app-fetch failed for " + url + ": " + t, t); } catch (Throwable ignored) {}
-                            return null;
+                        }
+
+                        // Try fetching original URL (either https original or http when upgrade failed)
+                        WebResourceResponse resp = fetchWithRetriesAndCache(url, requestHeaders);
+                        if (resp != null) {
+                            try { CrashLogger.i("Served remote resource via app-fetch: " + url); } catch (Throwable ignored) {}
+                            return resp;
+                        } else {
+                            // If original was http and nothing returned, either block cleartext (original behaviour) or allow WebView try
+                            if (origWasHttp) {
+                                if (BLOCK_CLEARTEXT_ON_FAILURE) {
+                                    try { CrashLogger.i("Blocking cleartext request for " + url + " (no available content)"); } catch (Throwable ignored) {}
+                                    if (Build.VERSION.SDK_INT >= 21) {
+                                        Map<String,String> headers = Collections.singletonMap("Content-Type","text/plain");
+                                        return new WebResourceResponse("text/plain","UTF-8",204,"No Content",headers,new ByteArrayInputStream(new byte[0]));
+                                    } else {
+                                        return new WebResourceResponse("text/plain","UTF-8", new ByteArrayInputStream(new byte[0]));
+                                    }
+                                } else {
+                                    try { CrashLogger.i("Allowing WebView to attempt original http request for: " + url); } catch (Throwable ignored) {}
+                                    return null; // let WebView do default http request (we relaxed blocking)
+                                }
+                            }
                         }
                     }
 
@@ -373,7 +388,7 @@ public class LauncherActivity extends AppCompatActivity {
             public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error){
                 try{
                     String s = "onReceivedSslError: primaryError="+error.getPrimaryError()+" url="+(view!=null?view.getUrl():"(unknown)");
-                    Log.w(TAG,s); try{ CrashLogger.w(s,null);}catch(Throwable ignored){} 
+                    Log.w(TAG,s); try{ CrashLogger.w(s,null);}catch(Throwable ignored){}
                 }catch(Throwable t){ Log.w(TAG,"Exception in onReceivedSslError",t); try{ CrashLogger.w("Exception in onReceivedSslError",t);}catch(Throwable ignored){} }
                 // For debugging: optionally proceed (INSECURE)
                 if (ALLOW_ALL_SSL_ERRORS) {
@@ -566,9 +581,9 @@ public class LauncherActivity extends AppCompatActivity {
 
             // DEBUG preview
             try {
-                Charset cs = (encoding != null) ? Charset.forName(encoding) : StandardCharsets.UTF_8;
+                Charset ct = (encoding != null) ? Charset.forName(encoding) : StandardCharsets.UTF_8;
                 int previewLen = Math.min(data.length, 2048);
-                String preview = new String(data, 0, previewLen, cs);
+                String preview = new String(data, 0, previewLen, ct);
                 String dbg = String.format("DEBUG_FETCH preview for %s (len=%d): %s",
                         origUrl, data.length, preview.replaceAll("[\\r\\n]+", " "));
                 try { CrashLogger.i(dbg); } catch (Throwable ignored) { Log.i(TAG, dbg); }
@@ -631,14 +646,12 @@ public class LauncherActivity extends AppCompatActivity {
                 try { CrashLogger.w("Cache write failed: " + ce, ce); } catch (Throwable ignored) {}
             }
 
-            // Build minimal safe headers for response: ensure CORS, strip blocking headers
-            Map<String,String> outHeaders = new HashMap<>();
-            outHeaders.put("Access-Control-Allow-Origin", "*");
-            outHeaders.put("Cache-Control", "no-cache");
+            Map<String,String> headers = new HashMap<>();
+            headers.put("Access-Control-Allow-Origin", "*");
 
             ByteArrayInputStream bis = new ByteArrayInputStream(data);
             if (Build.VERSION.SDK_INT >= 21) {
-                return new WebResourceResponse(mimeOnly, encoding, 200, "OK", outHeaders, bis);
+                return new WebResourceResponse(mimeOnly, encoding, 200, "OK", headers, bis);
             } else {
                 return new WebResourceResponse(mimeOnly, encoding, bis);
             }
