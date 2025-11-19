@@ -1,11 +1,13 @@
 package com.liskovsoft.smartyoutubetv;
 
 import android.annotation.SuppressLint;
+import android.content.Context;
 import android.content.Intent;
 import android.content.res.AssetManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.util.Base64;
 import android.util.Log;
 import android.webkit.ConsoleMessage;
@@ -24,7 +26,7 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.liskovsoft.smartyoutubetv.player.PlayerActivity;
-import com.szzdmj.nanohttpd.CrashLogger;
+import com.liskovsoft.smartyoutubetv.util.SafeLog;
 import fi.iki.elonen.NanoHTTPD;
 
 import java.io.ByteArrayInputStream;
@@ -37,8 +39,10 @@ import java.net.ServerSocket;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
@@ -47,11 +51,16 @@ public class LauncherActivity extends AppCompatActivity {
     private LocalAssetsServer server;
     private int serverPort = -1;
 
-    // Minimal debug flags
+    // Minimal debug flags (kept simple)
     private static final boolean ALLOW_ALL_SSL_ERRORS = true;
 
-    // debug request counting map
+    // --- debug request counting map
     private final java.util.Map<String, Integer> requestCounts = Collections.synchronizedMap(new java.util.HashMap<>());
+
+    // track URLs we've auto-launched to avoid repeated launches
+    private final Set<String> autoLaunchedUrls = Collections.synchronizedSet(new HashSet<>());
+
+    private final Handler mainHandler = new Handler();
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -81,16 +90,14 @@ public class LauncherActivity extends AppCompatActivity {
             CookieManager cm = CookieManager.getInstance();
             cm.setAcceptCookie(true);
             if (Build.VERSION.SDK_INT >= 21) cm.setAcceptThirdPartyCookies(webView, true);
-        } catch (Throwable e) {
-            safeLogWarn("CookieManager init failed: " + e);
-        }
+        } catch (Throwable ignored) {}
 
         // Simple JS-to-Android bridge for logs
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
             public void log(String msg) {
                 Log.d(TAG, "JS: " + msg);
-                safeLogInfo("JS: " + msg);
+                SafeLog.i("JS: " + msg);
             }
         }, "Android");
 
@@ -103,7 +110,7 @@ public class LauncherActivity extends AppCompatActivity {
                         consoleMessage.lineNumber(),
                         consoleMessage.messageLevel().name());
                 Log.d(TAG, msg);
-                safeLogInfo(msg);
+                SafeLog.i(msg);
                 return super.onConsoleMessage(consoleMessage);
             }
         });
@@ -127,7 +134,6 @@ public class LauncherActivity extends AppCompatActivity {
                     return false;
                 } catch (Throwable t) {
                     Log.e(TAG,"handleUrl failed",t);
-                    safeLogWarn("handleUrl failed: " + t);
                     return false;
                 }
             }
@@ -135,7 +141,7 @@ public class LauncherActivity extends AppCompatActivity {
             // Intercept requests only to serve local APK assets; for external http(s) return null so WebView fetches directly
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request){
-                safeLogInfo("shouldInterceptRequest: " + request.getUrl());
+                SafeLog.i("shouldInterceptRequest: " + request.getUrl());
                 return LauncherActivity.this.tryServeAssetForUrl(request.getUrl().toString(), request.getRequestHeaders());
             }
 
@@ -144,14 +150,14 @@ public class LauncherActivity extends AppCompatActivity {
                 try{
                     String s = "onReceivedSslError: primaryError=" + error.getPrimaryError() + " url=" + (view!=null?view.getUrl():"(unknown)");
                     Log.w(TAG,s);
-                    safeLogWarn(s);
-                } catch (Throwable t) {
+                    SafeLog.w(s, null);
+                }catch(Throwable t){
                     Log.w(TAG,"Exception in onReceivedSslError",t);
-                    safeLogWarn("Exception in onReceivedSslError: " + t);
+                    SafeLog.w("Exception in onReceivedSslError", t);
                 }
                 // For debugging: optionally proceed (INSECURE)
                 if (ALLOW_ALL_SSL_ERRORS) {
-                    safeLogInfo("Proceeding on SSL error because ALLOW_ALL_SSL_ERRORS=true");
+                    SafeLog.i("Proceeding on SSL error because ALLOW_ALL_SSL_ERRORS=true");
                     handler.proceed();
                 } else {
                     handler.cancel();
@@ -166,12 +172,12 @@ public class LauncherActivity extends AppCompatActivity {
             server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
             String started = "LocalAssetsServer started at http://127.0.0.1:" + serverPort;
             Log.i(TAG, started);
-            safeLogInfo(started);
+            SafeLog.i(started);
             // Load local server root
             webView.loadUrl("http://127.0.0.1:" + serverPort + "/");
         } catch (IOException e) {
             Log.w(TAG, "Failed to start LocalAssetsServer, fallback to asset file", e);
-            safeLogWarn("Failed to start LocalAssetsServer: " + e);
+            SafeLog.w("Failed to start LocalAssetsServer: " + e, e);
             webView.loadUrl("file:///android_asset/gjw.html");
         }
     }
@@ -195,13 +201,13 @@ public class LauncherActivity extends AppCompatActivity {
             // Decision log (limited by count)
             String info = String.format(Locale.US, "Intercept decision: url=%s count=%d", url, count);
             Log.i(TAG, info);
-            safeLogInfo(info);
+            SafeLog.i(info);
 
             // 1) Bypass local server requests (let NanoHTTPD/LocalAssetsServer handle these)
             if (lower.startsWith("http://127.0.0.1:") || lower.startsWith("http://localhost:")) {
                 String msg = "Bypass local request -> letting LocalAssetsServer handle: " + url;
                 Log.d(TAG, msg);
-                safeLogInfo(msg);
+                SafeLog.i(msg);
                 return null;
             }
 
@@ -212,20 +218,20 @@ public class LauncherActivity extends AppCompatActivity {
                     InputStream is = getAssets().open(name);
                     String msg = "Serving JS from assets: " + name + " for url=" + url;
                     Log.i(TAG, msg);
-                    safeLogInfo(msg);
+                    SafeLog.i(msg);
                     return new WebResourceResponse("application/javascript", "UTF-8", is);
                 } catch (IOException ioe1) {
                     try {
                         InputStream is = getAssets().open("js/" + name);
                         String msg = "Serving JS from assets/js/: " + name + " for url=" + url;
                         Log.i(TAG, msg);
-                        safeLogInfo(msg);
+                        SafeLog.i(msg);
                         return new WebResourceResponse("application/javascript", "UTF-8", is);
                     } catch (IOException ioe2) {
                         // asset not present in APK: record and allow WebView to load from network
                         String msg = "Asset not found in APK for " + name + "; allowing WebView to fetch: " + url;
                         Log.i(TAG, msg);
-                        safeLogInfo(msg);
+                        SafeLog.i(msg);
                         // fall through to network branch -> return null
                     }
                 }
@@ -235,38 +241,65 @@ public class LauncherActivity extends AppCompatActivity {
             if (lower.startsWith("http://") || lower.startsWith("https://")) {
                 String msg = "Allowing WebView to fetch network resource directly: " + url;
                 Log.i(TAG, msg);
-                safeLogInfo(msg);
+                SafeLog.i(msg);
 
                 // Request header summary logging (avoid printing huge headers)
                 try {
                     if (requestHeaders != null && !requestHeaders.isEmpty()) {
                         String hdrSummary = "headers_count=" + requestHeaders.size();
-                        safeLogInfo("Request headers summary for " + url + " -> " + hdrSummary);
-                        // If you want full headers, uncomment next line (may be verbose):
-                        // safeLogInfo("RequestHeaders: " + requestHeaders.toString());
+                        SafeLog.i("Request headers summary for " + url + " -> " + hdrSummary);
                     }
                 } catch (Throwable t) {
                     // ignore header logging error
                 }
 
+                // Auto-launch internal player when seeing first media manifest/segment (m3u8/mp4)
+                try {
+                    boolean looksLikeMedia = lower.endsWith(".m3u8") || lower.contains(".m3u8") || lower.endsWith(".mp4") || lower.contains("master.m3u8");
+                    if (looksLikeMedia) {
+                        // Use a simplified key (without query) to avoid duplicate triggers per-segment
+                        String key = lower.split("[?]", 2)[0];
+                        if (!autoLaunchedUrls.contains(key)) {
+                            autoLaunchedUrls.add(key);
+                            String launchMsg = "EXOPLAYER_AUTOLAUNCH_ATTEMPT for " + key;
+                            SafeLog.i(launchMsg);
+
+                            // Post to main thread to start activity
+                            mainHandler.post(() -> {
+                                try {
+                                    Context ctx = LauncherActivity.this;
+                                    Intent intent = new Intent();
+                                    String appPkg = ctx.getPackageName();
+                                    String fqcn = "com.liskovsoft.browser.player.ExoPlayerActivity";
+                                    intent.setClassName(appPkg, fqcn);
+                                    intent.putExtra("extra_video_url", url);
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                    ctx.startActivity(intent);
+                                    SafeLog.i("EXOPLAYER_AUTOLAUNCH_OK for " + key);
+                                } catch (Throwable t) {
+                                    SafeLog.w("EXOPLAYER_AUTOLAUNCH_FAIL: " + t, t);
+                                }
+                            });
+                        }
+                    }
+                } catch (Throwable ignored) {}
+
                 // Suppress repeated logs for very high-frequency URLs (simple threshold)
                 try {
                     if (count > 20) {
                         if (count == 21) {
-                            safeLogInfo("High-frequency request: suppressing further per-request logs for " + url);
+                            SafeLog.i("High-frequency request: suppressing further per-request logs for " + url);
                         }
                         return null;
                     }
-                } catch (Throwable t) {
-                    // ignore
-                }
+                } catch (Throwable ignored) {}
 
                 return null;
             }
 
         } catch (Throwable t) {
             Log.w(TAG, "tryServeAssetForUrl failed for " + url, t);
-            safeLogWarn("tryServeAssetForUrl failed for " + url + " -> " + t);
+            SafeLog.w("tryServeAssetForUrl failed for " + url, t);
         }
         return null;
     }
@@ -371,14 +404,14 @@ public class LauncherActivity extends AppCompatActivity {
 
     // ----------------- Safe logging helpers -----------------
     private void safeInitCrashLogger() {
-        try { CrashLogger.init(this); CrashLogger.i("LauncherActivity.onCreate"); } catch (Throwable t) { Log.w(TAG, "CrashLogger init failed", t); }
+        try { SafeLog.i("LauncherActivity.onCreate"); } catch (Throwable t) { Log.w(TAG, "CrashLogger init failed", t); }
     }
 
     private void safeLogInfo(String msg) {
-        try { CrashLogger.i(msg); } catch (Throwable t) { /* ignore */ }
+        SafeLog.i(msg);
     }
 
     private void safeLogWarn(String msg) {
-        try { CrashLogger.w(msg, null); } catch (Throwable t) { /* ignore */ }
+        SafeLog.w(msg, null);
     }
 }
