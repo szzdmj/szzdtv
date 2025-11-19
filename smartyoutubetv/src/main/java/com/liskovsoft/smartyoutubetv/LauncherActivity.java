@@ -308,25 +308,23 @@ public class LauncherActivity extends AppCompatActivity {
 
                     // 3) External requests via app-level fetch (with https-upgrade attempt for http)
                     if (lower.startsWith("http://") || lower.startsWith("https://")) {
-                        boolean origWasHttp = lower.startsWith("http://");
-
-                        // If the request was http -> try https upgrade first for non-local hosts
-                        if (origWasHttp) {
-                            String httpsUrl = "https://" + url.substring("http://".length());
-                            try {
-                                try { CrashLogger.i("Attempting http->https upgrade for: " + url + " -> " + httpsUrl); } catch (Throwable ignored) {}
-                                WebResourceResponse httpsResp = fetchWithRetriesAndCache(httpsUrl, requestHeaders);
-                                if (httpsResp != null) {
-                                    try { CrashLogger.i("Upgraded http->https for " + url + " -> " + httpsUrl); } catch (Throwable ignored) {}
-                                    return httpsResp;
-                                } else {
-                                    try { CrashLogger.i("http->https upgrade failed or no https content for: " + url); } catch (Throwable ignored) {}
-                                }
-                            } catch (Throwable t) {
-                                try { CrashLogger.w("http->https upgrade attempt failed for " + url + ": " + t, t); } catch (Throwable ignored) {}
-                                // fall-through to try original URL
-                            }
-                        }
+     // 强制走 app fetch so we can control headers and logging
+    try {
+        try { CrashLogger.i("Proxying via app-fetch (forced) for: " + url); } catch (Throwable ignored) {}
+        WebResourceResponse resp = fetchWithRetriesAndCache(url, requestHeaders);
+        if (resp != null) {
+            try { CrashLogger.i("App-fetch returned content for: "+url); } catch (Throwable ignored) {}
+            return resp;
+        } else {
+            try { CrashLogger.w("App-fetch returned null for: "+url); } catch (Throwable ignored) {}
+            // allow WebView to attempt direct request as last resort (keep behavior permissive for debug)
+            return null;
+        }
+    } catch (Throwable t) {
+        try { CrashLogger.w("Forced app-fetch failed for " + url + ": " + t, t); } catch (Throwable ignored) {}
+        return null;
+    }
+}
 
                         // Try fetching original URL (either https original or http when upgrade failed)
                         WebResourceResponse resp = fetchWithRetriesAndCache(url, requestHeaders);
