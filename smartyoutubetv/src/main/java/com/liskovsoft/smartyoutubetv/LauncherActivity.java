@@ -19,6 +19,7 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.CookieManager;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
@@ -74,11 +75,11 @@ import javax.net.ssl.X509TrustManager;
  * - Adds retry, caching and ensures proxy uses combined CA when possible.
  *
  * Changes in this revision:
- * - Increased timeouts to support unstable networks (connect/read -> 3 minutes).
- * - Increased retry attempts for upstream fetch candidates.
- * - Force Accept-Encoding: identity when fetching upstream to avoid accidental gzip/chunk decode corruption.
- * - Auto-follow simple HTML redirects (meta-refresh / window.location) once for wrapped "blocking" HTML pages, to support the "404抢答/跳转还原" flow.
- * - Preserve previous protections: JS->HTML replacement still falls back to safe empty JS when HTML contains no redirect target.
+ * - Loosen various runtime restrictions for debugging: accept SSL errors (optional), accept third-party cookies,
+ *   avoid blocking cleartext fallback so WebView can try direct fetch, disable JS sanitization (optional),
+ *   inject permissive CSP into gjw.html to allow frames/styles/scripts.
+ *
+ * IMPORTANT: these changes reduce security (SSL acceptance, permissive CSP). Use only for debugging/troubleshooting.
  */
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
@@ -97,6 +98,11 @@ public class LauncherActivity extends AppCompatActivity {
         "s3.amazonaws.com",
         "cloudfront.net"
     };
+
+    // Debug / loosen flags (toggle for testing)
+    private static final boolean ALLOW_ALL_SSL_ERRORS = true;          // If true, WebView SSL errors are proceeded (INSECURE)
+    private static final boolean SANITIZE_JS_RESPONSES = false;       // If false, do not replace JS responses that look like HTML
+    private static final boolean BLOCK_CLEARTEXT_ON_FAILURE = false;  // If false, allow WebView to try direct http if app-proxy failed
 
     // Networking / retry tuning
     // Set to 3 minutes to tolerate unstable networks / throttling inside GFW
@@ -137,6 +143,16 @@ public class LauncherActivity extends AppCompatActivity {
         }
         ws.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         webView.setWebContentsDebuggingEnabled(true);
+
+        // Enable cookies / third-party cookies to avoid missing resources that rely on cookies
+        try {
+            CookieManager cm = CookieManager.getInstance();
+            cm.setAcceptCookie(true);
+            if (Build.VERSION.SDK_INT >= 21) {
+                cm.setAcceptThirdPartyCookies(webView, true);
+            }
+            try { CrashLogger.i("CookieManager: accept cookies and third-party cookies enabled"); } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {}
 
         // JS -> Android bridge
         webView.addJavascriptInterface(new Object() {
@@ -222,7 +238,7 @@ public class LauncherActivity extends AppCompatActivity {
                             return new WebResourceResponse("application/javascript", "UTF-8", is);
                         } else {
                             missingAssets.add(filename);
-                            // CrashLogger.w requires (String, Throwable), provide null throwable to match API
+                            // CrashLogger.w requires (String, Throwable) in this project API: pass null throwable
                             try { CrashLogger.w("Asset not found for " + filename, null); } catch (Throwable ignored) {}
                         }
                     }
@@ -262,14 +278,19 @@ public class LauncherActivity extends AppCompatActivity {
                             try { CrashLogger.i("Served remote resource via app-fetch: " + url); } catch (Throwable ignored) {}
                             return resp;
                         } else {
-                            // If original was http and nothing returned, block cleartext to avoid leaking or returning error HTML as JS
+                            // If original was http and nothing returned, either block cleartext (original behaviour) or allow WebView try
                             if (origWasHttp) {
-                                try { CrashLogger.i("Blocking cleartext request for " + url + " (no available content)"); } catch (Throwable ignored) {}
-                                if (Build.VERSION.SDK_INT >= 21) {
-                                    Map<String,String> headers = Collections.singletonMap("Content-Type","text/plain");
-                                    return new WebResourceResponse("text/plain","UTF-8",204,"No Content",headers,new ByteArrayInputStream(new byte[0]));
+                                if (BLOCK_CLEARTEXT_ON_FAILURE) {
+                                    try { CrashLogger.i("Blocking cleartext request for " + url + " (no available content)"); } catch (Throwable ignored) {}
+                                    if (Build.VERSION.SDK_INT >= 21) {
+                                        Map<String,String> headers = Collections.singletonMap("Content-Type","text/plain");
+                                        return new WebResourceResponse("text/plain","UTF-8",204,"No Content",headers,new ByteArrayInputStream(new byte[0]));
+                                    } else {
+                                        return new WebResourceResponse("text/plain","UTF-8", new ByteArrayInputStream(new byte[0]));
+                                    }
                                 } else {
-                                    return new WebResourceResponse("text/plain","UTF-8", new ByteArrayInputStream(new byte[0]));
+                                    try { CrashLogger.i("Allowing WebView to attempt original http request for: " + url); } catch (Throwable ignored) {}
+                                    return null; // let WebView do default http request (we relaxed blocking)
                                 }
                             }
                         }
@@ -313,7 +334,13 @@ public class LauncherActivity extends AppCompatActivity {
                     String s = "onReceivedSslError: primaryError="+error.getPrimaryError()+" url="+(view!=null?view.getUrl():"(unknown)");
                     Log.w(TAG,s); try{ CrashLogger.w(s,null);}catch(Throwable ignored){}
                 }catch(Throwable t){ Log.w(TAG,"Exception in onReceivedSslError",t); try{ CrashLogger.w("Exception in onReceivedSslError",t);}catch(Throwable ignored){} }
-                handler.cancel();
+                // For debugging: optionally proceed (INSECURE)
+                if (ALLOW_ALL_SSL_ERRORS) {
+                    try { CrashLogger.i("Proceeding on SSL error because ALLOW_ALL_SSL_ERRORS=true"); } catch (Throwable ignored) {}
+                    handler.proceed();
+                } else {
+                    handler.cancel();
+                }
             }
         });
 
@@ -530,16 +557,22 @@ public class LauncherActivity extends AppCompatActivity {
                 }
             } catch (Throwable ignored) {}
 
-            // If JS requested but server returned HTML (404/520 pages), return safe empty JS to avoid parse error.
+            // If JS requested but server returned HTML (404/520 pages), optionally return safe empty JS to avoid parse error,
+            // but when SANITIZE_JS_RESPONSES==false we keep original content so the site may still work (risky).
             try {
                 Charset cs = (encoding != null) ? Charset.forName(encoding) : StandardCharsets.UTF_8;
                 if (isJsRequest(origUrl) && (mimeOnly.contains("html") || looksLikeHtml(data, cs))) {
-                    String note = "/* blocked returned HTML for JS request: replaced with empty JS to avoid parse error */";
-                    byte[] empty = note.getBytes(StandardCharsets.UTF_8);
-                    data = empty;
-                    mimeOnly = "application/javascript";
-                    encoding = "UTF-8";
-                    try { CrashLogger.i("Replaced unexpected HTML response with empty JS for: " + origUrl); } catch (Throwable ignored) {}
+                    if (SANITIZE_JS_RESPONSES) {
+                        String note = "/* blocked returned HTML for JS request: replaced with empty JS to avoid parse error */";
+                        byte[] empty = note.getBytes(StandardCharsets.UTF_8);
+                        data = empty;
+                        mimeOnly = "application/javascript";
+                        encoding = "UTF-8";
+                        try { CrashLogger.i("Replaced unexpected HTML response with empty JS for: " + origUrl); } catch (Throwable ignored) {}
+                    } else {
+                        try { CrashLogger.i("SANITIZE_JS_RESPONSES=false: keeping original HTML for JS request: " + origUrl); } catch (Throwable ignored) {}
+                        // keep data as-is (may produce JS parse errors, but can enable complex front-end to run)
+                    }
                 }
             } catch (Throwable t) {
                 try { CrashLogger.w("JS sanitization failed: " + t, t); } catch (Throwable ignored) {}
@@ -1044,6 +1077,25 @@ public class LauncherActivity extends AppCompatActivity {
             }
 
             try {
+                // Inject permissive CSP into gjw.html to allow frames/styles/scripts to load (for debugging)
+                if ("gjw.html".equals(path)) {
+                    InputStream is = assets.open(path);
+                    String html = readAll(is, "UTF-8");
+                    // Add permissive CSP (debug only) and ensure base href points to local server so relative URLs resolve
+                    String injection = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; frame-ancestors *;\">";
+                    String base = "<base href=\"http://localhost:" + getListeningPort() + "/\">";
+                    if (html.contains("<head")) {
+                        html = html.replaceFirst("(?i)<head([^>]*)>", "<head$1>" + injection + base);
+                    } else {
+                        html = injection + base + html;
+                    }
+                    CrashLogger.i("Serving modified gjw.html (permissive CSP injected)");
+                    Response r2 = newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", html);
+                    r2.addHeader("Access-Control-Allow-Origin", "*");
+                    r2.addHeader("Cache-Control", "no-cache");
+                    return r2;
+                }
+
                 if ("/__shim__/id-shim.js".equals("/" + path)) {
                     InputStream in = assets.open("id-shim.js");
                     CrashLogger.i("Serving id-shim.js");
@@ -1344,6 +1396,19 @@ public class LauncherActivity extends AppCompatActivity {
             int n;
             while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
             return bos.toString(enc);
+        }
+
+        // helper: get listening port for base injection
+        private int getListeningPort() {
+            return this.getListeningPortStatic();
+        }
+        // hack: access private NanoHTTPD field via this.getListeningPortStatic() wrapper (uses reflection fallback)
+        private int getListeningPortStatic() {
+            try {
+                return this.getListeningPort(); // NanoHTTPD provides getListeningPort() in newer versions
+            } catch (Throwable ignored) {
+                return 0;
+            }
         }
     } // end LocalAssetsServer
 
