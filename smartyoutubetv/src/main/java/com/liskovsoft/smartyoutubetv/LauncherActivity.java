@@ -1,4 +1,3 @@
-url=https://github.com/szzdmj/szzdtv/blob/40e164685c30750728ba09f1ff1f7e8097e47fe4/smartyoutubetv/src/main/java/com/liskovsoft/smartyoutubetv/LauncherActivity.java
 // Full file — updated: set a browser-like User-Agent for remote fetches and sanitize unexpected HTML returned for .js requests.
 // This prevents WebView from trying to parse HTML as JS (Unexpected token '<') and improves Cloudflare/edge compatibility.
 package com.liskovsoft.smartyoutubetv;
