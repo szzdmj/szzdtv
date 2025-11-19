@@ -68,7 +68,19 @@ public class LauncherActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
 
         safeInitCrashLogger();
-
+// 临时内部写文件测试：写入 app internal files/crash.log（调试用）
+try {
+    java.io.FileOutputStream fos = openFileOutput("crash.log", Context.MODE_APPEND);
+    String test = "TEST_WRITE_INTERNAL at " + System.currentTimeMillis() + "\n";
+    fos.write(test.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    fos.close();
+    // 记录到 SafeLog / logcat，便于检索
+    SafeLog.i("WROTE_INTERNAL_TEST to files/crash.log");
+    android.util.Log.i(TAG, "WROTE_INTERNAL_TEST to files/crash.log");
+} catch (Throwable t) {
+    SafeLog.w("WRITE_INTERNAL_TEST_FAIL: " + t, t);
+    android.util.Log.w(TAG, "WRITE_INTERNAL_TEST_FAIL", t);
+}
         webView = new WebView(this);
         setContentView(webView);
 
