@@ -1,3 +1,4 @@
+// (完整文件：已将 LocalAssetsServer.fetchRemoteForProxy 替换为“最小转发器”，其余内容基于原仓库版本)
 package com.liskovsoft.smartyoutubetv;
 
 import android.annotation.SuppressLint;
@@ -40,6 +41,8 @@ import java.net.HttpURLConnection;
 import java.net.ServerSocket;
 import java.net.SocketException;
 import java.net.URL;
+import java.net.Proxy;
+import java.net.InetSocketAddress;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
@@ -86,6 +89,18 @@ public class LauncherActivity extends AppCompatActivity {
     private LocalAssetsServer server;
     private int serverPort = -1;
 
+    // ---------- NEW: optional external minimal proxy settings ----------
+    // If you run the provided minimal-proxy.js on your development machine, set these so LocalAssetsServer
+    // will route its internal proxy fetches via that external proxy (so the Node proxy does the network fetch).
+    // Examples:
+    //  - Android emulator -> host machine: use "10.0.2.2" and port 3000
+    //  - Genymotion -> host: "10.0.3.2"
+    //  - Physical device -> machine IP on same LAN (e.g. "192.168.1.5")
+    // Set EXTERNAL_PROXY_HOST="" and EXTERNAL_PROXY_PORT=0 to disable.
+    private static final String EXTERNAL_PROXY_HOST = ""; // e.g. "10.0.2.2"
+    private static final int EXTERNAL_PROXY_PORT = 0;     // e.g. 3000
+    // -------------------------------------------------------------------
+
     // debounce for launching player
     private volatile String lastLaunchedUrl = null;
     private volatile long lastLaunchTs = 0;
@@ -105,7 +120,7 @@ public class LauncherActivity extends AppCompatActivity {
 
     // Visibility debug helpers
     // ENABLE_VISIBILITY_DEBUG: when true, onPageFinished will inject HIDDEN_REPORT and MUTATION observer logs.
-    // DEBUG_UNHIDE: if true, will try to temporarily unhide matching elements (INSECURE — only for local debugging).
+    // DEBUG_UNHIDE: if true, will try to temporarily reveal matching elements (INSECURE — only for local debugging).
     // NOTE: You asked to "打开 display:none 的部分" — enable DEBUG_UNHIDE to automatically attempt to reveal elements.
     private static final boolean ENABLE_VISIBILITY_DEBUG = true;
     private static final boolean DEBUG_UNHIDE = true; // <-- Enabled as requested
@@ -289,10 +304,10 @@ public class LauncherActivity extends AppCompatActivity {
                             "    if(el.hasAttribute('inert')) return 'inert';" +
                             "    return false;" +
                             "  }" +
-                            "  function selectorFor(el){ try{ if(!el) return ''; if(el.id) return '#'+el.id; var s=el.tagName.toLowerCase(); if(el.classList && el.classList.length) s += '.'+Array.from(el.classList).slice(0,5).join('.'); return s; }catch(e){return ''; } }" +
+                            "  function selectorFor(el){ try{ if(!el) return ''; if(el.id) return '#'+el.id; var s=el.tagName.toLowerCase(); if(el.classList && el.classList.length) s += '.'+Array.from[...]
                             "  var nodes = Array.prototype.slice.call(document.querySelectorAll('body *'));" +
                             "  var report = [];" +
-                            "  for(var i=0;i<nodes.length;i++){ try{ var el = nodes[i]; var why = isHidden(el); if(why){ var txt = (el.innerText||'').trim(); if(txt.length>200) txt = txt.substring(0,200)+'...'; report.push({sel: selectorFor(el), tag: el.tagName.toLowerCase(), classes: Array.from(el.classList).slice(0,6), why: why, textLen: (el.innerText||'').length, textSample: txt, aria: el.getAttribute('aria-hidden')||'', hiddenAttr: el.hasAttribute('hidden')}); } }catch(e){} }" +
+                            "  for(var i=0;i<nodes.length;i++){ try{ var el = nodes[i]; var why = isHidden(el); if(why){ var txt = (el.innerText||'').trim(); if(txt.length>200) txt = txt.substring(0,2[...]
                             "  if(window.Android && Android.log) Android.log('HIDDEN_REPORT:' + JSON.stringify(report));" +
                             "  return JSON.stringify({ok:true,found:report.length});" +
                             "}catch(e){ if(window.Android && Android.log) Android.log('HIDDEN_REPORT_ERR:'+e.toString()); return JSON.stringify({ok:false,err:String(e)}); }})();";
@@ -307,7 +322,7 @@ public class LauncherActivity extends AppCompatActivity {
                     try {
                         String mutationObserverProbe =
                             "(function(){ try{" +
-                            "  var obs = new MutationObserver(function(muts){ try{ muts.forEach(function(m){ if(m.type==='attributes' && (m.attributeName==='class' || m.attributeName==='style' || m.attributeName==='hidden' || m.attributeName==='aria-hidden' || m.attributeName==='inert')){ var t=m.target; var info={ sel:(t.id?('#'+t.id):(t.tagName+(t.className?'.'+t.className:''))), attr:m.attributeName, val:t.getAttribute(m.attributeName), time:Date.now() }; if(window.Android && Android.log) Android.log('MUTATION:' + JSON.stringify(info)); } }); }catch(e){} });" +
+                            "  var obs = new MutationObserver(function(muts){ try{ muts.forEach(function(m){ if(m.type==='attributes' && (m.attributeName==='class' || m.attributeName==='style' || m.at[...]
                             "  obs.observe(document.body, { attributes:true, subtree:true, attributeFilter:['class','style','hidden','aria-hidden','inert'] });" +
                             "  if(window.Android && Android.log) Android.log('MUTATION_OBSERVER_STARTED');" +
                             "  return true;" +
@@ -317,16 +332,16 @@ public class LauncherActivity extends AppCompatActivity {
 
                     if (DEBUG_UNHIDE) {
                         try {
-                            // Enhanced unhide: skip non-visual tags (script/style/meta/link/head), unhide elements with display:none / visibility:hidden / opacity:0 / hidden attr / aria-hidden / inert / zero-size
+                            // Enhanced unhide: skip non-visual tags (script/style/meta/link/head), unhide elements with display:none / visibility:hidden / opacity:0 / hidden attr / aria-hidden / iner[...]
                             String unhideScript =
                                 "(function(){ try{" +
                                 "  var css = '*{ transition: none !important; } ._dbg_unhide{ outline:3px solid rgba(255,0,0,0.6) !important; }';" +
                                 "  var s = document.createElement('style'); s.appendChild(document.createTextNode(css)); document.head && document.head.appendChild(s);" +
-                                "  function selectorFor(el){ try{ if(!el) return ''; if(el.id) return '#'+el.id; var s=el.tagName.toLowerCase(); if(el.classList && el.classList.length) s += '.'+Array.from(el.classList).slice(0,5).join('.'); return s; }catch(e){return ''; } }" +
+                                "  function selectorFor(el){ try{ if(!el) return ''; if(el.id) return '#'+el.id; var s=el.tagName.toLowerCase(); if(el.classList && el.classList.length) s += '.'+Array.[...]
                                 "  var els = Array.prototype.slice.call(document.querySelectorAll('body *'));" +
                                 "  var unhidden = [];" +
-                                "  function tagDefault(tag){ tag = tag.toLowerCase(); if(tag==='li') return 'list-item'; if(tag==='img') return 'inline-block'; if(tag==='a' || tag==='span' || tag==='strong' || tag==='b' || tag==='em') return 'inline'; if(tag==='ul' || tag==='ol' || tag==='nav' || tag==='section' || tag==='div' || tag==='header' || tag==='footer' || tag==='main') return 'block'; return 'block'; }" +
-                                "  for(var i=0;i<els.length;i++){ try{ var el = els[i]; var t = el.tagName.toLowerCase(); if(t==='script' || t==='style' || t==='link' || t==='meta' || t==='head') continue; var cs = window.getComputedStyle(el); if(!cs) continue; var rect = el.getBoundingClientRect(); var shouldUnhide = (cs.display==='none' || cs.visibility==='hidden' || cs.visibility==='collapse' || parseFloat(cs.opacity)===0 || rect.width===0 || rect.height===0 || el.hasAttribute('hidden') || el.getAttribute('aria-hidden')==='true' || el.hasAttribute('inert')); if(shouldUnhide){ try{ el.classList.add('_dbg_unhide'); el.style.visibility = 'visible'; el.style.opacity = '1'; el.removeAttribute('hidden'); el.removeAttribute('inert'); if(cs.display==='none'){ try{ el.style.display = tagDefault(t); }catch(e){ el.style.display = 'block'; } } else { try{ el.style.removeProperty('display'); }catch(e){} } el.setAttribute('data-dbg-unhidden','1'); unhidden.push(selectorFor(el)); }catch(e){} } }catch(e){} }" +
+                                "  function tagDefault(tag){ tag = tag.toLowerCase(); if(tag==='li') return 'list-item'; if(tag==='img') return 'inline-block'; if(tag==='a' || tag==='span' || tag==='s[...]
+                                "  for(var i=0;i<els.length;i++){ try{ var el = els[i]; var t = el.tagName.toLowerCase(); if(t==='script' || t==='style' || t==='link' || t==='meta' || t==='head') cont[...]
                                 "  if(window.Android && Android.log) Android.log('UNHIDE_DONE:' + unhidden.length + ' LIST:' + JSON.stringify(unhidden));" +
                                 "  return unhidden.length;" +
                                 "}catch(e){ if(window.Android && Android.log) Android.log('UNHIDE_ERR:'+e.toString()); return 0; }})();";
@@ -1186,6 +1201,10 @@ public class LauncherActivity extends AppCompatActivity {
                 // Collect incoming request headers to forward (Range, Accept-Encoding, Origin, Referer, etc.)
                 Map<String, String> incoming = session.getHeaders() != null ? session.getHeaders() : Collections.emptyMap();
 
+                // ---------- REPLACED: minimal forwarder implementation ----------
+                // Previously this method tried combined CA / permissive fallbacks and did caching/rewrites.
+                // Now we implement a minimal byte-preserving forwarder: open a URLConnection to remoteUrl,
+                // set headers, read the response stream (error stream if status>=400) and return it directly.
                 ProxyFetchResult pf = fetchRemoteForProxy(remoteUrl, incoming);
                 if (pf == null || pf.stream == null) {
                     return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found: " + remoteUrl);
@@ -1299,18 +1318,29 @@ public class LauncherActivity extends AppCompatActivity {
         }
 
         // Fetch remote utility used by proxy: forwards incoming headers and returns status+headers+stream
+        // REPLACED: simple, minimal forwarding (no caching, no rewrite, stream-preserving)
         private ProxyFetchResult fetchRemoteForProxy(String remoteUrl, Map<String, String> incomingRequestHeaders) {
-            // 1) Try strict HTTP(S) first (system trust)
             try {
-                java.net.URL u = new java.net.URL(remoteUrl);
-                java.net.URLConnection connRaw = u.openConnection();
+                URL u = new URL(remoteUrl);
+                java.net.URLConnection connRaw;
+                // If EXTERNAL_PROXY_* configured, use it; otherwise open direct connection.
+                if (EXTERNAL_PROXY_HOST != null && !EXTERNAL_PROXY_HOST.isEmpty() && EXTERNAL_PROXY_PORT > 0) {
+                    Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(EXTERNAL_PROXY_HOST, EXTERNAL_PROXY_PORT));
+                    connRaw = u.openConnection(proxy);
+                    CrashLogger.i("Using EXTERNAL_PROXY " + EXTERNAL_PROXY_HOST + ":" + EXTERNAL_PROXY_PORT + " for " + remoteUrl);
+                } else {
+                    connRaw = u.openConnection();
+                }
+
+                // Only support HTTP/HTTPS here; for non-http resources, try to stream generically
                 if (!(connRaw instanceof java.net.HttpURLConnection)) {
-                    // Not HTTP? fallback to generic stream
                     InputStream is = connRaw.getInputStream();
                     Map<String,String> hdrsEmpty = Collections.emptyMap();
                     return new ProxyFetchResult(is, connRaw.getContentType(), 200, hdrsEmpty);
                 }
+
                 java.net.HttpURLConnection conn = (java.net.HttpURLConnection) connRaw;
+
                 conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
                 conn.setReadTimeout(READ_TIMEOUT_MS);
                 conn.setInstanceFollowRedirects(true);
@@ -1328,94 +1358,23 @@ public class LauncherActivity extends AppCompatActivity {
                     }
                 }
                 if (!uaPresent) conn.setRequestProperty("User-Agent", DEFAULT_UA);
+                // Ask for identity (no gzip) so we stream raw bytes
                 conn.setRequestProperty("Accept-Encoding", "identity");
                 conn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
 
                 int code = conn.getResponseCode();
                 InputStream is = (code >= 400) ? conn.getErrorStream() : conn.getInputStream();
                 if (is == null) return null;
-                String ct = conn.getContentType();
+
+                String contentType = conn.getContentType();
                 Map<String,String> remoteHeaders = copyHeadersFromConnection(conn);
 
-                return new ProxyFetchResult(is, ct, code, remoteHeaders);
-            } catch (Throwable strictEx) {
-                CrashLogger.w("Proxy strict fetch failed for " + remoteUrl + ": " + strictEx, strictEx);
+                // Return stream directly (do not buffer/modify)
+                return new ProxyFetchResult(is, contentType, code, remoteHeaders);
+            } catch (Throwable t) {
+                CrashLogger.w("Minimal proxy fetch failed for " + remoteUrl + ": " + t, t);
+                return null;
             }
-
-            // 2) Try combined CA fallback (if custom certs present)
-            try {
-                X509TrustManager combined = createCombinedTrustManagerFromAssetsLocal(); // implemented to use this.assets
-                if (combined != null) {
-                    SSLContext sc = SSLContext.getInstance("TLS");
-                    sc.init(null, new javax.net.ssl.TrustManager[]{ combined }, new java.security.SecureRandom());
-                    javax.net.ssl.HttpsURLConnection httpsConn = (javax.net.ssl.HttpsURLConnection) new java.net.URL(remoteUrl).openConnection();
-                    httpsConn.setSSLSocketFactory(sc.getSocketFactory());
-                    httpsConn.setHostnameVerifier((hostname, session) -> true);
-                    httpsConn.setConnectTimeout(CONNECT_TIMEOUT_MS);
-                    httpsConn.setReadTimeout(READ_TIMEOUT_MS);
-                    httpsConn.setInstanceFollowRedirects(true);
-                    // forward headers
-                    if (incomingRequestHeaders != null) {
-                        for (Map.Entry<String,String> e : incomingRequestHeaders.entrySet()) {
-                            String k = e.getKey();
-                            String v = e.getValue();
-                            if (k == null || v == null) continue;
-                            if ("host".equalsIgnoreCase(k) || "connection".equalsIgnoreCase(k)) continue;
-                            httpsConn.setRequestProperty(k, v);
-                        }
-                    }
-                    httpsConn.setRequestProperty("Accept-Encoding", "identity");
-                    int code2 = httpsConn.getResponseCode();
-                    InputStream is2 = (code2 >= 400) ? httpsConn.getErrorStream() : httpsConn.getInputStream();
-                    if (is2 == null) return null;
-                    String ct2 = httpsConn.getContentType();
-                    Map<String,String> remoteHeaders2 = copyHeadersFromConnection(httpsConn);
-                    return new ProxyFetchResult(is2, ct2, code2, remoteHeaders2);
-                }
-            } catch (Throwable ex) {
-                CrashLogger.w("Proxy combined-CA fetch failed for " + remoteUrl, ex);
-            }
-
-            // 3) Fallback trust-all (if enabled)
-            if (INSECURE_HTTPS_FALLBACK) {
-                try {
-                    SSLContext sc = SSLContext.getInstance("TLS");
-                    javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[] {
-                        new javax.net.ssl.X509TrustManager() {
-                            public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
-                            public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
-                            public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
-                        }
-                    };
-                    sc.init(null, trustAllCerts, new java.security.SecureRandom());
-                    javax.net.ssl.HttpsURLConnection httpsConn = (javax.net.ssl.HttpsURLConnection) new java.net.URL(remoteUrl).openConnection();
-                    httpsConn.setSSLSocketFactory(sc.getSocketFactory());
-                    httpsConn.setHostnameVerifier((hostname, session) -> true);
-                    httpsConn.setConnectTimeout(CONNECT_TIMEOUT_MS);
-                    httpsConn.setReadTimeout(READ_TIMEOUT_MS);
-                    httpsConn.setInstanceFollowRedirects(true);
-                    if (incomingRequestHeaders != null) {
-                        for (Map.Entry<String,String> e : incomingRequestHeaders.entrySet()) {
-                            String k = e.getKey();
-                            String v = e.getValue();
-                            if (k == null || v == null) continue;
-                            if ("host".equalsIgnoreCase(k) || "connection".equalsIgnoreCase(k)) continue;
-                            httpsConn.setRequestProperty(k, v);
-                        }
-                    }
-                    httpsConn.setRequestProperty("Accept-Encoding", "identity");
-                    int code3 = httpsConn.getResponseCode();
-                    InputStream is3 = (code3 >= 400) ? httpsConn.getErrorStream() : httpsConn.getInputStream();
-                    if (is3 == null) return null;
-                    String ct3 = httpsConn.getContentType();
-                    Map<String,String> remoteHeaders3 = copyHeadersFromConnection(httpsConn);
-                    return new ProxyFetchResult(is3, ct3, code3, remoteHeaders3);
-                } catch (Throwable insecureEx) {
-                    CrashLogger.w("Proxy permissive fetch failed for " + remoteUrl, insecureEx);
-                }
-            }
-
-            return null;
         }
 
         // Copy response headers from HttpURLConnection into a simple Map (joining multiple values)
