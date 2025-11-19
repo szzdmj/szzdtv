@@ -72,11 +72,11 @@ import javax.net.ssl.X509TrustManager;
  * - Intercepts http(s) requests and prefers secure fetch with support for custom CA bundles in assets/certs/
  * - Adds retry, caching and ensures proxy uses combined CA when possible.
  *
- * Notes:
- * - Only small textual responses (JSON/JS/text) are cached. Media is streamed.
- * - Caching no longer consumes the stream returned to WebView; we return fresh ByteArrayInputStream for cached textual content.
- * - Charset from Content-Type is honored when present (e.g. charset=GBK).
- * - Conservative http->https upgrade is performed for textual cached responses for allowed hosts (see HTTPS_WHITELIST_SUFFIXES).
+ * Key fix in this version:
+ * - Properly parse Content-Type from remote responses and pass mime type and charset separately
+ *   into WebResourceResponse so WebView treats HTML as HTML (not as plain text).
+ * - Other fixes from previous iterations preserved (cache without consuming stream, http->https rewrite,
+ *   permissive fallback control).
  */
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
@@ -310,6 +310,31 @@ public class LauncherActivity extends AppCompatActivity {
         }
     } // end onCreate
 
+    // ---------- helpers: content-type parsing ----------
+    // Parse contentType like "text/html; charset=GBK" -> ["text/html", "GBK"]
+    private String[] splitMimeAndCharset(String contentType) {
+        if (contentType == null) return new String[] { "application/octet-stream", null };
+        try {
+            String ct = contentType;
+            int idx = ct.toLowerCase(Locale.ROOT).indexOf("charset=");
+            String charset = null;
+            if (idx >= 0) {
+                charset = ct.substring(idx + 8).trim();
+                int semi = charset.indexOf(';');
+                if (semi >= 0) charset = charset.substring(0, semi).trim();
+                if (charset.isEmpty()) charset = null;
+                // Remove charset part from mime
+                ct = ct.substring(0, idx);
+                // strip trailing separators
+                ct = ct.replaceAll("[;\\s]+$", "").trim();
+            }
+            // Some servers return full header like "text/html; charset=UTF-8" - return base mime and charset
+            return new String[] { ct.trim(), charset != null ? charset.toUpperCase(Locale.ROOT) : null };
+        } catch (Throwable t) {
+            return new String[] { contentType, null };
+        }
+    }
+
     // ---------- helpers: retry + cache + candidate hosts ----------
     private WebResourceResponse fetchWithRetriesAndCache(String origUrl, Map<String,String> requestHeaders) {
         // 1) try cache (small textual cached files)
@@ -320,13 +345,16 @@ public class LauncherActivity extends AppCompatActivity {
             File f = new File(cacheDir, cacheName);
             if (f.exists() && f.length() > 0) {
                 FileInputStream fis = new FileInputStream(f);
-                String mime = guessMimeFromUrl(origUrl);
+                String guessed = guessMimeFromUrl(origUrl);
+                // split guessed into mime + encoding
+                String[] parts = splitMimeAndCharset(guessed);
+                String mimeOnly = parts[0];
+                String encoding = parts[1] != null ? parts[1] : chooseEncodingForMime(mimeOnly);
                 Map<String,String> headers = Collections.singletonMap("Access-Control-Allow-Origin","*");
-                String encoding = chooseEncodingForMime(mime);
                 if (Build.VERSION.SDK_INT >= 21) {
-                    return new WebResourceResponse(mime, encoding, 200, "OK", headers, fis);
+                    return new WebResourceResponse(mimeOnly, encoding, 200, "OK", headers, fis);
                 } else {
-                    return new WebResourceResponse(mime, encoding, fis);
+                    return new WebResourceResponse(mimeOnly, encoding, fis);
                 }
             }
         } catch (Throwable ignored) {}
@@ -378,13 +406,19 @@ public class LauncherActivity extends AppCompatActivity {
     }
 
     // Helper: if response is cacheable (small textual), read it fully, optionally rewrite http->https, write cache and return a new response with fresh stream.
+    // Also logs a short preview to help debug "source shown instead of parsed page".
     private WebResourceResponse prepareCacheableResponseAndMaybeCache(WebResourceResponse resp, String origUrl) {
         try {
             if (resp == null) return null;
-            String contentTypeHeader = resp.getMimeType(); // WebResourceResponse#getMimeType sometimes contains full type
-            String mimeOrType = contentTypeHeader != null ? contentTypeHeader : guessMimeFromUrl(origUrl);
-            boolean isTextual = mimeOrType.startsWith("application/json") || mimeOrType.startsWith("application/javascript") || mimeOrType.startsWith("text/");
-            String encoding = chooseEncodingForMime(mimeOrType);
+
+            // WebResourceResponse.getMimeType may include only mime (no charset), but in our fetch functions we pass full contentType when available.
+            String incomingMime = resp.getMimeType();
+            // if incomingMime contains charset or not, split it
+            String[] parts = splitMimeAndCharset(incomingMime);
+            String mimeOnly = parts[0];
+            String encoding = parts[1] != null ? parts[1] : chooseEncodingForMime(mimeOnly);
+
+            boolean isTextual = mimeOnly.startsWith("application/json") || mimeOnly.startsWith("application/javascript") || mimeOnly.startsWith("text/");
             if (!isTextual) {
                 // Non-textual -> do not cache; just return resp as-is.
                 return resp;
@@ -399,6 +433,19 @@ public class LauncherActivity extends AppCompatActivity {
                 while ((n = rin.read(buf)) > 0) bos.write(buf, 0, n);
             }
             byte[] data = bos.toByteArray();
+
+            // --- DEBUG: log a short textual preview to CrashLogger (first 2KB) ---
+            try {
+                Charset cs = (encoding != null) ? Charset.forName(encoding) : StandardCharsets.UTF_8;
+                int previewLen = Math.min(data.length, 2048);
+                String preview = new String(data, 0, previewLen, cs);
+                String dbg = String.format("DEBUG_FETCH preview for %s (len=%d): %s",
+                        origUrl, data.length, preview.replaceAll("[\\r\\n]+", " "));
+                try { CrashLogger.i(dbg); } catch (Throwable ignored) { Log.i(TAG, dbg); }
+            } catch (Throwable dbgEx) {
+                try { CrashLogger.w("DEBUG_FETCH preview failed: " + dbgEx, dbgEx); } catch (Throwable ignored) {}
+            }
+            // ----------------------------------------------------------------
 
             // Optionally rewrite http:// -> https:// for allowed hosts (textual content only)
             byte[] rewritten = rewriteHttpToHttpsIfNeeded(data, encoding, origUrl);
@@ -420,9 +467,9 @@ public class LauncherActivity extends AppCompatActivity {
 
             ByteArrayInputStream bis = new ByteArrayInputStream(data);
             if (Build.VERSION.SDK_INT >= 21) {
-                return new WebResourceResponse(mimeOrType, encoding, 200, "OK", headers, bis);
+                return new WebResourceResponse(mimeOnly, encoding, 200, "OK", headers, bis);
             } else {
-                return new WebResourceResponse(mimeOrType, encoding, bis);
+                return new WebResourceResponse(mimeOnly, encoding, bis);
             }
         } catch (Throwable t) {
             try { CrashLogger.w("prepareCacheableResponseAndMaybeCache failed: " + t, t); } catch (Throwable ignored) {}
@@ -566,6 +613,11 @@ public class LauncherActivity extends AppCompatActivity {
             String contentType = conn.getContentType();
             if (contentType == null) contentType = "application/octet-stream";
 
+            // split contentType into mime + charset
+            String[] parts = splitMimeAndCharset(contentType);
+            String mimeOnly = parts[0];
+            String encoding = parts[1] != null ? parts[1] : chooseEncodingForMime(mimeOnly);
+
             Map<String,String> respHeaders = new HashMap<>();
             for (Map.Entry<String, List<String>> hh : conn.getHeaderFields().entrySet()) {
                 String hk = hh.getKey();
@@ -576,13 +628,12 @@ public class LauncherActivity extends AppCompatActivity {
             }
             if (!respHeaders.containsKey("Access-Control-Allow-Origin")) respHeaders.put("Access-Control-Allow-Origin", "*");
 
-            String encoding = chooseEncodingForMime(contentType);
             try { CrashLogger.i("Strict fetch returned for " + urlStr + " code=" + code + " type=" + contentType); } catch (Throwable ignored) {}
             if (Build.VERSION.SDK_INT >= 21) {
                 String reason = conn.getResponseMessage() != null ? conn.getResponseMessage() : "OK";
-                return new WebResourceResponse(contentType, encoding, code, reason, respHeaders, is);
+                return new WebResourceResponse(mimeOnly, encoding, code, reason, respHeaders, is);
             } else {
-                return new WebResourceResponse(contentType, encoding, is);
+                return new WebResourceResponse(mimeOnly, encoding, is);
             }
         } catch (Throwable t) {
             try { CrashLogger.w("Strict fetch failed for " + urlStr + ": " + t, t); } catch (Throwable ignored) {}
@@ -620,6 +671,11 @@ public class LauncherActivity extends AppCompatActivity {
             if (is2 == null) return null;
             String ct2 = httpsConn.getContentType();
             if (ct2 == null) ct2 = "application/octet-stream";
+
+            String[] parts = splitMimeAndCharset(ct2);
+            String mimeOnly = parts[0];
+            String encoding = parts[1] != null ? parts[1] : chooseEncodingForMime(mimeOnly);
+
             Map<String,String> headers = new HashMap<>();
             for (Map.Entry<String, List<String>> hh : httpsConn.getHeaderFields().entrySet()) {
                 String hk = hh.getKey();
@@ -630,12 +686,11 @@ public class LauncherActivity extends AppCompatActivity {
             }
             if (!headers.containsKey("Access-Control-Allow-Origin")) headers.put("Access-Control-Allow-Origin", "*");
 
-            String encoding = chooseEncodingForMime(ct2);
             try { CrashLogger.i("Combined-CA fetch returned for " + urlStr + " code=" + code2 + " type=" + ct2); } catch (Throwable ignored) {}
             if (Build.VERSION.SDK_INT >= 21) {
-                return new WebResourceResponse(ct2, encoding, code2, httpsConn.getResponseMessage(), headers, is2);
+                return new WebResourceResponse(mimeOnly, encoding, code2, httpsConn.getResponseMessage(), headers, is2);
             } else {
-                return new WebResourceResponse(ct2, encoding, is2);
+                return new WebResourceResponse(mimeOnly, encoding, is2);
             }
         } catch (Throwable t) {
             try { CrashLogger.w("Combined CA fetch failed for " + urlStr + ": " + t, t); } catch (Throwable ignored) {}
@@ -678,6 +733,11 @@ public class LauncherActivity extends AppCompatActivity {
             if (is2 == null) return null;
             String ct2 = httpsConn.getContentType();
             if (ct2 == null) ct2 = "application/octet-stream";
+
+            String[] parts = splitMimeAndCharset(ct2);
+            String mimeOnly = parts[0];
+            String encoding = parts[1] != null ? parts[1] : chooseEncodingForMime(mimeOnly);
+
             Map<String,String> headers = new HashMap<>();
             for (Map.Entry<String, List<String>> hh : httpsConn.getHeaderFields().entrySet()) {
                 String hk = hh.getKey();
@@ -688,12 +748,11 @@ public class LauncherActivity extends AppCompatActivity {
             }
             if (!headers.containsKey("Access-Control-Allow-Origin")) headers.put("Access-Control-Allow-Origin", "*");
 
-            String encoding = chooseEncodingForMime(ct2);
             try { CrashLogger.i("Permissive fetch returned for " + urlStr + " code=" + code2 + " type=" + ct2); } catch (Throwable ignored) {}
             if (Build.VERSION.SDK_INT >= 21) {
-                return new WebResourceResponse(ct2, encoding, code2, httpsConn.getResponseMessage(), headers, is2);
+                return new WebResourceResponse(mimeOnly, encoding, code2, httpsConn.getResponseMessage(), headers, is2);
             } else {
-                return new WebResourceResponse(ct2, encoding, is2);
+                return new WebResourceResponse(mimeOnly, encoding, is2);
             }
         } catch (Throwable insecureEx) {
             try { CrashLogger.w("Permissive trust-all fetch failed for " + urlStr, insecureEx); } catch (Throwable ignored) {}
