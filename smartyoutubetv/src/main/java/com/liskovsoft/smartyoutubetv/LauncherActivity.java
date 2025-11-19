@@ -373,8 +373,8 @@ public class LauncherActivity extends AppCompatActivity {
             public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error){
                 try{
                     String s = "onReceivedSslError: primaryError="+error.getPrimaryError()+" url="+(view!=null?view.getUrl():"(unknown)");
-                    Log.w(TAG,s); try{ CrashLogger.w(s,null);}catch(Throwable ignored)={}
-;                }catch(Throwable t){ Log.w(TAG,"Exception in onReceivedSslError",t); try{ CrashLogger.w("Exception in onReceivedSslError",t);}catch(Throwable ignored){} }
+                    Log.w(TAG,s); try{ CrashLogger.w(s,null);}catch(Throwable ignored){} 
+                }catch(Throwable t){ Log.w(TAG,"Exception in onReceivedSslError",t); try{ CrashLogger.w("Exception in onReceivedSslError",t);}catch(Throwable ignored){} }
                 // For debugging: optionally proceed (INSECURE)
                 if (ALLOW_ALL_SSL_ERRORS) {
                     try { CrashLogger.i("Proceeding on SSL error because ALLOW_ALL_SSL_ERRORS=true"); } catch (Throwable ignored) {}
@@ -1284,7 +1284,7 @@ public class LauncherActivity extends AppCompatActivity {
                 CrashLogger.w("Proxy combined-CA fetch failed for " + remoteUrl, ex);
             }
 
-            // 3) Fallback trust-all (if enabled)...
+            // 3) Fallback trust-all (if enabled)
             if (INSECURE_HTTPS_FALLBACK) {
                 try {
                     SSLContext sc = SSLContext.getInstance("TLS");
@@ -1339,9 +1339,10 @@ public class LauncherActivity extends AppCompatActivity {
             return map;
         }
 
-        // create combined trust manager using this.assets (same approach as earlier)
+        // create combined trust manager using this.assets
         private X509TrustManager createCombinedTrustManagerFromAssetsLocal() {
             try {
+                // 1) system TM
                 TrustManagerFactory systemTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
                 systemTmf.init((KeyStore) null);
                 X509TrustManager systemTm = null;
@@ -1349,6 +1350,7 @@ public class LauncherActivity extends AppCompatActivity {
                     if (tm instanceof X509TrustManager) { systemTm = (X509TrustManager) tm; break; }
                 }
 
+                // 2) load custom CA certs from this.assets/certs
                 String[] certFiles = null;
                 try { certFiles = assets.list("certs"); } catch (IOException ioe) { certFiles = null; }
                 if (certFiles == null || certFiles.length == 0) return null;
