@@ -4,7 +4,7 @@
 
 # TvApp (SmartYouTubeTV 衍生 - minSdk 22 / Android TV 支持)
 
-本仓库目标是为 Android TV 提供一个轻量级的浏览 + 播放体验。当前短期重点：实现并验证“在浏览窗口点击播放链接能直接打开播放”的最小可用工作流（快速交付并可在设备上验证）。
+本仓库目标是为 Android TV 提供一个轻量级的浏览 + 播放体验。当前短期重点：实现并验证“在浏览窗口点击播放链接能直接打开播放”的最小可用工作流。
 
 ## 核心版本 / 要求
 - Gradle: 8.7  
@@ -14,13 +14,27 @@
 - minSdk: 22 (Android 5.1)  
 - JDK: 17 (CI 使用 temurin-17)
 
-## 当前策略（重要）
-为快速迭代“点击即播”功能，并避免被大量历史/遗留模块阻塞，当前采取临时策略：
-- CI workflow 已调整为仅构建 `:smartyoutubetv`（减少构建时间、避免 legacy 编译错误）。见 .github/workflows/android.yml。  
-- 在 `smartyoutubetv/build.gradle` 中临时排除了若干 legacy 包（`exclude 'com/liskovsoft/smartyoutubetv/misc/**'` 等），以避免大量“找不到类”的编译错误。  
-- 为了编译通过，仓库中临时包含了少量“占位”文件（例如：`smartyoutubetv/src/main/java/com/liskovsoft/smartyoutubetv/R.java`、少数 Stub 类）。这些为短期手段，必须在功能稳定后移除并恢复真实资源/实现。  
+## 当前策略（重要 - 当前真实状态）
+> 下面条目是基于最近调试与简化实现的真实状态，请在短期开发期间参考并在后续回收/清理计划里恢复。
 
-> 这些临时措施是短期的、可撤回的 —— README 下方有“回滚/清理指南”。
+1. LocalAssetsServer 行为（简化）
+   - LocalAssetsServer 仅作为 APK 内 assets 的静态 HTTP server（127.0.0.1:PORT）。不再在主分支默认包含 app-level 的远端代理 / 缓存 / 响应体 rewrite 等复杂逻辑。
+   - 对 gjw.html 做了注入：在 head 中加入 Content-Security-Policy meta（upgrade-insecure-requests）以将页面内的 http 请求自动升级到 https（若上游支持 https，则会成功，否则该资源会失败加载）。
+   - 目的：避免中间层对响应 body 的修改（此前会导致 \u 等转义问题），并通过 CSP 简单强制 https 以便走可用的节点。
+
+2. WebView 拦截逻辑（简化）
+   - LauncherActivity.tryServeAssetForUrl 现在只：
+     - 优先从 APK assets 返回本地 .js（若存在）；
+     - 对本地 127.0.0.1 的请求让 LocalAssetsServer 处理；
+     - 对外部 http(s) 请求不再代理（返回 null），由 WebView 发起真实网络请求；
+     - 同时把“Intercept decision”与 request header count 记录到 CrashLogger 以便识别高频访问域名用于后续节点选择。
+   - 这样可以在不改变上游服务器/网络环境的前提下观察哪些外部域名被访问，从而挑选可突破/替换的节点。
+
+3. 代理与抓包
+   - 先前为调试曾支持外部 minimal-proxy.js 的方式（通过 EXTERNAL_PROXY_HOST 配置）。当前主分支不启用它；若调试需要可短期恢复该路径用于抓取响应 preview。
+
+4. CI 策略（临时）
+   - CI workflow 默认仅构建 `:smartyoutubetv`，并包含少量临时占位（R.java、stub 类）以保证“点击即播”功能能快速验证。该策略为短期措施，后续将逐步回收并恢复完整构建。
 
 ## 已实现 / 主要文件（可直接查看与测试）
 - Web 拦截器：smartyoutubetv/src/main/java/com/liskovsoft/smartyoutubetv/web/OpenLinkWebViewClient.java  
@@ -28,52 +42,36 @@
   - 使用示例： OpenLinkWebViewClient.attachTo(webView, context, true)
 - 轻量播放器：smartyoutubetv/src/main/java/com/liskovsoft/smartyoutubetv/player/PlayerActivity.java  
   - 基于 AndroidX Media3（media3-exoplayer、media3-ui），接收 ACTION_VIEW 并播放 Uri。  
-  - UI：PlayerView、文件名、音量+/−、亮度+/−（基础生命周期处理 onStart/onStop）。  
   - 内部工厂：PlayerActivity.createIntent(context, uri)
+- 沉浸式播放：browser/src/main/java/com/liskovsoft/browser/player/ExoPlayerActivity.java  
+  - 提供一个最小、可直接调用的沉浸式播放 Activity（程序创建 PlayerView、进入 Immersive Sticky、支持 audio-only/video）。
+  - 集成建议：OpenLinkWebViewClient 或 PlayerActivity 在发起播放时可直接调用 ExoPlayerActivity.start(context, url, title) 来获得沉浸体验。
 - 临时占位：smartyoutubetv/src/main/java/com/liskovsoft/smartyoutubetv/R.java（短期内用于编译）
 
-## 本地构建与 CI 验证（快速步骤）
-1. 本地准备
-   - 安装 JDK 17、Android SDK（compileSdk 34），确保 ANDROID_HOME/SDK_PATH 可用。  
+## 强制 https 的说明
+- 我们在本地页面 (gjw.html) head 注入了以下 CSP：
+  - `Content-Security-Policy: upgrade-insecure-requests; ...`
+- 作用：浏览器（WebView）会把页面内的 http: 子资源请求自动升级为 https:（如果服务器端支持 https），从而减少 http->https 的中间跳转与被替换风险。
+- 注意：若某些第三方资源服务器本身不提供 https，会导致该资源加载失败；这种情形下可：
+  - 替换为支持 https 的节点；
+  - 或短期为该域名配置可控的替代资源服务。
+
+## 如何启用 / 本地验证
+1. 本地准备（同上）
 2. 本地快速编译（只编译模块）
    - ./gradlew :smartyoutubetv:assembleFullDebug --no-configuration-cache --no-daemon --stacktrace
    - 或 ./gradlew :smartyoutubetv:assembleDebug
-3. 在 CI 中（已配置）
-   - workflow 默认只构建 `:smartyoutubetv`；如果 CI 报 configuration cache 问题，请用 `--no-configuration-cache`（已在 workflow 中使用）。
-4. 验证播放（两种方式）
-   - WebView（推荐）：在浏览器 fragment 中调用：
-     ```java
-     OpenLinkWebViewClient.attachTo(webView, getContext(), true);
-     ```
-     点击页面内的 mp4/m3u8/youtube 链接，观察是否触发播放 Intent。
-   - adb（直接启动 PlayerActivity）：
-     - adb shell am start -a android.intent.action.VIEW -d "https://example.com/video.mp4" com.szzdmj.smartyoutubetv
-     - 或使用内部 Intent（若你选择走内部）：
-       adb shell am start -n com.szzdmj.smartyoutubetv/.player.PlayerActivity -a android.intent.action.VIEW -d "https://example.com/video.mp4"
+3. 在设备上测试播放（WebView -> 点击链接）
+   - 使用 OpenLinkWebViewClient.attachTo(...) 并点击页面内 mp4/m3u8/youtube 链接，观察 CrashLogger 中的拦截日志与 PlayerActivity / ExoPlayerActivity 的启动。
+4. 如果你需要抓取真实响应 preview（用于排查响应体内被修改的情况），请暂时恢复 minimal-proxy 或使用外部抓包代理（mitmproxy/Charles），并在设备上配置代理（或使用 EXTERNAL_PROXY_HOST 方式）。
 
-## 功能测试清单（手动执行）
-1. 基本播放：
-   - 点击 mp4/m3u8 链接 -> 系统或应用播放器打开并开始播放；若是内部 PlayerActivity，应显示文件名并开始播放。  
-2. 音量/亮度：
-   - 点击音量 + / -：系统 STREAM_MUSIC 音量变化并显示系统音量 UI。  
-   - 点击亮度 + / -：当前 Activity 窗口亮度变化（Window attributes）。  
-3. 边界与错误：
-   - 无 Uri：提示友好错误（Toast）。  
-   - 无外部播放器：WebView 回退加载页面（不崩溃）。  
-   - 切换后台/前台：播放器释放/重建不崩溃（onStop/onStart）。  
-4. YouTube 链接：
-   - youtu.be / youtube.com/watch 链接 -> 以外部应用优先；若内部支持，应切换到内部处理流程。  
-5. 回归：移除临时占位后，完整构建（整仓）是否通过（long-run test）。
-
-## TODO（收尾与代码完善）
+## TODO（收尾）
 短期（必须）
-- 恢复真实资源：把 activity_player.xml、attrs.xml、dimens.xml 等放回 res/，删除临时 R.java。  
-- 清理 build.gradle 中的临时 excludes（逐条移回并验证）。  
-- 用真实实现替换关键 stub（例如 SmartPreferences / CommonApplication，如果需要共享状态）。  
-- 增加 PlayerActivity 控件：播放/暂停、seek、播放时间显示、错误提示、headers/cookie 支持。  
-- 编写一组可重复执行的 QA 测试脚本（adb 脚本），并加入 CI artifacts（测试说明）。
-
+- 把 activity_player.xml、attrs.xml、dimens.xml 放回 res/，删除临时 R.java；
+- 清理 build.gradle 中的临时 excludes，逐条恢复模块并验证；
+- 将 ExoPlayerActivity 与现有 PlayerActivity / OpenLinkWebViewClient 对接（我可帮忙提供 patch）。
 中期（可选）
-- 将 PlayerActivity 提取成独立模块并用 Media3 完整实现缓存/headers/DRM（如需）。  
-- 编写单元测试与集成测试（Instrumentation / Robolectric），针对关键逻辑做覆盖。  
+- 增强 ExoPlayerActivity：MediaSession、锁屏控制、遥控器友好键映射、WindowInsets for Android R+。
+- 把 PlayerActivity 提取成独立模块并加入测试覆盖。
 
+```
