@@ -9,6 +9,9 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.os.Bundle;
+import java.util.HashMap;
+import java.util.Map;
 
 import java.io.ByteArrayInputStream;
 import java.util.Locale;
@@ -22,6 +25,20 @@ import java.util.Locale;
  * Usage:
  *   OpenLinkWebViewClient.attachTo(webView, context, true);
  */
+// 假设现有代码在某处检测到可播放链接 `String mediaUrl`
+Context ctx = webView.getContext();
+String mediaUrl = detectedUrl; // 原来逻辑得到的播放 URL
+String title = null; // 如果能从页面或元素获得标题则设置
+// OPTIONAL: 从 WebResourceRequest 或页面上下文提取有用的 headers（若需要）
+Map<String, String> headers = new HashMap<>();
+// 例如：headers.put("User-Agent", webView.getSettings().getUserAgentString());
+// 如果不需要 headers，可传 null
+
+// 启动沉浸式播放
+com.liskovsoft.browser.player.ExoPlayerActivity.start(ctx, mediaUrl, title, headers);
+
+// 如果你仍想保留原来的外部 Intent 备份逻辑，可在 start 前后做 try/catch 或按条件回退。
+// end of snippet
 public class OpenLinkWebViewClient extends WebViewClient {
     private static final String TAG = "OpenLinkWebViewClient";
     private final Context mCtx;
