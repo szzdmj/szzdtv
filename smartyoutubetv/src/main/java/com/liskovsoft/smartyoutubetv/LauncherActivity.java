@@ -203,6 +203,14 @@ public class LauncherActivity extends AppCompatActivity {
                     String urlNoQuery = url.split("\\?")[0].split("#")[0];
 
 // Replace the external-request branch inside tryServeAssetForUrl(...) with this upgraded handling.
+// Key ideas:
+// - If original request is http://..., try to fetch https://... first (using existing fetchWithRetriesAndCache).
+// - If https fetch succeeds, return that response (log upgrade).
+// - If https fails, fall back to existing behavior (attempt to fetch original http).
+// - This forces https where available while preserving fallback.
+if (lower.startsWith("http://") || lower.startsWith("https://")) {
+    // If the original URL is http, attempt an immediate https upgrade and serve that if successful.
+// Replace the external-request branch inside tryServeAssetForUrl(...) with this upgraded handling.
 // Key: skip http->https upgrade and "block cleartext" logic for loopback/localhost.
 if (lower.startsWith("http://") || lower.startsWith("https://")) {
     // If URL is loopback/local, DO NOT attempt https upgrade — local server may not support TLS.
@@ -235,8 +243,18 @@ if (lower.startsWith("http://") || lower.startsWith("https://")) {
             return null;
         }
     }
+// inside tryServeAssetForUrl(...)
+ // --- quick pass for local server: do NOT proxy/upgrade local requests ---
+ if (lower.startsWith("http://localhost:") || lower.startsWith("https://localhost:") ||
+     lower.startsWith("http://127.0.0.1:") || lower.startsWith("https://127.0.0.1:")) {
+     // Let WebView talk to local NanoHTTPD directly (no https upgrade, no app proxy).
+     try { CrashLogger.i("Bypassing proxy for local request: " + url); } catch (Throwable ignored) {}
+     return null;
+ }
 
-    // For non-local hosts: if original is http, try https upgrade first (existing behavior).
+ // External requests: prefer https upgrade for non-local http, otherwise normal fetch
+ if (lower.startsWith("http://") || lower.startsWith("https://")) {
+     // If original is http, try https upgrade first for non-local hosts
     if (lower.startsWith("http://")) {
         String httpsUrl = "https://" + url.substring("http://".length());
                             try {
@@ -251,7 +269,7 @@ if (lower.startsWith("http://") || lower.startsWith("https://")) {
                         }
         } catch (Throwable t) {
             try { CrashLogger.w("http->https upgrade attempt failed for " + url + ": " + t, t); } catch (Throwable ignored) {}
-            // continue to try original url below
+             // fallthrough to fetch original
                     }
                     }
 
