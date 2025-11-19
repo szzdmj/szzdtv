@@ -47,10 +47,10 @@ public class LauncherActivity extends AppCompatActivity {
     private LocalAssetsServer server;
     private int serverPort = -1;
 
-    // Minimal debug flags (kept simple)
+    // Minimal debug flags
     private static final boolean ALLOW_ALL_SSL_ERRORS = true;
 
-    // --- debug request counting map
+    // debug request counting map
     private final java.util.Map<String, Integer> requestCounts = Collections.synchronizedMap(new java.util.HashMap<>());
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
@@ -58,7 +58,7 @@ public class LauncherActivity extends AppCompatActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        try { CrashLogger.init(this); CrashLogger.i("LauncherActivity.onCreate"); } catch (Throwable ignored) {}
+        safeInitCrashLogger();
 
         webView = new WebView(this);
         setContentView(webView);
@@ -81,14 +81,16 @@ public class LauncherActivity extends AppCompatActivity {
             CookieManager cm = CookieManager.getInstance();
             cm.setAcceptCookie(true);
             if (Build.VERSION.SDK_INT >= 21) cm.setAcceptThirdPartyCookies(webView, true);
-        } catch (Throwable ignored) {}
+        } catch (Throwable e) {
+            safeLogWarn("CookieManager init failed: " + e);
+        }
 
         // Simple JS-to-Android bridge for logs
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
             public void log(String msg) {
                 Log.d(TAG, "JS: " + msg);
-                try { CrashLogger.i("JS: " + msg); } catch (Throwable ignored) {}
+                safeLogInfo("JS: " + msg);
             }
         }, "Android");
 
@@ -101,7 +103,7 @@ public class LauncherActivity extends AppCompatActivity {
                         consoleMessage.lineNumber(),
                         consoleMessage.messageLevel().name());
                 Log.d(TAG, msg);
-                try { CrashLogger.i(msg); } catch (Throwable ignored) {}
+                safeLogInfo(msg);
                 return super.onConsoleMessage(consoleMessage);
             }
         });
@@ -125,6 +127,7 @@ public class LauncherActivity extends AppCompatActivity {
                     return false;
                 } catch (Throwable t) {
                     Log.e(TAG,"handleUrl failed",t);
+                    safeLogWarn("handleUrl failed: " + t);
                     return false;
                 }
             }
@@ -132,7 +135,7 @@ public class LauncherActivity extends AppCompatActivity {
             // Intercept requests only to serve local APK assets; for external http(s) return null so WebView fetches directly
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request){
-                try { CrashLogger.i("shouldInterceptRequest: " + request.getUrl()); } catch (Throwable ignored) {}
+                safeLogInfo("shouldInterceptRequest: " + request.getUrl());
                 return LauncherActivity.this.tryServeAssetForUrl(request.getUrl().toString(), request.getRequestHeaders());
             }
 
@@ -141,14 +144,14 @@ public class LauncherActivity extends AppCompatActivity {
                 try{
                     String s = "onReceivedSslError: primaryError=" + error.getPrimaryError() + " url=" + (view!=null?view.getUrl():"(unknown)");
                     Log.w(TAG,s);
-                    try{ CrashLogger.w(s, null); } catch(Throwable ignored) {}
-                }catch(Throwable t){
+                    safeLogWarn(s);
+                } catch (Throwable t) {
                     Log.w(TAG,"Exception in onReceivedSslError",t);
-                    try{ CrashLogger.w("Exception in onReceivedSslError", t); } catch(Throwable ignored){}
+                    safeLogWarn("Exception in onReceivedSslError: " + t);
                 }
                 // For debugging: optionally proceed (INSECURE)
                 if (ALLOW_ALL_SSL_ERRORS) {
-                    try { CrashLogger.i("Proceeding on SSL error because ALLOW_ALL_SSL_ERRORS=true"); } catch (Throwable ignored) {}
+                    safeLogInfo("Proceeding on SSL error because ALLOW_ALL_SSL_ERRORS=true");
                     handler.proceed();
                 } else {
                     handler.cancel();
@@ -163,12 +166,12 @@ public class LauncherActivity extends AppCompatActivity {
             server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
             String started = "LocalAssetsServer started at http://127.0.0.1:" + serverPort;
             Log.i(TAG, started);
-            try { CrashLogger.i(started); } catch (Throwable ignored) {}
+            safeLogInfo(started);
             // Load local server root
             webView.loadUrl("http://127.0.0.1:" + serverPort + "/");
         } catch (IOException e) {
             Log.w(TAG, "Failed to start LocalAssetsServer, fallback to asset file", e);
-            try { CrashLogger.w("Failed to start LocalAssetsServer: " + e, e); } catch (Throwable ignored) {}
+            safeLogWarn("Failed to start LocalAssetsServer: " + e);
             webView.loadUrl("file:///android_asset/gjw.html");
         }
     }
@@ -185,18 +188,20 @@ public class LauncherActivity extends AppCompatActivity {
                 Integer prev = requestCounts.get(lower);
                 count = (prev == null) ? 1 : prev + 1;
                 requestCounts.put(lower, count);
-            } catch (Throwable ignored) {}
+            } catch (Throwable t) {
+                // ignore counting error
+            }
 
             // Decision log (limited by count)
             String info = String.format(Locale.US, "Intercept decision: url=%s count=%d", url, count);
             Log.i(TAG, info);
-            try { CrashLogger.i(info); } catch (Throwable ignored) {}
+            safeLogInfo(info);
 
             // 1) Bypass local server requests (let NanoHTTPD/LocalAssetsServer handle these)
             if (lower.startsWith("http://127.0.0.1:") || lower.startsWith("http://localhost:")) {
                 String msg = "Bypass local request -> letting LocalAssetsServer handle: " + url;
                 Log.d(TAG, msg);
-                try { CrashLogger.i(msg); } catch (Throwable ignored) {}
+                safeLogInfo(msg);
                 return null;
             }
 
@@ -207,20 +212,20 @@ public class LauncherActivity extends AppCompatActivity {
                     InputStream is = getAssets().open(name);
                     String msg = "Serving JS from assets: " + name + " for url=" + url;
                     Log.i(TAG, msg);
-                    try { CrashLogger.i(msg); } catch (Throwable ignored) {}
+                    safeLogInfo(msg);
                     return new WebResourceResponse("application/javascript", "UTF-8", is);
-                } catch (IOException ignored) {
+                } catch (IOException ioe1) {
                     try {
                         InputStream is = getAssets().open("js/" + name);
                         String msg = "Serving JS from assets/js/: " + name + " for url=" + url;
                         Log.i(TAG, msg);
-                        try { CrashLogger.i(msg); } catch (Throwable ignored) {}
+                        safeLogInfo(msg);
                         return new WebResourceResponse("application/javascript", "UTF-8", is);
-                    } catch (IOException ex) {
+                    } catch (IOException ioe2) {
                         // asset not present in APK: record and allow WebView to load from network
                         String msg = "Asset not found in APK for " + name + "; allowing WebView to fetch: " + url;
                         Log.i(TAG, msg);
-                        try { CrashLogger.i(msg); } catch (Throwable ignored) {}
+                        safeLogInfo(msg);
                         // fall through to network branch -> return null
                     }
                 }
@@ -230,34 +235,38 @@ public class LauncherActivity extends AppCompatActivity {
             if (lower.startsWith("http://") || lower.startsWith("https://")) {
                 String msg = "Allowing WebView to fetch network resource directly: " + url;
                 Log.i(TAG, msg);
-                try { CrashLogger.i(msg); } catch (Throwable ignored) {}
+                safeLogInfo(msg);
 
                 // Request header summary logging (avoid printing huge headers)
                 try {
                     if (requestHeaders != null && !requestHeaders.isEmpty()) {
                         String hdrSummary = "headers_count=" + requestHeaders.size();
-                        try { CrashLogger.i("Request headers summary for " + url + " -> " + hdrSummary); } catch (Throwable ignored) {}
+                        safeLogInfo("Request headers summary for " + url + " -> " + hdrSummary);
                         // If you want full headers, uncomment next line (may be verbose):
-                        // try { CrashLogger.i("RequestHeaders: " + requestHeaders.toString()); } catch (Throwable ignored) {}
+                        // safeLogInfo("RequestHeaders: " + requestHeaders.toString());
                     }
-                } catch (Throwable ignored) {}
+                } catch (Throwable t) {
+                    // ignore header logging error
+                }
 
                 // Suppress repeated logs for very high-frequency URLs (simple threshold)
                 try {
                     if (count > 20) {
                         if (count == 21) {
-                            try { CrashLogger.i("High-frequency request: suppressing further per-request logs for " + url); } catch (Throwable ignored) {}
+                            safeLogInfo("High-frequency request: suppressing further per-request logs for " + url);
                         }
                         return null;
                     }
-                } catch (Throwable ignored) {}
+                } catch (Throwable t) {
+                    // ignore
+                }
 
                 return null;
             }
 
         } catch (Throwable t) {
             Log.w(TAG, "tryServeAssetForUrl failed for " + url, t);
-            try { CrashLogger.w("tryServeAssetForUrl failed for " + url, t); } catch (Throwable ignored) {}
+            safeLogWarn("tryServeAssetForUrl failed for " + url + " -> " + t);
         }
         return null;
     }
@@ -331,5 +340,18 @@ public class LauncherActivity extends AppCompatActivity {
             socket.setReuseAddress(true);
             return socket.getLocalPort();
         }
+    }
+
+    // ----------------- Safe logging helpers -----------------
+    private void safeInitCrashLogger() {
+        try { CrashLogger.init(this); CrashLogger.i("LauncherActivity.onCreate"); } catch (Throwable t) { Log.w(TAG, "CrashLogger init failed", t); }
+    }
+
+    private void safeLogInfo(String msg) {
+        try { CrashLogger.i(msg); } catch (Throwable t) { /* ignore */ }
+    }
+
+    private void safeLogWarn(String msg) {
+        try { CrashLogger.w(msg, null); } catch (Throwable t) { /* ignore */ }
     }
 }
