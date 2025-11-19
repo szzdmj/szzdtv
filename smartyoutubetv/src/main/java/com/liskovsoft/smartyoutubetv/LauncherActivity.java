@@ -1,5 +1,3 @@
-// Full file — updated: set a browser-like User-Agent for remote fetches and sanitize unexpected HTML returned for .js requests.
-// This prevents WebView from trying to parse HTML as JS (Unexpected token '<') and improves Cloudflare/edge compatibility.
 package com.liskovsoft.smartyoutubetv;
 
 import android.annotation.SuppressLint;
@@ -39,6 +37,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.ServerSocket;
+import java.net.SocketException;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -68,14 +67,18 @@ import javax.net.ssl.X509TrustManager;
 /**
  * LauncherActivity
  *
- * Notes:
- * - Adds browser-like User-Agent to upstream fetches to reduce cloud/edge blocking (Cloudflare 5xx/520).
- * - If a .js request returns HTML (Status != 200 or Content-Type=text/html or response starts with '<'),
- *   the app will NOT return raw HTML as JS to WebView (that causes "Unexpected token '<'").
- *   Instead it returns a safe empty JS comment so page JS execution isn't aborted by a parse error.
+ * - Starts a small local HTTP server that serves assets (NanoHTTPD)
+ * - Logs important events to CrashLogger
+ * - Loads http://localhost:PORT/ when server available; falls back to file:///android_asset/gjw.html
+ * - Intercepts http(s) requests and prefers secure fetch with support for custom CA bundles in assets/certs/
+ * - Adds retry, caching and ensures proxy uses combined CA when possible.
  *
- * This file otherwise preserves earlier fixes: charset handling, caching without consuming streams,
- * and optional http->https rewrite.
+ * Changes in this revision:
+ * - Increased timeouts to support unstable networks (connect/read -> 3 minutes).
+ * - Increased retry attempts for upstream fetch candidates.
+ * - Force Accept-Encoding: identity when fetching upstream to avoid accidental gzip/chunk decode corruption.
+ * - Auto-follow simple HTML redirects (meta-refresh / window.location) once for wrapped "blocking" HTML pages, to support the "404抢答/跳转还原" flow.
+ * - Preserve previous protections: JS->HTML replacement still falls back to safe empty JS when HTML contains no redirect target.
  */
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
@@ -88,12 +91,19 @@ public class LauncherActivity extends AppCompatActivity {
     private volatile long lastLaunchTs = 0;
     private static final long LAUNCH_DEBOUNCE_MS = 1500;
 
-    // HTTPS fallback settings (conservative). Set to false to disable permissive trust-all fallback entirely.
+    // HTTPS fallback settings
     private static final boolean INSECURE_HTTPS_FALLBACK = true;
     private static final String[] HTTPS_WHITELIST_SUFFIXES = new String[] {
         "s3.amazonaws.com",
         "cloudfront.net"
     };
+
+    // Networking / retry tuning
+    // Set to 3 minutes to tolerate unstable networks / throttling inside GFW
+    private static final int CONNECT_TIMEOUT_MS = 180_000;
+    private static final int READ_TIMEOUT_MS = 180_000;
+    private static final int MAX_ATTEMPTS_PER_CANDIDATE = 4;
+    private static final long RETRY_BASE_BACKOFF_MS = 500L; // multiplied by attempt index
 
     // Default User-Agent to present to upstream servers (helps with Cloudflare/edge)
     private static final String DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
@@ -110,6 +120,7 @@ public class LauncherActivity extends AppCompatActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // Init CrashLogger
         try { CrashLogger.init(this); CrashLogger.i("LauncherActivity.onCreate"); } catch (Throwable t) { Log.w(TAG, "CrashLogger init failed", t); }
 
         webView = new WebView(this);
@@ -171,6 +182,7 @@ public class LauncherActivity extends AppCompatActivity {
                 }
             }
 
+            // shouldInterceptRequest (API21+ version forwards headers)
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request){
                 String url = request.getUrl().toString();
@@ -223,12 +235,13 @@ public class LauncherActivity extends AppCompatActivity {
 
                     // External requests: app-level fetch with retries + cache
                     if (lower.startsWith("http://") || lower.startsWith("https://")) {
+                        // Prefer https candidate first (already done by helper), but ensure http->https upgrade for cloudfront style hosts:
                         WebResourceResponse resp = fetchWithRetriesAndCache(url, requestHeaders);
                         if (resp != null) {
                             try { CrashLogger.i("Served remote resource via app-fetch: " + url); } catch (Throwable ignored) {}
                             return resp;
                         } else {
-                            // If original was http and we couldn't fetch https, block cleartext retry
+                            // If original was http and we couldn't fetch https and caller expects http, return empty placeholder to avoid leaking
                             if (lower.startsWith("http://")) {
                                 try { CrashLogger.i("Blocking cleartext request for " + url); } catch (Throwable ignored) {}
                                 if (Build.VERSION.SDK_INT >= 21) {
@@ -349,7 +362,7 @@ public class LauncherActivity extends AppCompatActivity {
             }
         } catch (Throwable ignored) {}
 
-        // 2) build candidate URLs
+        // 2) build candidate URLs (try https for http origins first and fallbacks for known patterns)
         List<String> candidates = new ArrayList<>();
         boolean origWasHttp = origUrl.startsWith("http://");
         if (origWasHttp) candidates.add("https://" + origUrl.substring(7)); else candidates.add(origUrl);
@@ -358,21 +371,26 @@ public class LauncherActivity extends AppCompatActivity {
             if (!candidates.contains(alt)) candidates.add(alt);
         }
 
-        int attemptsPerCandidate = 2;
+        // 3) attempts: for each candidate try strict -> combined CA -> permissive (if allowed); retry per candidate
         for (String tryUrl : candidates) {
-            for (int attempt = 0; attempt < attemptsPerCandidate; attempt++) {
+            for (int attempt = 0; attempt < MAX_ATTEMPTS_PER_CANDIDATE; attempt++) {
+                // strict
                 WebResourceResponse r = fetchUrlStrict(tryUrl, requestHeaders);
                 if (r != null) {
                     WebResourceResponse safe = prepareCacheableResponseAndMaybeCache(r, origUrl);
                     if (safe != null) return safe;
                     return r;
                 }
+
+                // combined CA
                 WebResourceResponse r2 = fetchUrlWithCombinedCAs(tryUrl, requestHeaders);
                 if (r2 != null) {
                     WebResourceResponse safe2 = prepareCacheableResponseAndMaybeCache(r2, origUrl);
                     if (safe2 != null) return safe2;
                     return r2;
                 }
+
+                // permissive trust-all fallback only if allowed for this host
                 if (INSECURE_HTTPS_FALLBACK && isPermissiveAllowedForUrl(tryUrl)) {
                     WebResourceResponse r3 = fetchUrlPermissiveTrustAll(tryUrl, requestHeaders);
                     if (r3 != null) {
@@ -381,7 +399,9 @@ public class LauncherActivity extends AppCompatActivity {
                         return r3;
                     }
                 }
-                try { Thread.sleep(200L * (attempt + 1)); } catch (InterruptedException ignored) {}
+
+                // small backoff (exponential-ish)
+                try { Thread.sleep(RETRY_BASE_BACKOFF_MS * (attempt + 1)); } catch (InterruptedException ignored) {}
             }
         }
         return null;
@@ -390,9 +410,37 @@ public class LauncherActivity extends AppCompatActivity {
     // Helper to detect if data looks like HTML
     private boolean looksLikeHtml(byte[] data, Charset cs) {
         try {
-            String head = new String(data, 0, Math.min(data.length, 256), cs).trim().toLowerCase(Locale.ROOT);
-            return head.startsWith("<!doctype") || head.startsWith("<html") || head.startsWith("<!doctype".toLowerCase()) || head.startsWith("<!--") || head.contains("<script") || head.contains("<html");
+            String head = new String(data, 0, Math.min(data.length, 512), cs).trim().toLowerCase(Locale.ROOT);
+            return head.startsWith("<!doctype") || head.startsWith("<html") || head.startsWith("<!--") || head.contains("<script") || head.contains("<html");
         } catch (Throwable t) { return false; }
+    }
+
+    // Extract redirect target from HTML preview (meta refresh or window.location or location.replace)
+    private String extractRedirectFromHtml(byte[] data, Charset cs, String baseUrl) {
+        try {
+            String text = new String(data, 0, Math.min(data.length, 8192), cs);
+            // meta refresh: <meta http-equiv='refresh' content='0;url=/path'>
+            Pattern meta = Pattern.compile("(?i)<meta[^>]*http-equiv\\s*=\\s*['\"]?refresh['\"]?[^>]*content\\s*=\\s*['\"]?[^;]*;\\s*url=([^'\">]+)['\"]?", Pattern.CASE_INSENSITIVE);
+            Matcher m = meta.matcher(text);
+            if (m.find()) {
+                String url = m.group(1).trim();
+                try { return new URL(new URL(baseUrl), url).toString(); } catch (Throwable ignored) {}
+            }
+            // window.location = '...'; location.href='...'; location.replace('...')
+            Pattern loc = Pattern.compile("(?i)location\\.(?:href|replace)\\s*[:=]\\s*['\"]([^'\"]+)['\"]");
+            m = loc.matcher(text);
+            if (m.find()) {
+                String url = m.group(1).trim();
+                try { return new URL(new URL(baseUrl), url).toString(); } catch (Throwable ignored) {}
+            }
+            Pattern winloc = Pattern.compile("(?i)window\\.location\\s*[:=]\\s*['\"]([^'\"]+)['\"]");
+            m = winloc.matcher(text);
+            if (m.find()) {
+                String url = m.group(1).trim();
+                try { return new URL(new URL(baseUrl), url).toString(); } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
+        return null;
     }
 
     // Helper to check if requested URL is a JS file
@@ -402,18 +450,19 @@ public class LauncherActivity extends AppCompatActivity {
         return u.endsWith(".js");
     }
 
-    // prepareCacheableResponseAndMaybeCache: read textual stream, preview log, sanitize .js-if-html
+    // prepareCacheableResponseAndMaybeCache: read textual stream, preview log, sanitize .js-if-html and follow simple HTML redirects once
     private WebResourceResponse prepareCacheableResponseAndMaybeCache(WebResourceResponse resp, String origUrl) {
         try {
             if (resp == null) return null;
 
             String incomingMime = resp.getMimeType();
             String[] parts = splitMimeAndCharset(incomingMime);
-            String mimeOnly = parts[0];
+            String mimeOnly = parts[0] != null ? parts[0] : "application/octet-stream";
             String encoding = parts[1] != null ? parts[1] : chooseEncodingForMime(mimeOnly);
 
-            boolean isTextual = mimeOnly.startsWith("application/json") || mimeOnly.startsWith("application/javascript") || mimeOnly.startsWith("text/");
+            boolean isTextual = mimeOnly.startsWith("application/json") || mimeOnly.startsWith("application/javascript") || mimeOnly.startsWith("text/") || mimeOnly.contains("html");
             if (!isTextual) {
+                // Non-textual -> do not cache; just return resp as-is.
                 return resp;
             }
             InputStream in = resp.getData();
@@ -438,7 +487,29 @@ public class LauncherActivity extends AppCompatActivity {
                 try { CrashLogger.w("DEBUG_FETCH preview failed: " + dbgEx, dbgEx); } catch (Throwable ignored) {}
             }
 
-            // If JS was requested but server returned HTML (404/520 pages), return safe empty JS to avoid parse error.
+            // If HTML looks like a blocking/wrapped page, attempt to extract redirect and follow once
+            try {
+                Charset cs = (encoding != null) ? Charset.forName(encoding) : StandardCharsets.UTF_8;
+                if (looksLikeHtml(data, cs)) {
+                    String follow = extractRedirectFromHtml(data, cs, origUrl);
+                    if (follow != null && !follow.isEmpty()) {
+                        try {
+                            try { CrashLogger.i("Auto-following HTML redirect from " + origUrl + " -> " + follow); } catch (Throwable ignored) {}
+                            WebResourceResponse followed = fetchWithRetriesAndCache(follow, Collections.emptyMap());
+                            if (followed != null) {
+                                // prepareCacheableResponseAndMaybeCache will be called recursively by caller if needed;
+                                // but here we return the followed response directly.
+                                try { CrashLogger.i("Auto-follow returned content for " + follow); } catch (Throwable ignored) {}
+                                return followed;
+                            }
+                        } catch (Throwable fx) {
+                            try { CrashLogger.w("Auto-follow failed: " + fx, fx); } catch (Throwable ignored) {}
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
+
+            // If JS requested but server returned HTML (404/520 pages), return safe empty JS to avoid parse error.
             try {
                 Charset cs = (encoding != null) ? Charset.forName(encoding) : StandardCharsets.UTF_8;
                 if (isJsRequest(origUrl) && (mimeOnly.contains("html") || looksLikeHtml(data, cs))) {
@@ -457,6 +528,7 @@ public class LauncherActivity extends AppCompatActivity {
             byte[] rewritten = rewriteHttpToHttpsIfNeeded(data, encoding, origUrl);
             if (rewritten != null) data = rewritten;
 
+            // Write cache file (best-effort)
             try {
                 File cacheDir = new File(getFilesDir(), REMOTE_CACHE_DIR);
                 if (!cacheDir.exists()) cacheDir.mkdirs();
@@ -481,16 +553,18 @@ public class LauncherActivity extends AppCompatActivity {
         }
     }
 
-    // try to rewrite http->https conservatively (unchanged)
+    // Try to conservatively rewrite http://host/... to https://host/... only for allowed hosts.
     private byte[] rewriteHttpToHttpsIfNeeded(byte[] data, String encoding, String origUrl) {
         if (data == null || data.length == 0) return data;
         if (origUrl == null) return data;
         try {
             Charset cs = (encoding != null) ? Charset.forName(encoding) : StandardCharsets.UTF_8;
             String text = new String(data, cs);
+
             URL u = new URL(origUrl);
             String host = u.getHost();
             if (host == null || host.isEmpty()) return data;
+
             boolean hostAllowed = false;
             if (HTTPS_WHITELIST_SUFFIXES != null && HTTPS_WHITELIST_SUFFIXES.length > 0) {
                 for (String suf : HTTPS_WHITELIST_SUFFIXES) {
@@ -500,6 +574,7 @@ public class LauncherActivity extends AppCompatActivity {
                 if (host.endsWith("s3.amazonaws.com") || host.endsWith("cloudfront.net") || host.contains("localhost")) hostAllowed = true;
             }
             if (!hostAllowed) return data;
+
             String hostEsc = Pattern.quote(host);
             Pattern p1 = Pattern.compile("http://" + hostEsc + "(?::(\\d+))?/");
             Matcher m1 = p1.matcher(text);
@@ -584,7 +659,7 @@ public class LauncherActivity extends AppCompatActivity {
             URL u = new URL(urlStr);
             conn = (HttpURLConnection) u.openConnection();
 
-            // ensure a browser-like UA to avoid edge/Cloudflare bot pages
+            // forward headers from requestHeaders and ensure UA/Accept/Accept-Encoding set
             boolean uaPresent = false;
             if (requestHeaders != null) {
                 for (Map.Entry<String,String> e : requestHeaders.entrySet()) {
@@ -597,10 +672,12 @@ public class LauncherActivity extends AppCompatActivity {
                 }
             }
             if (!uaPresent) conn.setRequestProperty("User-Agent", DEFAULT_UA);
+            // Avoid compressed responses that we may mishandle; ask for identity
+            conn.setRequestProperty("Accept-Encoding", "identity");
             conn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
 
-            conn.setConnectTimeout(8000);
-            conn.setReadTimeout(10000);
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
             conn.setInstanceFollowRedirects(true);
             int code = conn.getResponseCode();
             InputStream is = (code >= 400) ? conn.getErrorStream() : conn.getInputStream();
@@ -629,15 +706,19 @@ public class LauncherActivity extends AppCompatActivity {
             } else {
                 return new WebResourceResponse(mimeOnly, encoding, is);
             }
+        } catch (SocketException se) {
+            try { CrashLogger.w("Strict fetch socket error for " + urlStr + ": " + se, se); } catch (Throwable ignored) {}
         } catch (Throwable t) {
             try { CrashLogger.w("Strict fetch failed for " + urlStr + ": " + t, t); } catch (Throwable ignored) {}
+        } finally {
+            // don't close connection input stream here; WebResourceResponse will use it
         }
         return null;
     }
 
     private WebResourceResponse fetchUrlWithCombinedCAs(String urlStr, Map<String,String> requestHeaders) {
         try {
-            X509TrustManager combined = createCombinedTrustManagerFromAssets();
+            X509TrustManager combined = createCombinedTrustManagerFromAssets(); // instance method uses getAssets()
             if (combined == null) return null;
             SSLContext sc = SSLContext.getInstance("TLS");
             sc.init(null, new TrustManager[]{ combined }, new SecureRandom());
@@ -659,10 +740,11 @@ public class LauncherActivity extends AppCompatActivity {
                 }
             }
             if (!uaPresent) httpsConn.setRequestProperty("User-Agent", DEFAULT_UA);
+            httpsConn.setRequestProperty("Accept-Encoding", "identity");
             httpsConn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
 
-            httpsConn.setConnectTimeout(8000);
-            httpsConn.setReadTimeout(10000);
+            httpsConn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            httpsConn.setReadTimeout(READ_TIMEOUT_MS);
             httpsConn.setInstanceFollowRedirects(true);
             int code2 = httpsConn.getResponseCode();
             InputStream is2 = (code2 >= 400) ? httpsConn.getErrorStream() : httpsConn.getInputStream();
@@ -725,10 +807,11 @@ public class LauncherActivity extends AppCompatActivity {
                 }
             }
             if (!uaPresent) httpsConn.setRequestProperty("User-Agent", DEFAULT_UA);
+            httpsConn.setRequestProperty("Accept-Encoding", "identity");
             httpsConn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
 
-            httpsConn.setConnectTimeout(8000);
-            httpsConn.setReadTimeout(10000);
+            httpsConn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            httpsConn.setReadTimeout(READ_TIMEOUT_MS);
             httpsConn.setInstanceFollowRedirects(true);
             int code2 = httpsConn.getResponseCode();
             InputStream is2 = (code2 >= 400) ? httpsConn.getErrorStream() : httpsConn.getInputStream();
@@ -762,9 +845,13 @@ public class LauncherActivity extends AppCompatActivity {
         return null;
     }
 
-    // createCombinedTrustManagerFromAssets and LocalAssetsServer implementations unchanged besides using splitMimeAndCharset above where needed.
+    /**
+     * Create a combined X509TrustManager that tries system default first, then custom CAs loaded from assets/certs/*.pem.
+     * Returns null if no custom CAs present / failed to create.
+     */
     private X509TrustManager createCombinedTrustManagerFromAssets() {
         try {
+            // 1) get system default TrustManager
             TrustManagerFactory systemTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
             systemTmf.init((KeyStore) null);
             X509TrustManager systemTm = null;
@@ -772,10 +859,19 @@ public class LauncherActivity extends AppCompatActivity {
                 if (tm instanceof X509TrustManager) { systemTm = (X509TrustManager) tm; break; }
             }
 
+            // 2) load custom CA certs from assets/certs/
             String[] certFiles = null;
-            try { certFiles = getAssets().list("certs"); } catch (IOException ioe) { certFiles = null; }
-            if (certFiles == null || certFiles.length == 0) return null;
+            try {
+                certFiles = getAssets().list("certs");
+            } catch (IOException ioe) {
+                certFiles = null;
+            }
+            if (certFiles == null || certFiles.length == 0) {
+                // no custom CA files present
+                return null;
+            }
 
+            // Build a KeyStore containing all custom CA certs
             CertificateFactory cf = CertificateFactory.getInstance("X.509");
             KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
             ks.load(null, null);
@@ -801,6 +897,7 @@ public class LauncherActivity extends AppCompatActivity {
             }
             if (loaded == 0) return null;
 
+            // 3) create TrustManagerFactory from KeyStore (custom CA)
             TrustManagerFactory customTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
             customTmf.init(ks);
             X509TrustManager customTm = null;
@@ -811,6 +908,7 @@ public class LauncherActivity extends AppCompatActivity {
             final X509TrustManager sys = systemTm;
             final X509TrustManager cus = customTm;
 
+            // 4) composite trust manager: try system first, then custom
             X509TrustManager combined = new X509TrustManager() {
                 @Override
                 public X509Certificate[] getAcceptedIssuers() {
@@ -847,7 +945,13 @@ public class LauncherActivity extends AppCompatActivity {
         }
     }
 
-    // LocalAssetsServer unchanged except it delegates to fetchRemoteForProxy for proxy endpoint (kept as earlier).
+    // tryFetchHttpsFallback kept for compatibility; now delegates to fetchWithRetriesAndCache with empty headers
+    private WebResourceResponse tryFetchHttpsFallback(String url) {
+        return fetchWithRetriesAndCache(url, Collections.emptyMap());
+    }
+
+    // rest of class...
+    // Note: LocalAssetsServer.guessMimeStatic used by guessMimeFromUrl
     public static class LocalAssetsServer extends NanoHTTPD {
         private static final String TAG2 = "LocalAssetsServer";
         private final AssetManager assets;
@@ -872,6 +976,7 @@ public class LauncherActivity extends AppCompatActivity {
                 return newFixedLengthResponse(Response.Status.FORBIDDEN, "text/plain", "Forbidden");
             }
 
+            // optional proxy endpoint (kept for compatibility)
             if (path.startsWith("_proxy")) {
                 Map<String, String> params = session.getParms();
                 String encoded = params.get("u");
@@ -886,6 +991,7 @@ public class LauncherActivity extends AppCompatActivity {
                 }
                 try { CrashLogger.i("Proxying remote URL: " + remoteUrl); } catch (Throwable ignored) {}
 
+                // Collect incoming request headers to forward (Range, Accept-Encoding, Origin, Referer, etc.)
                 Map<String, String> incoming = session.getHeaders() != null ? session.getHeaders() : Collections.emptyMap();
 
                 ProxyFetchResult pf = fetchRemoteForProxy(remoteUrl, incoming);
@@ -893,20 +999,24 @@ public class LauncherActivity extends AppCompatActivity {
                     return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found: " + remoteUrl);
                 }
 
+                // Create response with remote status and headers
                 Response.Status status = Response.Status.lookup(pf.statusCode);
-                if (status == null) status = Response.Status.OK;
+                if (status == null) status = Response.Status.OK; // fallback if unknown
                 Response r = newChunkedResponse(status, pf.contentType != null ? pf.contentType : "application/octet-stream", pf.stream);
 
+                // Copy remote headers to local response, but avoid duplicate/forbidden headers
                 if (pf.headers != null) {
                     for (Map.Entry<String, String> he : pf.headers.entrySet()) {
                         String hk = he.getKey();
                         String hv = he.getValue();
                         if (hk == null || hv == null) continue;
+                        // Avoid Content-Length because chunked response manages length.
                         if ("Content-Length".equalsIgnoreCase(hk)) continue;
                         r.addHeader(hk, hv);
                     }
                 }
 
+                // Ensure CORS present
                 r.addHeader("Access-Control-Allow-Origin", "*");
                 r.addHeader("Cache-Control", "no-cache");
                 return r;
@@ -966,6 +1076,7 @@ public class LauncherActivity extends AppCompatActivity {
             }
         }
 
+        // Proxy helpers
         private static class ProxyFetchResult {
             final InputStream stream;
             final String contentType;
@@ -974,18 +1085,21 @@ public class LauncherActivity extends AppCompatActivity {
             ProxyFetchResult(InputStream s, String ct, int code, Map<String,String> hdrs) { stream = s; contentType = ct; statusCode = code; headers = hdrs; }
         }
 
+        // Fetch remote utility used by proxy: forwards incoming headers and returns status+headers+stream
         private ProxyFetchResult fetchRemoteForProxy(String remoteUrl, Map<String, String> incomingRequestHeaders) {
+            // 1) Try strict HTTP(S) first (system trust)
             try {
                 java.net.URL u = new java.net.URL(remoteUrl);
                 java.net.URLConnection connRaw = u.openConnection();
                 if (!(connRaw instanceof java.net.HttpURLConnection)) {
+                    // Not HTTP? fallback to generic stream
                     InputStream is = connRaw.getInputStream();
                     Map<String,String> hdrsEmpty = Collections.emptyMap();
                     return new ProxyFetchResult(is, connRaw.getContentType(), 200, hdrsEmpty);
                 }
                 java.net.HttpURLConnection conn = (java.net.HttpURLConnection) connRaw;
-                conn.setConnectTimeout(8000);
-                conn.setReadTimeout(10000);
+                conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+                conn.setReadTimeout(READ_TIMEOUT_MS);
                 conn.setInstanceFollowRedirects(true);
 
                 boolean uaPresent = false;
@@ -994,12 +1108,14 @@ public class LauncherActivity extends AppCompatActivity {
                         String k = e.getKey();
                         String v = e.getValue();
                         if (k == null || v == null) continue;
+                        // Do not set Host/Connection which are managed by URLConnection
                         if ("host".equalsIgnoreCase(k) || "connection".equalsIgnoreCase(k)) continue;
                         conn.setRequestProperty(k, v);
                         if ("user-agent".equalsIgnoreCase(k)) uaPresent = true;
                     }
                 }
                 if (!uaPresent) conn.setRequestProperty("User-Agent", DEFAULT_UA);
+                conn.setRequestProperty("Accept-Encoding", "identity");
                 conn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
 
                 int code = conn.getResponseCode();
@@ -1013,17 +1129,19 @@ public class LauncherActivity extends AppCompatActivity {
                 CrashLogger.w("Proxy strict fetch failed for " + remoteUrl + ": " + strictEx, strictEx);
             }
 
+            // 2) Try combined CA fallback (if custom certs present)
             try {
-                X509TrustManager combined = createCombinedTrustManagerFromAssetsLocal();
+                X509TrustManager combined = createCombinedTrustManagerFromAssetsLocal(); // implemented to use this.assets
                 if (combined != null) {
                     SSLContext sc = SSLContext.getInstance("TLS");
                     sc.init(null, new javax.net.ssl.TrustManager[]{ combined }, new java.security.SecureRandom());
                     javax.net.ssl.HttpsURLConnection httpsConn = (javax.net.ssl.HttpsURLConnection) new java.net.URL(remoteUrl).openConnection();
                     httpsConn.setSSLSocketFactory(sc.getSocketFactory());
                     httpsConn.setHostnameVerifier((hostname, session) -> true);
-                    httpsConn.setConnectTimeout(8000);
-                    httpsConn.setReadTimeout(10000);
+                    httpsConn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+                    httpsConn.setReadTimeout(READ_TIMEOUT_MS);
                     httpsConn.setInstanceFollowRedirects(true);
+                    // forward headers
                     if (incomingRequestHeaders != null) {
                         for (Map.Entry<String,String> e : incomingRequestHeaders.entrySet()) {
                             String k = e.getKey();
@@ -1033,6 +1151,7 @@ public class LauncherActivity extends AppCompatActivity {
                             httpsConn.setRequestProperty(k, v);
                         }
                     }
+                    httpsConn.setRequestProperty("Accept-Encoding", "identity");
                     int code2 = httpsConn.getResponseCode();
                     InputStream is2 = (code2 >= 400) ? httpsConn.getErrorStream() : httpsConn.getInputStream();
                     if (is2 == null) return null;
@@ -1044,6 +1163,7 @@ public class LauncherActivity extends AppCompatActivity {
                 CrashLogger.w("Proxy combined-CA fetch failed for " + remoteUrl, ex);
             }
 
+            // 3) Fallback trust-all (if enabled)
             if (INSECURE_HTTPS_FALLBACK) {
                 try {
                     SSLContext sc = SSLContext.getInstance("TLS");
@@ -1058,8 +1178,8 @@ public class LauncherActivity extends AppCompatActivity {
                     javax.net.ssl.HttpsURLConnection httpsConn = (javax.net.ssl.HttpsURLConnection) new java.net.URL(remoteUrl).openConnection();
                     httpsConn.setSSLSocketFactory(sc.getSocketFactory());
                     httpsConn.setHostnameVerifier((hostname, session) -> true);
-                    httpsConn.setConnectTimeout(8000);
-                    httpsConn.setReadTimeout(10000);
+                    httpsConn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+                    httpsConn.setReadTimeout(READ_TIMEOUT_MS);
                     httpsConn.setInstanceFollowRedirects(true);
                     if (incomingRequestHeaders != null) {
                         for (Map.Entry<String,String> e : incomingRequestHeaders.entrySet()) {
@@ -1070,6 +1190,7 @@ public class LauncherActivity extends AppCompatActivity {
                             httpsConn.setRequestProperty(k, v);
                         }
                     }
+                    httpsConn.setRequestProperty("Accept-Encoding", "identity");
                     int code3 = httpsConn.getResponseCode();
                     InputStream is3 = (code3 >= 400) ? httpsConn.getErrorStream() : httpsConn.getInputStream();
                     if (is3 == null) return null;
@@ -1084,6 +1205,7 @@ public class LauncherActivity extends AppCompatActivity {
             return null;
         }
 
+        // Copy response headers from HttpURLConnection into a simple Map (joining multiple values)
         private static Map<String,String> copyHeadersFromConnection(java.net.HttpURLConnection conn) {
             Map<String, String> map = new HashMap<>();
             for (Map.Entry<String, List<String>> hh : conn.getHeaderFields().entrySet()) {
@@ -1096,8 +1218,10 @@ public class LauncherActivity extends AppCompatActivity {
             return map;
         }
 
+        // create combined trust manager using this.assets
         private X509TrustManager createCombinedTrustManagerFromAssetsLocal() {
             try {
+                // 1) system TM
                 TrustManagerFactory systemTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
                 systemTmf.init((KeyStore) null);
                 X509TrustManager systemTm = null;
@@ -1105,6 +1229,7 @@ public class LauncherActivity extends AppCompatActivity {
                     if (tm instanceof X509TrustManager) { systemTm = (X509TrustManager) tm; break; }
                 }
 
+                // 2) load custom CA certs from this.assets/certs
                 String[] certFiles = null;
                 try { certFiles = assets.list("certs"); } catch (IOException ioe) { certFiles = null; }
                 if (certFiles == null || certFiles.length == 0) return null;
@@ -1177,6 +1302,7 @@ public class LauncherActivity extends AppCompatActivity {
             }
         }
 
+        // static helper for mime guessing
         static String guessMimeStatic(String path) {
             String lower = path.toLowerCase(Locale.ROOT);
             if (lower.endsWith(".html") || lower.endsWith(".htm")) return "text/html; charset=utf-8";
