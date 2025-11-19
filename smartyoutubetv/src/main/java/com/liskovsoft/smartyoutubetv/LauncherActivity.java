@@ -206,7 +206,40 @@ public class LauncherActivity extends AppCompatActivity {
                 try { CrashLogger.i("shouldInterceptRequest: "+url); } catch (Throwable ignored) {}
                 return tryServeAssetForUrl(url, reqHeaders);
             }
+// --- 插入到 WebViewClient 的匿名类内部（在其他 override 方法旁） ---
+@Override
+public void onPageFinished(WebView view, String url) {
+    try { CrashLogger.i("onPageFinished: " + url); } catch (Throwable ignored) {}
+
+    // global window.onerror -> forward to Android bridge (so JS runtime errors appear in CrashLogger)
+    try {
+        String setOnError = "window.onerror = function(msg, src, line, col, err) {" +
+                "  try { Android.log('JS_ERROR: ' + msg + ' @' + src + ':' + line + ':' + col + (err?(' stack:'+err.stack):'')); } catch(e) {};" +
+                "};";
+        view.evaluateJavascript(setOnError, null);
+    } catch (Throwable ignored) {}
+
+    // Query DOM counts (iframes, lists, nodes) and forward results to CrashLogger
+    try {
+        String probe = "(function(){ try {" +
+                "var info = {" +
+                "iframes: document.getElementsByTagName('iframe').length," +
+                "lists: document.querySelectorAll('ul,ol').length," +
+                "roleLists: document.querySelectorAll('[role=\"list\"]').length," +
+                "bodyLen: document.body?document.body.innerText.length:0," +
+                "title: document.title || ''" +
+                "};" +
+                "if (window.Android && Android.log) Android.log('DOM_INFO:' + JSON.stringify(info));" +
+                "return JSON.stringify(info);" +
+                "} catch(e) { if (window.Android && Android.log) Android.log('DOM_PROBE_ERR:' + e.toString()); return 'ERR'; } })();";
+        view.evaluateJavascript(probe, new android.webkit.ValueCallback<String>() {
             @Override
+            public void onReceiveValue(String value) {
+                try { CrashLogger.i("evaluateJavascript returned: " + value); } catch (Throwable ignored) {}
+            }
+        });
+    } catch (Throwable ignored) {}
+}
             public WebResourceResponse shouldInterceptRequest(WebView view, String url){
                 try { CrashLogger.i("shouldInterceptRequest: "+url); } catch (Throwable ignored) {}
                 return tryServeAssetForUrl(url, Collections.emptyMap());
