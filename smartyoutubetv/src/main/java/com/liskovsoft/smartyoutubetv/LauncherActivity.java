@@ -203,14 +203,6 @@ public class LauncherActivity extends AppCompatActivity {
                     String urlNoQuery = url.split("\\?")[0].split("#")[0];
 
 // Replace the external-request branch inside tryServeAssetForUrl(...) with this upgraded handling.
-// Key ideas:
-// - If original request is http://..., try to fetch https://... first (using existing fetchWithRetriesAndCache).
-// - If https fetch succeeds, return that response (log upgrade).
-// - If https fails, fall back to existing behavior (attempt to fetch original http).
-// - This forces https where available while preserving fallback.
-if (lower.startsWith("http://") || lower.startsWith("https://")) {
-    // If the original URL is http, attempt an immediate https upgrade and serve that if successful.
-// Replace the external-request branch inside tryServeAssetForUrl(...) with this upgraded handling.
 // Key: skip http->https upgrade and "block cleartext" logic for loopback/localhost.
 if (lower.startsWith("http://") || lower.startsWith("https://")) {
     // If URL is loopback/local, DO NOT attempt https upgrade — local server may not support TLS.
