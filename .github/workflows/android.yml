@@ -22,7 +22,7 @@ permissions:
 jobs:
   build-smartyoutubetv:
     name: Build smartyoutubetv (fast, force remote assets)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, windows, x64]
     env:
       GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
 
