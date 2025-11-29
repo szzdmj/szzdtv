@@ -79,10 +79,8 @@ jobs:
           base_nano="https://raw.githubusercontent.com/szzdmj/nanohttpd/${{ github.event.inputs.nano_branch || 'master' }}/android-asset-webshell/app/src/main/assets"
           base_sz="https://raw.githubusercontent.com/szmj0/szmj0.github.io/${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}"
           echo "Fetching required assets..."
-          # Required assets: index.html, webjs.js, gjw.html
+          # Required assets:  webjs.js, gjw.html
           set +e
-          curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/index.html" "${base_nano}/index.html"
-          rc_index=$?
           curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/webjs.js" "${base_sz}/webjs.js"
           rc_webjs=$?
           curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/gjw.html" "${base_sz}/gjw.html"
@@ -92,10 +90,6 @@ jobs:
           rc_sw=$?
           set -e
           # Fail if any required file failed to download
-          if [ "${rc_index}" -ne 0 ]; then
-            echo "::error::Failed to fetch index.html from ${base_nano}/index.html (required). Aborting build to avoid packaging old assets."
-            exit 1
-          fi
           if [ "${rc_webjs}" -ne 0 ]; then
             echo "::error::Failed to fetch webjs.js from ${base_sz}/webjs.js (required). Aborting build to avoid packaging old assets."
             exit 1
@@ -104,11 +98,7 @@ jobs:
             echo "::error::Failed to fetch gjw.html from ${base_sz}/gjw.html (required). Aborting build to avoid packaging old assets."
             exit 1
           fi
-          echo "Fetched required assets into ${TARGET}:"
-          ls -la "${TARGET}" || true
-          echo "index.html head:"
-          sed -n '1,40p' "${TARGET}/index.html" || true
-
+ 
       - name: Build only smartyoutubetv (assemble FullDebug)
         run: ./gradlew :smartyoutubetv:assembleFullDebug --no-configuration-cache --no-daemon --stacktrace --info --warning-mode all
 
