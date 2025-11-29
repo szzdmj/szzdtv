@@ -105,8 +105,8 @@ public class PlayerActivity extends AppCompatActivity {
                     decorViewHideSystemUI();
                 }
                 // 如果传了 URL 且 autoPlay 为 true，开始播放
-                if (videoUri != null && autoPlay) {
-                    startPlayback(videoUri.toString());
+                if (videoUri != null /*&& autoPlay*/) {
+                    startPlayback(videoUri.toString(), autoPlay);
                 }
             }
         } catch (Throwable t) {
@@ -155,7 +155,7 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
     // start playback using Media3 ExoPlayer
-    private void startPlayback(String url) {
+    private void startPlayback(String url , boolean bAuto) {
         try {
             if (player == null) {
                 player = new ExoPlayer.Builder(this).build();
@@ -171,7 +171,7 @@ public class PlayerActivity extends AppCompatActivity {
             MediaItem item = MediaItem.fromUri(Uri.parse(url));
             player.setMediaItem(item);
             player.prepare();
-            player.setPlayWhenReady(true);
+            player.setPlayWhenReady(bAuto);
 
             Log.i(TAG, "startPlayback: " + url);
         } catch (Throwable t) {
