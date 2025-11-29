@@ -1,0 +1,108 @@
+name: Android CI - szzdtv
+
+on:
+  push:
+    branches: [main, master, main-branch]
+  pull_request:
+    branches: [main, master, main-branch]
+  workflow_dispatch:
+    inputs:
+      nano_branch:
+        description: 'Branch/commit of szzdmj/nanohttpd to fetch index.html from'
+        required: false
+        default: 'master'
+      sz_ref:
+        description: 'Branch/commit of szmj0/szmj0.github.io to fetch webjs.js, sw.js, gjw.html from'
+        required: false
+        default: 'b6977c914a9a1aabafb5bddd6817eea85a2a8738'
+
+permissions:
+  contents: read
+
+jobs:
+  build-smartyoutubetv:
+    name: Build smartyoutubetv (fast, force remote assets)
+    runs-on: [self-hosted, windows, x64]
+    env:
+      GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-cache-${{ runner.os }}-${{ hashFiles('**/*.gradle*','**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-cache-${{ runner.os }}-
+
+      - name: Clean workspace and module outputs (remove untracked/stale assets)
+        shell: cmd
+        run: |
+          echo "Remove untracked files (safe on CI runner)..."
+          git clean -fdx || echo "Git clean failed, continuing..."
+          echo "Run Gradle clean for smartyoutubetv to ensure no stale outputs..."
+          call gradlew.bat :smartyoutubetv:clean --no-daemon || echo "Gradle clean failed, continuing..."
+          echo "Ensure asset directories exist and show current state (for logs)..."
+          mkdir smartyoutubetv\src\main\assets 2>nul
+          mkdir pwaapp\src\main\assets 2>nul
+          dir smartyoutubetv\src\main\assets || echo "Directory not found"
+          dir pwaapp\src\main\assets || echo "Directory not found"
+
+      - name: Fetch PWA assets (force overwrite from remote; fail if required missing)
+        shell: cmd
+        env:
+          NBR: ${{ github.event.inputs.nano_branch || 'master' }}
+          SZR: ${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}
+        run: |
+          echo NBR=%NBR%, SZR=%SZR%
+          set TARGET=smartyoutubetv\src\main\assets
+          mkdir "%TARGET%" 2>nul
+          echo Removing any existing files in %TARGET% (prevent packaging of stale/local files)...
+          rmdir /s /q "%TARGET%" 2>nul
+          mkdir "%TARGET%" 2>nul
+          set base_nano=https://raw.githubusercontent.com/szzdmj/nanohttpd/%NBR%/android-asset-webshell/app/src/main/assets
+          set base_sz=https://raw.githubusercontent.com/szmj0/szmj0.github.io/%SZR%
+          echo Fetching required assets...
+          curl -fsSL --retry 3 --connect-timeout 15 -o "%TARGET%\index.html" "%base_nano%/index.html"
+          if %ERRORLEVEL% NEQ 0 (
+            echo ::error::Failed to fetch index.html from %base_nano%/index.html (required). Aborting build to avoid packaging old assets.
+            exit /b 1
+          )
+          curl -fsSL --retry 3 --connect-timeout 15 -o "%TARGET%\webjs.js" "%base_sz%/webjs.js"
+          if %ERRORLEVEL% NEQ 0 (
+            echo ::error::Failed to fetch webjs.js from %base_sz%/webjs.js (required). Aborting build to avoid packaging old assets.
+            exit /b 1
+          )
+          curl -fsSL --retry 3 --connect-timeout 15 -o "%TARGET%\gjw.html" "%base_sz%/gjw.html"
+          if %ERRORLEVEL% NEQ 0 (
+            echo ::error::Failed to fetch gjw.html from %base_sz%/gjw.html (required). Aborting build to avoid packaging old assets.
+            exit /b 1
+          )
+          curl -fsSL --retry 3 --connect-timeout 15 -o "%TARGET%\sw.js" "%base_sz%/sw.js"
+          echo Fetched required assets into %TARGET%:
+          dir "%TARGET%" || echo "Directory listing failed"
+          echo index.html head:
+          powershell -Command "Get-Content '%TARGET%\index.html' | Select-Object -First 40"
+
+      - name: Build only smartyoutubetv (assemble FullDebug)
+        shell: cmd
+        run: call gradlew.bat :smartyoutubetv:assembleFullDebug --no-configuration-cache --no-daemon --stacktrace --info --warning-mode all
+
+      - name: Upload build artifacts (apk)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartyoutubetv-apks
+          path: |
+            smartyoutubetv/build/outputs/**/*.apk
