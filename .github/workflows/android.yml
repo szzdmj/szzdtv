@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       nano_branch:
-        description: 'Branch/commit of szzdmj/nanohttpd to fetch index.html from'
+        description: 'Branch/commit of '
         required: false
         default: 'master'
       sz_ref:
