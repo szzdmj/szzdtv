@@ -22,7 +22,7 @@ permissions:
 jobs:
   build-smartyoutubetv:
     name: Build smartyoutubetv (fast, force remote assets)
-    runs-on: [self-hosted, windows, x64]
+    runs-on: ubuntu-latest
     env:
       GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
 
@@ -46,58 +46,71 @@ jobs:
           restore-keys: |
             gradle-cache-${{ runner.os }}-
 
+      - name: Grant execute for gradlew
+        run: chmod +x ./gradlew
+
       - name: Clean workspace and module outputs (remove untracked/stale assets)
-        shell: cmd
+        shell: bash
         run: |
+          set -euo pipefail
           echo "Remove untracked files (safe on CI runner)..."
-          git clean -fdx || echo "Git clean failed, continuing..."
+          # remove untracked files (will not remove tracked files in git)
+          git clean -fdx || true
           echo "Run Gradle clean for smartyoutubetv to ensure no stale outputs..."
-          call gradlew.bat :smartyoutubetv:clean --no-daemon || echo "Gradle clean failed, continuing..."
+          ./gradlew :smartyoutubetv:clean --no-daemon || true
           echo "Ensure asset directories exist and show current state (for logs)..."
-          mkdir smartyoutubetv\src\main\assets 2>nul
-          mkdir pwaapp\src\main\assets 2>nul
-          dir smartyoutubetv\src\main\assets || echo "Directory not found"
-          dir pwaapp\src\main\assets || echo "Directory not found"
+          mkdir -p smartyoutubetv/src/main/assets pwaapp/src/main/assets
+          ls -la smartyoutubetv/src/main/assets || true
+          ls -la pwaapp/src/main/assets || true
 
       - name: Fetch PWA assets (force overwrite from remote; fail if required missing)
-        shell: cmd
         env:
-          NBR: ${{ github.event.inputs.nano_branch || 'master' }}
-          SZR: ${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}
+          NBR: ${{ github.event.inputs.nano_branch || github.event.inputs.nano_branch && github.event.inputs.nano_branch || github.event.inputs.nano_branch || github.event.inputs.nano_branch || github.event.inputs.nano_branch || 'master' }}
+          SZR: ${{ github.event.inputs.sz_ref || github.event.inputs.sz_ref && github.event.inputs.sz_ref || github.event.inputs.sz_ref || github.event.inputs.sz_ref || github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}
+        shell: bash
         run: |
-          echo NBR=%NBR%, SZR=%SZR%
-          set TARGET=smartyoutubetv\src\main\assets
-          mkdir "%TARGET%" 2>nul
-          echo Removing any existing files in %TARGET% (prevent packaging of stale/local files)...
-          rmdir /s /q "%TARGET%" 2>nul
-          mkdir "%TARGET%" 2>nul
-          set base_nano=https://raw.githubusercontent.com/szzdmj/nanohttpd/%NBR%/android-asset-webshell/app/src/main/assets
-          set base_sz=https://raw.githubusercontent.com/szmj0/szmj0.github.io/%SZR%
-          echo Fetching required assets...
-          curl -fsSL --retry 3 --connect-timeout 15 -o "%TARGET%\index.html" "%base_nano%/index.html"
-          if %ERRORLEVEL% NEQ 0 (
-            echo ::error::Failed to fetch index.html from %base_nano%/index.html (required). Aborting build to avoid packaging old assets.
-            exit /b 1
-          )
-          curl -fsSL --retry 3 --connect-timeout 15 -o "%TARGET%\webjs.js" "%base_sz%/webjs.js"
-          if %ERRORLEVEL% NEQ 0 (
-            echo ::error::Failed to fetch webjs.js from %base_sz%/webjs.js (required). Aborting build to avoid packaging old assets.
-            exit /b 1
-          )
-          curl -fsSL --retry 3 --connect-timeout 15 -o "%TARGET%\gjw.html" "%base_sz%/gjw.html"
-          if %ERRORLEVEL% NEQ 0 (
-            echo ::error::Failed to fetch gjw.html from %base_sz%/gjw.html (required). Aborting build to avoid packaging old assets.
-            exit /b 1
-          )
-          curl -fsSL --retry 3 --connect-timeout 15 -o "%TARGET%\sw.js" "%base_sz%/sw.js"
-          echo Fetched required assets into %TARGET%:
-          dir "%TARGET%" || echo "Directory listing failed"
-          echo index.html head:
-          powershell -Command "Get-Content '%TARGET%\index.html' | Select-Object -First 40"
+          set -euo pipefail
+          echo "NBR=${{ github.event.inputs.nano_branch || 'master' }}, SZR=${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}"
+          TARGET="smartyoutubetv/src/main/assets"
+          mkdir -p "${TARGET}"
+          echo "Removing any existing files in ${TARGET} (prevent packaging of stale/local files)..."
+          rm -rf "${TARGET:?}"/*
+          # Remote bases
+          base_nano="https://raw.githubusercontent.com/szzdmj/nanohttpd/${{ github.event.inputs.nano_branch || 'master' }}/android-asset-webshell/app/src/main/assets"
+          base_sz="https://raw.githubusercontent.com/szmj0/szmj0.github.io/${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}"
+          echo "Fetching required assets..."
+          # Required assets: index.html, webjs.js, gjw.html
+          set +e
+          curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/index.html" "${base_nano}/index.html"
+          rc_index=$?
+          curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/webjs.js" "${base_sz}/webjs.js"
+          rc_webjs=$?
+          curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/gjw.html" "${base_sz}/gjw.html"
+          rc_gjw=$?
+          # sw.js optional but prefer to get it
+          curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/sw.js" "${base_sz}/sw.js"
+          rc_sw=$?
+          set -e
+          # Fail if any required file failed to download
+          if [ "${rc_index}" -ne 0 ]; then
+            echo "::error::Failed to fetch index.html from ${base_nano}/index.html (required). Aborting build to avoid packaging old assets."
+            exit 1
+          fi
+          if [ "${rc_webjs}" -ne 0 ]; then
+            echo "::error::Failed to fetch webjs.js from ${base_sz}/webjs.js (required). Aborting build to avoid packaging old assets."
+            exit 1
+          fi
+          if [ "${rc_gjw}" -ne 0 ]; then
+            echo "::error::Failed to fetch gjw.html from ${base_sz}/gjw.html (required). Aborting build to avoid packaging old assets."
+            exit 1
+          fi
+          echo "Fetched required assets into ${TARGET}:"
+          ls -la "${TARGET}" || true
+          echo "index.html head:"
+          sed -n '1,40p' "${TARGET}/index.html" || true
 
       - name: Build only smartyoutubetv (assemble FullDebug)
-        shell: cmd
-        run: call gradlew.bat :smartyoutubetv:assembleFullDebug --no-configuration-cache --no-daemon --stacktrace --info --warning-mode all
+        run: ./gradlew :smartyoutubetv:assembleFullDebug --no-configuration-cache --no-daemon --stacktrace --info --warning-mode all
 
       - name: Upload build artifacts (apk)
         if: success()
