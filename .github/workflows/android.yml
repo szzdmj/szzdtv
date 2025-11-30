@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       nano_branch:
-        description: 'Branch/commit of '
+        description: 'Branch/commit of nanohttpd to fetch index/webshell assets from'
         required: false
         default: 'master'
       sz_ref:
@@ -63,25 +63,27 @@ jobs:
           ls -la pwaapp/src/main/assets || true
 
       - name: Fetch PWA assets (force overwrite from remote; fail if required missing)
+        # Use explicit, valid expressions for inputs (no truncated/invalid interpolation)
         env:
-          NBR: ${{ github.event.inputs.nano_branch || github.event.inputs.nano_branch && github.event.inputs.nano_branch || github.event.inputs.nano_branch || github.event.inputs.nano_branch || github[...]
-          SZR: ${{ github.event.inputs.sz_ref || github.event.inputs.sz_ref && github.event.inputs.sz_ref || github.event.inputs.sz_ref || github.event.inputs.sz_ref || github.event.inputs.sz_ref || '[...]
+          NBR: ${{ github.event.inputs.nano_branch || 'master' }}
+          SZR: ${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}
         shell: bash
         run: |
           set -euo pipefail
-          echo "NBR=${{ github.event.inputs.nano_branch || 'master' }}, SZR=${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}"
+          echo "NBR=${NBR}, SZR=${SZR}"
           TARGET="szmjtv/src/main/assets"
           mkdir -p "${TARGET}"
           echo "Removing any existing files in ${TARGET} (prevent packaging of stale/local files)..."
           rm -rf "${TARGET:?}"/*
-          base_nano="https://raw.githubusercontent.com/szzdmj/nanohttpd/${{ github.event.inputs.nano_branch || 'master' }}/android-asset-webshell/app/src/main/assets"
-          base_sz="https://raw.githubusercontent.com/szmj0/szmj0.github.io/${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}"
+          base_nano="https://raw.githubusercontent.com/szzdmj/nanohttpd/${NBR}/android-asset-webshell/app/src/main/assets"
+          base_sz="https://raw.githubusercontent.com/szmj0/szmj0.github.io/${SZR}"
           echo "Fetching required assets..."
           set +e
           curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/webjs.js" "${base_sz}/webjs.js"
           rc_webjs=$?
           curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/gjw.html" "${base_sz}/gjw.html"
           rc_gjw=$?
+          # sw.js optional but prefer to get it
           curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/sw.js" "${base_sz}/sw.js"
           rc_sw=$?
           set -e
