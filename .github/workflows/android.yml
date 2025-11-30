@@ -54,7 +54,6 @@ jobs:
         run: |
           set -euo pipefail
           echo "Remove untracked files (safe on CI runner)..."
-          # remove untracked files (will not remove tracked files in git)
           git clean -fdx || true
           echo "Run Gradle clean for szmjtv to ensure no stale outputs..."
           ./gradlew :szmjtv:clean --no-daemon || true
@@ -65,8 +64,8 @@ jobs:
 
       - name: Fetch PWA assets (force overwrite from remote; fail if required missing)
         env:
-          NBR: ${{ github.event.inputs.nano_branch || github.event.inputs.nano_branch && github.event.inputs.nano_branch || github.event.inputs.nano_branch || github.event.inputs.nano_branch || github.event.inputs.nano_branch || 'master' }}
-          SZR: ${{ github.event.inputs.sz_ref || github.event.inputs.sz_ref && github.event.inputs.sz_ref || github.event.inputs.sz_ref || github.event.inputs.sz_ref || github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}
+          NBR: ${{ github.event.inputs.nano_branch || github.event.inputs.nano_branch && github.event.inputs.nano_branch || github.event.inputs.nano_branch || github.event.inputs.nano_branch || github[...]
+          SZR: ${{ github.event.inputs.sz_ref || github.event.inputs.sz_ref && github.event.inputs.sz_ref || github.event.inputs.sz_ref || github.event.inputs.sz_ref || github.event.inputs.sz_ref || '[...]
         shell: bash
         run: |
           set -euo pipefail
@@ -75,21 +74,17 @@ jobs:
           mkdir -p "${TARGET}"
           echo "Removing any existing files in ${TARGET} (prevent packaging of stale/local files)..."
           rm -rf "${TARGET:?}"/*
-          # Remote bases
           base_nano="https://raw.githubusercontent.com/szzdmj/nanohttpd/${{ github.event.inputs.nano_branch || 'master' }}/android-asset-webshell/app/src/main/assets"
           base_sz="https://raw.githubusercontent.com/szmj0/szmj0.github.io/${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}"
           echo "Fetching required assets..."
-          # Required assets:  webjs.js, gjw.html
           set +e
           curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/webjs.js" "${base_sz}/webjs.js"
           rc_webjs=$?
           curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/gjw.html" "${base_sz}/gjw.html"
           rc_gjw=$?
-          # sw.js optional but prefer to get it
           curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/sw.js" "${base_sz}/sw.js"
           rc_sw=$?
           set -e
-          # Fail if any required file failed to download
           if [ "${rc_webjs}" -ne 0 ]; then
             echo "::error::Failed to fetch webjs.js from ${base_sz}/webjs.js (required). Aborting build to avoid packaging old assets."
             exit 1
@@ -98,34 +93,46 @@ jobs:
             echo "::error::Failed to fetch gjw.html from ${base_sz}/gjw.html (required). Aborting build to avoid packaging old assets."
             exit 1
           fi
- 
+
       - name: Build only szmjtv (assemble FullDebug)
         run: ./gradlew :szmjtv:assembleFullDebug --no-configuration-cache --no-daemon --stacktrace --info --warning-mode all
-      - name: Collect APKs (debug)
+
+      - name: Collect & rename APKs for upload
         if: success()
         shell: bash
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
-          echo "Searching for APKs under repo (for upload)..."
-          # List all potential apk locations for debugging
-          find . -type f -name '*.apk' -print || true
-          echo "Also list build outputs directories:"
-          du -h --max-depth=3 */build/outputs 2>/dev/null || true
-          # Prepare upload dir
+          # compute date and two-digit counter
+          DATE=$(date -u +%Y%m%d)
+          COUNTER=$(printf "%02d" $((RUN_NUMBER % 100)))
+          VERSION="V8.0.${DATE}${COUNTER}"
+          echo "Computed version suffix: ${VERSION}"
           OUT_DIR="build/apks_for_upload"
-          rm -rf "$OUT_DIR"
-          mkdir -p "$OUT_DIR"
-          # Copy all found apks into OUT_DIR preserving names
+          rm -rf "${OUT_DIR}"
+          mkdir -p "${OUT_DIR}"
           found=0
+          # locate all APKs produced by any module
           while IFS= read -r apk; do
-            cp "$apk" "$OUT_DIR/$(basename "$apk")"
+            if [ -z "$apk" ]; then
+              continue
+            fi
+            baseidx=$((found+1))
+            if [ "${found}" -eq 0 ]; then
+              newname="szmjtv-${VERSION}.apk"
+            else
+              newname="szmjtv-${VERSION}-${baseidx}.apk"
+            fi
+            echo "Copying '$apk' -> '${OUT_DIR}/${newname}'"
+            cp "$apk" "${OUT_DIR}/${newname}"
             found=$((found+1))
           done < <(find . -type f -name '*.apk' -print)
-          if [ "$found" -eq 0 ]; then
-            echo "::warning::No APKs found to upload."
+          if [ "${found}" -eq 0 ]; then
+            echo "::warning::No APKs found to upload (checked find . -name '*.apk')"
           else
-            echo "Prepared $found APK(s) for upload in $OUT_DIR"
-            ls -la "$OUT_DIR"
+            echo "Prepared ${found} APK(s) for upload in ${OUT_DIR}"
+            ls -la "${OUT_DIR}"
           fi
 
       - name: Upload build artifacts (apk)
