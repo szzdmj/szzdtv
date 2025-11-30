@@ -1,9 +1,12 @@
-rootProject.name = 'szzdtv'
+rootProject.name = 'szmjtv'
 
 // Project modules
 include ':common'
-include ':smartyoutubetv'
-include ':pwaapp'   // <-- 添加这一行
+include ':szmjtv'
+include ':pwaapp'   // <-- added mapping for renamed module
+
+// Map new module name to existing directory
+project(':szmjtv').projectDir = file('smartyoutubetv')
 
 //  include ':exoplayeractivity'
 
