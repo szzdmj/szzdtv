@@ -1,106 +1,29 @@
-name: Android CI - szzdtv
-
-on:
-  push:
-    branches: [main, master, main-branch]
-  pull_request:
-    branches: [main, master, main-branch]
-  workflow_dispatch:
-    inputs:
-      nano_branch:
-        description: 'Branch/commit of '
-        required: false
-        default: 'master'
-      sz_ref:
-        description: 'Branch/commit of szmj0/szmj0.github.io to fetch webjs.js, sw.js, gjw.html from'
-        required: false
-        default: 'b6977c914a9a1aabafb5bddd6817eea85a2a8738'
-
-permissions:
-  contents: read
-
-jobs:
-  build-szmjtv:
-    name: Build szmjtv (fast, force remote assets)
-    runs-on: ubuntu-latest
-    env:
-      GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-cache-${{ runner.os }}-${{ hashFiles('**/*.gradle*','**/gradle-wrapper.properties') }}
-          restore-keys: |
-            gradle-cache-${{ runner.os }}-
-
-      - name: Grant execute for gradlew
-        run: chmod +x ./gradlew
-
-      - name: Clean workspace and module outputs (remove untracked/stale assets)
+      - name: Collect APKs (debug)
+        if: success()
         shell: bash
         run: |
           set -euo pipefail
-          echo "Remove untracked files (safe on CI runner)..."
-          # remove untracked files (will not remove tracked files in git)
-          git clean -fdx || true
-          echo "Run Gradle clean for szmjtv to ensure no stale outputs..."
-          ./gradlew :szmjtv:clean --no-daemon || true
-          echo "Ensure asset directories exist and show current state (for logs)..."
-          mkdir -p szmjtv/src/main/assets pwaapp/src/main/assets
-          ls -la szmjtv/src/main/assets || true
-          ls -la pwaapp/src/main/assets || true
-
-      - name: Fetch PWA assets (force overwrite from remote; fail if required missing)
-        env:
-          NBR: ${{ github.event.inputs.nano_branch || github.event.inputs.nano_branch && github.event.inputs.nano_branch || github.event.inputs.nano_branch || github.event.inputs.nano_branch || github.event.inputs.nano_branch || 'master' }}
-          SZR: ${{ github.event.inputs.sz_ref || github.event.inputs.sz_ref && github.event.inputs.sz_ref || github.event.inputs.sz_ref || github.event.inputs.sz_ref || github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "NBR=${{ github.event.inputs.nano_branch || 'master' }}, SZR=${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}"
-          TARGET="szmjtv/src/main/assets"
-          mkdir -p "${TARGET}"
-          echo "Removing any existing files in ${TARGET} (prevent packaging of stale/local files)..."
-          rm -rf "${TARGET:?}"/*
-          # Remote bases
-          base_nano="https://raw.githubusercontent.com/szzdmj/nanohttpd/${{ github.event.inputs.nano_branch || 'master' }}/android-asset-webshell/app/src/main/assets"
-          base_sz="https://raw.githubusercontent.com/szmj0/szmj0.github.io/${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}"
-          echo "Fetching required assets..."
-          # Required assets:  webjs.js, gjw.html
-          set +e
-          curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/webjs.js" "${base_sz}/webjs.js"
-          rc_webjs=$?
-          curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/gjw.html" "${base_sz}/gjw.html"
-          rc_gjw=$?
-          # sw.js optional but prefer to get it
-          curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/sw.js" "${base_sz}/sw.js"
-          rc_sw=$?
-          set -e
-          # Fail if any required file failed to download
-          if [ "${rc_webjs}" -ne 0 ]; then
-            echo "::error::Failed to fetch webjs.js from ${base_sz}/webjs.js (required). Aborting build to avoid packaging old assets."
-            exit 1
+          echo "Searching for APKs under repo (for upload)..."
+          # List all potential apk locations for debugging
+          find . -type f -name '*.apk' -print || true
+          echo "Also list build outputs directories:"
+          du -h --max-depth=3 */build/outputs 2>/dev/null || true
+          # Prepare upload dir
+          OUT_DIR="build/apks_for_upload"
+          rm -rf "$OUT_DIR"
+          mkdir -p "$OUT_DIR"
+          # Copy all found apks into OUT_DIR preserving names
+          found=0
+          while IFS= read -r apk; do
+            cp "$apk" "$OUT_DIR/$(basename "$apk")"
+            found=$((found+1))
+          done < <(find . -type f -name '*.apk' -print)
+          if [ "$found" -eq 0 ]; then
+            echo "::warning::No APKs found to upload."
+          else
+            echo "Prepared $found APK(s) for upload in $OUT_DIR"
+            ls -la "$OUT_DIR"
           fi
-          if [ "${rc_gjw}" -ne 0 ]; then
-            echo "::error::Failed to fetch gjw.html from ${base_sz}/gjw.html (required). Aborting build to avoid packaging old assets."
-            exit 1
-          fi
- 
-      - name: Build only szmjtv (assemble FullDebug)
-        run: ./gradlew :szmjtv:assembleFullDebug --no-configuration-cache --no-daemon --stacktrace --info --warning-mode all
 
       - name: Upload build artifacts (apk)
         if: success()
@@ -108,4 +31,4 @@ jobs:
         with:
           name: szmjtv-apks
           path: |
-            szmjtv/build/outputs/**/*.apk
+            build/apks_for_upload/**/*.apk
