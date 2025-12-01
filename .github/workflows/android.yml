@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       nano_branch:
-        description: 'Branch/commit of szzdmj/nanohttpd to fetch index.html from'
+        description: 'fetch gjw.html from'
         required: false
         default: 'master'
       sz_ref:
@@ -106,8 +106,7 @@ jobs:
           # Optional
           fetch "${base_sz}/sw.js" "${TARGET}/sw.js"; rc_sw=$? || true
 
-          # Fail if any required file failed to download
-          # If you still require index.html, uncomment this block:
+          # 必需校验（按需开启/关闭 index.html）
           # if [ "${rc_index}" -ne 0 ]; then
           #   echo "::error::index.html missing at ${base_nano}/index.html"
           #   exit 1
