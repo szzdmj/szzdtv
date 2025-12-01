@@ -55,11 +55,10 @@ jobs:
           set -euo pipefail
           echo "Remove untracked files (safe on CI runner)..."
           git clean -fdx || true
-          echo "Run Gradle clean for smartyoutubetv to ensure no stale outputs..."
-          ./gradlew :smartyoutubetv:clean --no-daemon || true
-          echo "Ensure asset directories exist and show current state (for logs)..."
-          mkdir -p smartyoutubetv/src/main/assets pwaapp/src/main/assets
-          ls -la smartyoutubetv/src/main/assets || true
+          echo "Run Gradle clean for szmjtv to ensure no stale outputs..."
+          ./gradlew :szmjtv:clean --no-daemon || true
+          mkdir -p szmjtv/src/main/assets pwaapp/src/main/assets
+          ls -la szmjtv/src/main/assets || true
           ls -la pwaapp/src/main/assets || true
 
       - name: Fetch PWA assets (force overwrite from remote; fail if required missing)
@@ -123,13 +122,13 @@ jobs:
           echo "Assets in ${TARGET}:"
           ls -la "${TARGET}" || true
 
-      - name: Build only smartyoutubetv (assemble FullDebug)
-        run: ./gradlew :smartyoutubetv:assembleFullDebug --no-configuration-cache --no-daemon --stacktrace --info --warning-mode all
+      - name: Build only szmjtv (assemble FullDebug)
+        run: ./gradlew :szmjtv:assembleFullDebug --no-configuration-cache --no-daemon --stacktrace --info --warning-mode all
 
       - name: Upload build artifacts (apk)
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: smartyoutubetv-apks
+          name: szmjtv-apks
           path: |
             smartyoutubetv/build/outputs/**/*.apk
