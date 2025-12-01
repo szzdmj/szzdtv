@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       nano_branch:
-        description: 'Branch/commit of nanohttpd to fetch index/webshell assets from'
+        description: 'Branch/commit of szzdmj/nanohttpd to fetch index.html from'
         required: false
         default: 'master'
       sz_ref:
@@ -20,8 +20,8 @@ permissions:
   contents: read
 
 jobs:
-  build-szmjtv:
-    name: Build szmjtv (fast, force remote assets)
+  build-smartyoutubetv:
+    name: Build smartyoutubetv (fast, force remote assets)
     runs-on: ubuntu-latest
     env:
       GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
@@ -55,15 +55,14 @@ jobs:
           set -euo pipefail
           echo "Remove untracked files (safe on CI runner)..."
           git clean -fdx || true
-          echo "Run Gradle clean for szmjtv to ensure no stale outputs..."
-          ./gradlew :szmjtv:clean --no-daemon || true
+          echo "Run Gradle clean for smartyoutubetv to ensure no stale outputs..."
+          ./gradlew :smartyoutubetv:clean --no-daemon || true
           echo "Ensure asset directories exist and show current state (for logs)..."
-          mkdir -p szmjtv/src/main/assets pwaapp/src/main/assets
-          ls -la szmjtv/src/main/assets || true
+          mkdir -p smartyoutubetv/src/main/assets pwaapp/src/main/assets
+          ls -la smartyoutubetv/src/main/assets || true
           ls -la pwaapp/src/main/assets || true
 
       - name: Fetch PWA assets (force overwrite from remote; fail if required missing)
-        # Use explicit, valid expressions for inputs (no truncated/invalid interpolation)
         env:
           NBR: ${{ github.event.inputs.nano_branch || 'master' }}
           SZR: ${{ github.event.inputs.sz_ref || 'b6977c914a9a1aabafb5bddd6817eea85a2a8738' }}
@@ -71,14 +70,18 @@ jobs:
         run: |
           set -euo pipefail
           echo "NBR=${NBR}, SZR=${SZR}"
-          TARGET="szmjtv/src/main/assets"
+          TARGET="smartyoutubetv/src/main/assets"
           mkdir -p "${TARGET}"
           echo "Removing any existing files in ${TARGET} (prevent packaging of stale/local files)..."
           rm -rf "${TARGET:?}"/*
+          # Remote bases
           base_nano="https://raw.githubusercontent.com/szzdmj/nanohttpd/${NBR}/android-asset-webshell/app/src/main/assets"
           base_sz="https://raw.githubusercontent.com/szmj0/szmj0.github.io/${SZR}"
           echo "Fetching required assets..."
+          # Required assets: index.html, webjs.js, gjw.html
           set +e
+          curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/index.html" "${base_nano}/index.html"
+          rc_index=$?
           curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/webjs.js" "${base_sz}/webjs.js"
           rc_webjs=$?
           curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/gjw.html" "${base_sz}/gjw.html"
@@ -87,6 +90,11 @@ jobs:
           curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/sw.js" "${base_sz}/sw.js"
           rc_sw=$?
           set -e
+          # Fail if any required file failed to download
+          if [ "${rc_index}" -ne 0 ]; then
+            echo "::error::Failed to fetch index.html from ${base_nano}/index.html (required). Aborting build to avoid packaging old assets."
+            exit 1
+          fi
           if [ "${rc_webjs}" -ne 0 ]; then
             echo "::error::Failed to fetch webjs.js from ${base_sz}/webjs.js (required). Aborting build to avoid packaging old assets."
             exit 1
@@ -95,52 +103,18 @@ jobs:
             echo "::error::Failed to fetch gjw.html from ${base_sz}/gjw.html (required). Aborting build to avoid packaging old assets."
             exit 1
           fi
+          echo "Fetched required assets into ${TARGET}:"
+          ls -la "${TARGET}" || true
+          echo "index.html head:"
+          sed -n '1,40p' "${TARGET}/index.html" || true
 
-      - name: Build only szmjtv (assemble FullDebug)
-        run: ./gradlew :szmjtv:assembleFullDebug --no-configuration-cache --no-daemon --stacktrace --info --warning-mode all
-
-      - name: Collect & rename APKs for upload
-        if: success()
-        shell: bash
-        env:
-          RUN_NUMBER: ${{ github.run_number }}
-        run: |
-          set -euo pipefail
-          # compute date and two-digit counter
-          DATE=$(date -u +%Y%m%d)
-          COUNTER=$(printf "%02d" $((RUN_NUMBER % 100)))
-          VERSION="V8.0.${DATE}${COUNTER}"
-          echo "Computed version suffix: ${VERSION}"
-          OUT_DIR="build/apks_for_upload"
-          rm -rf "${OUT_DIR}"
-          mkdir -p "${OUT_DIR}"
-          found=0
-          # locate all APKs produced by any module
-          while IFS= read -r apk; do
-            if [ -z "$apk" ]; then
-              continue
-            fi
-            baseidx=$((found+1))
-            if [ "${found}" -eq 0 ]; then
-              newname="szmjtv-${VERSION}.apk"
-            else
-              newname="szmjtv-${VERSION}-${baseidx}.apk"
-            fi
-            echo "Copying '$apk' -> '${OUT_DIR}/${newname}'"
-            cp "$apk" "${OUT_DIR}/${newname}"
-            found=$((found+1))
-          done < <(find . -type f -name '*.apk' -print)
-          if [ "${found}" -eq 0 ]; then
-            echo "::warning::No APKs found to upload (checked find . -name '*.apk')"
-          else
-            echo "Prepared ${found} APK(s) for upload in ${OUT_DIR}"
-            ls -la "${OUT_DIR}"
-          fi
+      - name: Build only smartyoutubetv (assemble FullDebug)
+        run: ./gradlew :smartyoutubetv:assembleFullDebug --no-configuration-cache --no-daemon --stacktrace --info --warning-mode all
 
       - name: Upload build artifacts (apk)
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: szmjtv-apks
+          name: smartyoutubetv-apks
           path: |
-            build/apks_for_upload/**/*.apk
+            smartyoutubetv/build/outputs/**/*.apk
