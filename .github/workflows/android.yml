@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       nano_branch:
-        description: 'fetch gjw.html from'
+        description: 'Branch/commit of szzdmj/nanohttpd to fetch index.html from'
         required: false
         default: 'master'
       sz_ref:
@@ -20,8 +20,8 @@ permissions:
   contents: read
 
 jobs:
-  build-smartyoutubetv:
-    name: Build smartyoutubetv (fast, force remote assets)
+  build-szmjtv:
+    name: Build szmjtv (fast, force remote assets)
     runs-on: ubuntu-latest
     env:
       GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
@@ -57,6 +57,7 @@ jobs:
           git clean -fdx || true
           echo "Run Gradle clean for szmjtv to ensure no stale outputs..."
           ./gradlew :szmjtv:clean --no-daemon || true
+          echo "Ensure asset directories exist and show current state (for logs)..."
           mkdir -p szmjtv/src/main/assets pwaapp/src/main/assets
           ls -la szmjtv/src/main/assets || true
           ls -la pwaapp/src/main/assets || true
@@ -69,7 +70,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "Inputs => NBR=${NBR}, SZR=${SZR}"
-          TARGET="smartyoutubetv/src/main/assets"
+          TARGET="szmjtv/src/main/assets"
           mkdir -p "${TARGET}"
           echo "Clean ${TARGET} ..."
           rm -rf "${TARGET:?}"/*
@@ -81,36 +82,34 @@ jobs:
           echo "  base_nano=${base_nano}"
           echo "  base_sz=${base_sz}"
 
-          # Download helper: prints HTTP code and sets rc
+          # Download helper: prints HTTP code and sets rc (0 only for 200)
           fetch() {
             local url="$1"
             local out="$2"
             local code
             code=$(curl -fsSL --retry 3 --connect-timeout 15 -w "%{http_code}" -o "${out}" "${url}" || echo "000")
-            # curl -f returns non-zero on 4xx/5xx; we also print code for diagnosis
             echo "Fetched ${url} -> ${out} (HTTP ${code})"
-            # compute rc: 0 only if code is 200
             if [ "${code}" = "200" ]; then
               return 0
             else
               return 22
-          fi
+            fi
           }
 
-          # If you no longer need index.html, comment the two lines below.
+          # index.html 已弃用（如需强制，可取消注释）
           # fetch "${base_nano}/index.html" "${TARGET}/index.html"; rc_index=$? || true
 
+          # 必需文件
           fetch "${base_sz}/webjs.js" "${TARGET}/webjs.js"; rc_webjs=$? || true
           fetch "${base_sz}/gjw.html" "${TARGET}/gjw.html"; rc_gjw=$? || true
-          # Optional
+          # 可选文件
           fetch "${base_sz}/sw.js" "${TARGET}/sw.js"; rc_sw=$? || true
 
-          # 必需校验（按需开启/关闭 index.html）
+          # 失败条件（按需启用 index.html 校验）
           # if [ "${rc_index}" -ne 0 ]; then
           #   echo "::error::index.html missing at ${base_nano}/index.html"
           #   exit 1
           # fi
-
           if [ "${rc_webjs}" -ne 0 ]; then
             echo "::error::webjs.js missing at ${base_sz}/webjs.js"
             exit 1
@@ -119,11 +118,47 @@ jobs:
             echo "::error::gjw.html missing at ${base_sz}/gjw.html"
             exit 1
           fi
+
           echo "Assets in ${TARGET}:"
           ls -la "${TARGET}" || true
 
       - name: Build only szmjtv (assemble FullDebug)
         run: ./gradlew :szmjtv:assembleFullDebug --no-configuration-cache --no-daemon --stacktrace --info --warning-mode all
+
+      - name: Collect & rename APKs for upload
+        if: success()
+        shell: bash
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          # 版本命名：szmjtv-V8.0.<YYYYMMDD><NN>.apk
+          DATE=$(date -u +%Y%m%d)
+          COUNTER=$(printf "%02d" $((RUN_NUMBER % 100)))
+          VERSION="V8.0.${DATE}${COUNTER}"
+          echo "Computed version suffix: ${VERSION}"
+          OUT_DIR="build/apks_for_upload"
+          rm -rf "${OUT_DIR}"
+          mkdir -p "${OUT_DIR}"
+          found=0
+          while IFS= read -r apk; do
+            [ -z "$apk" ] && continue
+            baseidx=$((found+1))
+            if [ "${found}" -eq 0 ]; then
+              newname="szmjtv-${VERSION}.apk"
+            else
+              newname="szmjtv-${VERSION}-${baseidx}.apk"
+            fi
+            echo "Copying '$apk' -> '${OUT_DIR}/${newname}'"
+            cp "$apk" "${OUT_DIR}/${newname}"
+            found=$((found+1))
+          done < <(find . -type f -name '*.apk' -print)
+          if [ "${found}" -eq 0 ]; then
+            echo "::warning::No APKs found to upload (checked find . -name '*.apk')"
+          else
+            echo "Prepared ${found} APK(s) for upload in ${OUT_DIR}"
+            ls -la "${OUT_DIR}"
+          fi
 
       - name: Upload build artifacts (apk)
         if: success()
@@ -131,4 +166,4 @@ jobs:
         with:
           name: szmjtv-apks
           path: |
-            smartyoutubetv/build/outputs/**/*.apk
+            build/apks_for_upload/**/*.apk
