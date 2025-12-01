@@ -69,44 +69,60 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "NBR=${NBR}, SZR=${SZR}"
+          echo "Inputs => NBR=${NBR}, SZR=${SZR}"
           TARGET="smartyoutubetv/src/main/assets"
           mkdir -p "${TARGET}"
-          echo "Removing any existing files in ${TARGET} (prevent packaging of stale/local files)..."
+          echo "Clean ${TARGET} ..."
           rm -rf "${TARGET:?}"/*
-          # Remote bases
+
           base_nano="https://raw.githubusercontent.com/szzdmj/nanohttpd/${NBR}/android-asset-webshell/app/src/main/assets"
           base_sz="https://raw.githubusercontent.com/szmj0/szmj0.github.io/${SZR}"
-          echo "Fetching required assets..."
-          # Required assets: index.html, webjs.js, gjw.html
-          set +e
-          curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/index.html" "${base_nano}/index.html"
-          rc_index=$?
-          curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/webjs.js" "${base_sz}/webjs.js"
-          rc_webjs=$?
-          curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/gjw.html" "${base_sz}/gjw.html"
-          rc_gjw=$?
-          # sw.js optional but prefer to get it
-          curl -fsSL --retry 3 --connect-timeout 15 -o "${TARGET}/sw.js" "${base_sz}/sw.js"
-          rc_sw=$?
-          set -e
-          # Fail if any required file failed to download
-          if [ "${rc_index}" -ne 0 ]; then
-            echo "::error::Failed to fetch index.html from ${base_nano}/index.html (required). Aborting build to avoid packaging old assets."
-            exit 1
+
+          echo "Resolved URLs:"
+          echo "  base_nano=${base_nano}"
+          echo "  base_sz=${base_sz}"
+
+          # Download helper: prints HTTP code and sets rc
+          fetch() {
+            local url="$1"
+            local out="$2"
+            local code
+            code=$(curl -fsSL --retry 3 --connect-timeout 15 -w "%{http_code}" -o "${out}" "${url}" || echo "000")
+            # curl -f returns non-zero on 4xx/5xx; we also print code for diagnosis
+            echo "Fetched ${url} -> ${out} (HTTP ${code})"
+            # compute rc: 0 only if code is 200
+            if [ "${code}" = "200" ]; then
+              return 0
+            else
+              return 22
           fi
+          }
+
+          # If you no longer need index.html, comment the two lines below.
+          # fetch "${base_nano}/index.html" "${TARGET}/index.html"; rc_index=$? || true
+
+          fetch "${base_sz}/webjs.js" "${TARGET}/webjs.js"; rc_webjs=$? || true
+          fetch "${base_sz}/gjw.html" "${TARGET}/gjw.html"; rc_gjw=$? || true
+          # Optional
+          fetch "${base_sz}/sw.js" "${TARGET}/sw.js"; rc_sw=$? || true
+
+          # Fail if any required file failed to download
+          # If you still require index.html, uncomment this block:
+          # if [ "${rc_index}" -ne 0 ]; then
+          #   echo "::error::index.html missing at ${base_nano}/index.html"
+          #   exit 1
+          # fi
+
           if [ "${rc_webjs}" -ne 0 ]; then
-            echo "::error::Failed to fetch webjs.js from ${base_sz}/webjs.js (required). Aborting build to avoid packaging old assets."
+            echo "::error::webjs.js missing at ${base_sz}/webjs.js"
             exit 1
           fi
           if [ "${rc_gjw}" -ne 0 ]; then
-            echo "::error::Failed to fetch gjw.html from ${base_sz}/gjw.html (required). Aborting build to avoid packaging old assets."
+            echo "::error::gjw.html missing at ${base_sz}/gjw.html"
             exit 1
           fi
-          echo "Fetched required assets into ${TARGET}:"
+          echo "Assets in ${TARGET}:"
           ls -la "${TARGET}" || true
-          echo "index.html head:"
-          sed -n '1,40p' "${TARGET}/index.html" || true
 
       - name: Build only smartyoutubetv (assemble FullDebug)
         run: ./gradlew :smartyoutubetv:assembleFullDebug --no-configuration-cache --no-daemon --stacktrace --info --warning-mode all
